@@ -1229,7 +1229,9 @@ button:disabled {
 }
 
 .queue-pill.pending,
-.queue-row .pending {
+.queue-row .pending,
+.queue-pill.queued,
+.queue-row .queued {
   background: #efe9dd;
   color: var(--warning);
 }

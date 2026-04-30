@@ -39,7 +39,7 @@ Use this sequence when showing EstateMotion to agents or partners:
 7. Tap through `Details` and `Templates`: "The AI-style copy is generated from the listing facts, and templates control pacing, transitions, captions, and CTA."
 8. On `Preview`: "This is the agent-facing reel preview: real photos, clean movement, property overlays, feature cards, compliance, and a personal brand end card."
 9. Tap `Brand`: "The brand kit saves name, brokerage, headshot/logo URLs, contact info, colors, CTA, and compliance disclaimers."
-10. Tap `Results`: "The render queue simulates pending, rendering, complete, and failed states. Today it exports a manifest, preview HTML, and caption assets. Remotion is scaffolded for real MP4 output."
+10. Tap `Results`: "The render queue shows queued, rendering, complete, and failed states. In mock mode it exports a manifest, preview HTML, and caption assets. In live mode `/api/render` forwards the manifest to the Remotion worker for MP4 output."
 11. Close with: "The product is designed to feel less like a slideshow maker and more like a real estate content operating system for listing launches."
 
 Demo notes:
@@ -105,7 +105,7 @@ What is live in the local browser MVP v2:
 - Template selection connected to preview and render manifest
 - Local AI-style copy generation for hook, highlights, caption, hashtags, and voiceover
 - Premium reel preview with ordered photos, overlays, feature cards, scene inspector, compliance preview, and brand end card
-- Render queue state with `pending`, `rendering`, `complete`, and `failed`
+- Render queue state with `queued`, `rendering`, `complete`, and `failed`
 - Pricing/credits screen for Free trial, Pay-per-export, Monthly Pro, and Brokerage plan
 - Environment-driven feature flags through `env.js`, query params, or localStorage
 - Content Pack export for:
@@ -176,7 +176,8 @@ SUPABASE_JS_URL=https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm
 OPENAI_ENDPOINT=https://your-api-domain.com/openai-copy
 STRIPE_PUBLISHABLE_KEY=pk_live_or_test_xxx
 STRIPE_CHECKOUT_ENDPOINT=https://your-api-domain.com/create-checkout-session
-RENDER_ENDPOINT=https://your-render-worker.com/render
+RENDER_WORKER_URL=https://your-render-worker.com
+RENDER_WEBHOOK_SECRET=replace-me
 ```
 
 8. Deploy, then verify:
@@ -295,17 +296,31 @@ Local MVP export stays stable with `MOCK_RENDERING=true`.
 
 To enable real MP4 rendering:
 
-1. Install dependencies with `npm install`.
-2. Ensure `remotion`, `@remotion/renderer`, and `tsx` are installed.
-3. Run:
+1. Start the separate Remotion worker:
 
 ```bash
-npm run render:remotion
+cd render-worker
+npm install
+SUPABASE_URL=https://your-project.supabase.co \
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key \
+SUPABASE_GENERATED_VIDEOS_BUCKET=generated-videos \
+RENDER_WORKER_SECRET=replace-me \
+npm run start
 ```
 
-4. For an app-connected render worker, expose an endpoint matching `RENDER_ENDPOINT`.
-5. Set `MOCK_RENDERING=false`.
-6. Have the endpoint accept the render manifest from `buildExportPayload()` and return generated MP4 URLs.
+2. Set these Vercel env vars on the static app:
+
+```text
+MOCK_RENDERING=false
+RENDER_WORKER_URL=https://your-render-worker.example.com
+RENDER_WEBHOOK_SECRET=replace-me
+```
+
+3. The browser app posts the EstateMotion render manifest to `/api/render`.
+4. `/api/render` forwards the manifest to the worker.
+5. The worker renders a true MP4 and thumbnail with Remotion, uploads both to the Supabase `generated-videos` bucket, and returns the downloadable MP4 URL.
+
+Live rendering requires Supabase/public image URLs. Browser `blob:` URLs from fully local mock uploads cannot be rendered by a remote worker, so keep `MOCK_RENDERING=true` for pure local demos.
 
 ## Supabase Setup
 
@@ -340,7 +355,14 @@ The MVP uses deterministic rendering instead of true generative video:
 7. Add optional brokerage compliance footer.
 8. Export MP4, thumbnail PNG, caption TXT, and hashtag TXT.
 
-Current local export is JSON plus standalone preview HTML when `MOCK_RENDERING=true`. Backend starter files:
+Current local export is JSON plus standalone preview HTML when `MOCK_RENDERING=true`. Live MP4 export is handled by:
+
+- `api/render.js`
+- `render-worker/server.mjs`
+- `render-worker/src/render-job.mjs`
+- `render-worker/src/EstateMotionRender.jsx`
+
+Backend starter files still retained for the future native/backend stack:
 
 - `backend/rendering/ffmpegRenderer.ts`
 - `backend/rendering/remotionPipeline.ts`
@@ -350,7 +372,7 @@ Current local export is JSON plus standalone preview HTML when `MOCK_RENDERING=t
 
 ## Known Limitations
 
-- MP4 generation requires npm dependencies and the Remotion render path. It is mocked in the browser fallback.
+- MP4 generation requires the separate Remotion worker and Supabase/public photo URLs. It is mocked in the browser fallback.
 - OpenAI copy generation is deterministic local logic until a secure backend endpoint is connected.
 - Supabase and Stripe are scaffolded but not live in the local MVP.
 - Native image picking needs Expo ImagePicker integration for iOS/Android; web upload works.

@@ -14,7 +14,7 @@ This is intentional so Vercel can deploy:
 - `supabase/schema.sql`
 - `supabase/seed.sql`
 
-Keep the existing `src/`, `remotion/`, and `backend/` code folders in the repo. Re-enable the dependency stack only when the project is split into a dedicated Expo app or a separate render worker.
+Keep the existing `src/`, `remotion/`, and `backend/` code folders in the repo. Real MP4 rendering now lives in `render-worker/`, which is intentionally separate from the static Vercel app.
 
 ## Future Expo App Dependencies
 
@@ -46,4 +46,4 @@ Keep the existing `src/`, `remotion/`, and `backend/` code folders in the repo. 
 }
 ```
 
-Recommended next step: create a separate render worker package for Remotion so the static Vercel app remains lightweight.
+Use `render-worker/README.md` for the current Remotion worker setup. Do not add those dependencies to the root `package.json`; the root package must remain lightweight for static Vercel deployment.

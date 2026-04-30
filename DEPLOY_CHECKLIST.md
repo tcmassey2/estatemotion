@@ -67,6 +67,8 @@ MOCK_RENDERING=true
 MOCK_STRIPE=true
 OPENAI_ENDPOINT=
 RENDER_ENDPOINT=
+RENDER_WORKER_URL=
+RENDER_WEBHOOK_SECRET=
 STRIPE_PUBLISHABLE_KEY=
 STRIPE_CHECKOUT_ENDPOINT=
 ```
@@ -78,9 +80,20 @@ MOCK_AI=false
 MOCK_RENDERING=false
 MOCK_STRIPE=false
 OPENAI_ENDPOINT=https://your-api.example.com/openai-copy
-RENDER_ENDPOINT=https://your-render-worker.example.com/render
+RENDER_WORKER_URL=https://your-render-worker.example.com
+RENDER_WEBHOOK_SECRET=replace-me
 STRIPE_PUBLISHABLE_KEY=pk_live_or_test_xxx
 STRIPE_CHECKOUT_ENDPOINT=https://your-api.example.com/create-checkout-session
+```
+
+Render worker environment variables:
+
+```text
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+SUPABASE_GENERATED_VIDEOS_BUCKET=generated-videos
+RENDER_WORKER_SECRET=replace-me
+PORT=8787
 ```
 
 ## 4. Production Smoke Test

@@ -1029,7 +1029,7 @@ function contentPackCard(item) {
         <strong>${item.title}</strong>
         <small>${item.format}${item.duration ? ` - ${item.duration}s` : ""} - ${escapeHtml(item.hook)}</small>
       </div>
-      <span class="queue-pill ${queueItem?.status ?? "pending"}">${queueItem?.status ?? "not queued"}</span>
+      <span class="queue-pill ${queueItem?.status ?? "queued"}">${queueItem?.status ?? "not queued"}</span>
     </article>
   `;
 }
@@ -1597,12 +1597,16 @@ async function processSelectedFiles(selectedFiles) {
   }
   setState({ loading: featureFlags.MOCK_SUPABASE ? "Preparing uploaded photos..." : "Uploading photos to Supabase Storage...", error: "" });
   try {
-    const uploadedAssets = await Promise.all(uniqueFiles.map((file, index) => prepareProjectPhoto(file, index)));
+    const remoteProjectId = shouldUseLocalPersistence() ? "" : await ensureRemoteProjectForUploads();
+    const uploadedAssets = await Promise.all(uniqueFiles.map((file, index) => prepareProjectPhoto(file, index, remoteProjectId)));
     const uploadedPhotos = uniqueFiles.map((file, index) => {
       const classification = classifyPhoto(file.name, currentPhotos.length + index);
+      const publicUrl = uploadedAssets[index].publicUrl;
       return {
         id: `local-${Date.now()}-${index}`,
-        uri: uploadedAssets[index].publicUrl,
+        uri: publicUrl,
+        publicUrl,
+        public_url: publicUrl,
         storagePath: uploadedAssets[index].path,
         fileName: file.name,
         size: file.size,
@@ -1619,19 +1623,31 @@ async function processSelectedFiles(selectedFiles) {
     });
     const total = currentPhotos.length + uploadedPhotos.length;
     showToast(`${total} photo${total === 1 ? "" : "s"} uploaded`);
-  } catch {
-    setError("Photo upload failed. Try smaller image files.");
+  } catch (error) {
+    setError(error.message || "Photo upload failed. Try smaller image files.");
   }
 }
 
-async function prepareProjectPhoto(file, index) {
+async function ensureRemoteProjectForUploads() {
+  if (!authUser) throw new Error("Sign in before uploading photos to Supabase Storage.");
+  const ids = await window.EstateMotionSupabase.saveWorkspace(state, authUser);
+  if (ids.projectId && state.project.id !== ids.projectId) {
+    state = { ...state, project: { ...state.project, id: ids.projectId } };
+  }
+  if (ids.brandKitId && state.brandKit.id !== ids.brandKitId) {
+    state = { ...state, brandKit: { ...state.brandKit, id: ids.brandKitId } };
+  }
+  return ids.projectId || state.project.id;
+}
+
+async function prepareProjectPhoto(file, index, remoteProjectId = "") {
   if (shouldUseLocalPersistence()) {
     const publicUrl = await readFileAsDataUrl(file);
     return { publicUrl, path: "" };
   }
-  const ids = await window.EstateMotionSupabase.saveWorkspace(state, authUser);
-  if (ids.projectId && state.project.id !== ids.projectId) state.project.id = ids.projectId;
-  const path = `${authUser.id}/projects/${state.project.id || "draft"}/${Date.now()}-${index}-${file.name}`;
+  if (!authUser) throw new Error("Sign in before uploading photos to Supabase Storage.");
+  const projectId = remoteProjectId || state.project.id || "draft";
+  const path = `${authUser.id}/projects/${projectId}/${Date.now()}-${index}-${file.name}`;
   return window.EstateMotionSupabase.uploadAsset(file, window.EstateMotionSupabase.buckets.projectPhotos, path);
 }
 
@@ -2113,6 +2129,7 @@ function renderExport() {
   const pack = contentPack();
   const result = buildExportPayload();
   const mp4Ready = !featureFlags.MOCK_RENDERING;
+  const renderUrl = state.exportResult?.mp4Url || state.exportResult?.output || "";
   renderLayout(`
     <div class="screen-title"><p class="eyebrow">Export</p><h2>Content Pack Render</h2><p>${featureFlags.MOCK_RENDERING ? "Mock rendering is enabled. Queue states are real locally; MP4 output falls back to JSON and preview HTML." : "Live rendering is enabled. The app will call the configured render endpoint for MP4 jobs."}</p></div>
     <section class="panel elevated">
@@ -2140,7 +2157,7 @@ function renderExport() {
       <div class="feature-cards">
         <div><strong>Caption</strong><br>${escapeHtml(copy.instagramCaption).replaceAll("\n", "<br>")}</div>
         <div><strong>Hashtags</strong><br>${copy.hashtags.join(" ")}</div>
-        <div><strong>Mock MP4 status</strong><br>${state.exportResult ? "Ready: " + state.exportResult.createdAt : "Ready to export"}</div>
+        <div><strong>MP4 status</strong><br>${state.exportResult ? `Ready: ${state.exportResult.createdAt}${renderUrl ? `<br><a href="${escapeHtml(renderUrl)}" target="_blank" rel="noreferrer">Open rendered MP4</a>` : ""}` : "Ready to export"}</div>
       </div>
     </section>
   `);
@@ -2184,7 +2201,7 @@ function queueContentPack() {
     id: `${item.id}-${Date.now()}`,
     packId: item.id,
     title: item.title,
-    status: item.id === "copy" ? "complete" : "pending",
+    status: item.id === "copy" ? "complete" : "queued",
     format: item.format,
     createdAt: now,
     updatedAt: now,
@@ -2193,16 +2210,102 @@ function queueContentPack() {
   }));
   setState((current) => ({ ...current, loading: "Queueing content pack...", error: "", renderQueue: jobs }));
   showToast("Content pack queued");
+
+  if (!featureFlags.MOCK_RENDERING) {
+    startRealRender(jobs);
+    return;
+  }
+
   setTimeout(() => {
     setState((current) => ({ ...current, loading: "" }));
-    advanceRenderQueue("pending", "rendering");
+    advanceRenderQueue("queued", "rendering");
   }, 700);
   setTimeout(() => {
-    const target = featureFlags.MOCK_RENDERING || featureFlags.RENDER_ENDPOINT ? "complete" : "failed";
-    advanceRenderQueue("rendering", target);
-    if (target === "complete") uploadGeneratedRenderManifest();
-    showToast(target === "complete" ? "Render complete" : "Render failed", target === "complete" ? "success" : "error");
+    advanceRenderQueue("rendering", "complete");
+    uploadGeneratedRenderManifest();
+    showToast("Render complete", "success");
   }, 1900);
+}
+
+async function startRealRender(jobs) {
+  const manifest = {
+    ...buildExportPayload(),
+    renderQueue: jobs
+  };
+  const liveRenderError = validateLiveRenderPhotoUrls(manifest.orderedPhotos || []);
+
+  if (liveRenderError) {
+    const message = liveRenderError;
+    setState((current) => ({
+      ...current,
+      loading: "",
+      error: message,
+      renderQueue: current.renderQueue.map((job) => job.status === "queued" ? { ...job, status: "failed", error: message, updatedAt: new Date().toISOString() } : job)
+    }));
+    showToast("Render failed: public image URLs required", "error");
+    return;
+  }
+
+  try {
+    setState((current) => ({
+      ...current,
+      loading: "Rendering MP4 with EstateMotion render worker...",
+      renderQueue: current.renderQueue.map((job) => job.status === "queued" ? { ...job, status: "rendering", updatedAt: new Date().toISOString() } : job)
+    }));
+
+    const response = await fetch(renderApiEndpoint(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ manifest, jobs, requestedFormat: "vertical" })
+    });
+    const payload = await response.json().catch(() => ({}));
+
+    if (!response.ok || payload.status === "failed") {
+      throw new Error(payload.error || "EstateMotion render worker failed.");
+    }
+
+    const mp4Url = payload.mp4Url || payload.localMp4Path || "";
+    const thumbnailUrl = payload.thumbnailUrl || payload.localThumbnailPath || "";
+    const completedAt = new Date().toLocaleString();
+
+    setState((current) => ({
+      ...current,
+      loading: "",
+      error: payload.storageWarning || "",
+      exportResult: {
+        createdAt: completedAt,
+        output: mp4Url || "Render complete",
+        mp4Url,
+        thumbnailUrl,
+        storagePath: payload.storagePath || "",
+        jobId: payload.jobId || ""
+      },
+      renderQueue: current.renderQueue.map((job) => job.status === "rendering" ? {
+        ...job,
+        status: "complete",
+        updatedAt: new Date().toISOString(),
+        outputPath: payload.storagePath || mp4Url,
+        downloadUrl: mp4Url
+      } : job)
+    }));
+
+    uploadGeneratedRenderManifest();
+    showToast(payload.storageWarning ? "Render complete; storage upload needs Supabase service key" : "MP4 render complete", payload.storageWarning ? "info" : "success");
+  } catch (error) {
+    const message = error.message || "EstateMotion render failed.";
+    setState((current) => ({
+      ...current,
+      loading: "",
+      error: message,
+      renderQueue: current.renderQueue.map((job) => job.status === "rendering" || job.status === "queued" ? {
+        ...job,
+        status: "failed",
+        updatedAt: new Date().toISOString(),
+        error: message
+      } : job)
+    }));
+    showToast("Render failed", "error");
+  }
 }
 
 async function uploadGeneratedRenderManifest() {
@@ -2213,9 +2316,12 @@ async function uploadGeneratedRenderManifest() {
     setState((current) => ({
       ...current,
       exportResult: {
+        ...(current.exportResult || {}),
         createdAt: new Date().toLocaleString(),
-        output: asset.publicUrl,
-        storagePath: asset.path
+        output: current.exportResult?.mp4Url || asset.publicUrl,
+        manifestUrl: asset.publicUrl,
+        manifestStoragePath: asset.path,
+        storagePath: current.exportResult?.storagePath || asset.path
       },
       renderQueue: current.renderQueue.map((job) => job.status === "complete" ? { ...job, outputPath: asset.path } : job)
     }));
@@ -2233,7 +2339,7 @@ function advanceRenderQueue(from, to) {
         ...job,
         status: to,
         updatedAt: new Date().toISOString(),
-        error: to === "failed" ? "No RENDER_ENDPOINT configured while MOCK_RENDERING=false." : ""
+        error: to === "failed" ? "Render worker failed or is not configured." : ""
       };
     })
   }));
@@ -2242,20 +2348,25 @@ function advanceRenderQueue(from, to) {
 function renderQueuePanel() {
   return `
     <section class="panel">
-      <div class="section-title"><p>Render queue</p><h3>Pending / rendering / complete / failed</h3></div>
+      <div class="section-title"><p>Render queue</p><h3>Queued / rendering / complete / failed</h3></div>
       ${state.renderQueue.length ? state.renderQueue.map((job) => `
         <div class="queue-row">
-          <span><strong>${escapeHtml(job.title)}</strong><small>${escapeHtml(job.outputName)}</small></span>
+          <span><strong>${escapeHtml(job.title)}</strong><small>${escapeHtml(job.outputName)}${job.downloadUrl ? ` · <a href="${escapeHtml(job.downloadUrl)}" target="_blank" rel="noreferrer">Download MP4</a>` : ""}${job.error ? ` · ${escapeHtml(job.error)}` : ""}</small></span>
           <b class="${job.status}">${job.status}</b>
         </div>
-      `).join("") : `<p class="muted">No jobs yet. Queue the content pack to simulate rendering states.</p>`}
+      `).join("") : `<p class="muted">No jobs yet. Queue the content pack to start rendering.</p>`}
     </section>
   `;
+}
+
+function renderApiEndpoint() {
+  return featureFlags.RENDER_ENDPOINT || "/api/render";
 }
 
 function buildExportPayload() {
   const copy = aiCopy();
   const scenes = renderManifestScenes();
+  const orderedManifestPhotos = orderedPhotos().map(renderPhotoForManifest);
   return {
     app: "EstateMotion",
     createdAt: new Date().toISOString(),
@@ -2289,7 +2400,7 @@ function buildExportPayload() {
       beatSync: beatSyncPlan(scenes)
     },
     topFeatures: topFeatures(),
-    orderedPhotos: orderedPhotos(),
+    orderedPhotos: orderedManifestPhotos,
     scenes,
     copy,
     contentPack: contentPack(),
@@ -2310,10 +2421,15 @@ function renderManifestScenes() {
   const copy = aiCopy();
   return photos.map((photo, index) => {
     const motion = motionPlanForPhoto(photo, index);
+    const imageUrl = photoRenderUrl(photo);
+    const publicUrl = isLocalOnlyPhotoUrl(imageUrl) ? (photo.publicUrl || photo.public_url || "") : imageUrl;
     return {
       order: index + 1,
       photoId: photo.id,
       fileName: photo.fileName,
+      imageUrl,
+      publicUrl,
+      public_url: publicUrl,
       storagePath: photo.storagePath || "",
       sceneType: motion.sceneType,
       confidence: motion.confidence,
@@ -2331,6 +2447,38 @@ function renderManifestScenes() {
       realismGuardrail: motion.realismGuardrail
     };
   });
+}
+
+function renderPhotoForManifest(photo) {
+  const sourceUrl = photo.publicUrl || photo.public_url || photo.uri || "";
+  const publicUrl = isLocalOnlyPhotoUrl(sourceUrl) ? (photo.publicUrl || photo.public_url || "") : sourceUrl;
+  const renderUrl = publicUrl || sourceUrl;
+  return {
+    ...photo,
+    uri: renderUrl,
+    publicUrl,
+    public_url: publicUrl,
+    imageUrl: renderUrl
+  };
+}
+
+function photoRenderUrl(photo) {
+  const sourceUrl = photo.publicUrl || photo.public_url || photo.uri || "";
+  if (isLocalOnlyPhotoUrl(sourceUrl)) return sourceUrl;
+  return sourceUrl;
+}
+
+function isLocalOnlyPhotoUrl(url) {
+  const value = String(url || "");
+  return value.startsWith("blob:") || value.startsWith("data:");
+}
+
+function validateLiveRenderPhotoUrls(photos) {
+  if (featureFlags.MOCK_RENDERING) return "";
+  const localOnly = photos.filter((photo) => isLocalOnlyPhotoUrl(photoRenderUrl(photo)));
+  if (!localOnly.length) return "";
+  const names = localOnly.slice(0, 3).map((photo) => photo.fileName || photo.id || "unnamed photo").join(", ");
+  return `Live MP4 rendering requires Supabase/public image URLs. ${localOnly.length} photo${localOnly.length === 1 ? "" : "s"} still use blob/data URLs${names ? ` (${names})` : ""}. Switch to Supabase mode and re-upload photos, or set MOCK_RENDERING=true for local demo exports.`;
 }
 
 function beatSyncPlan(scenes) {

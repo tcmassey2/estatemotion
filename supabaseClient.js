@@ -288,11 +288,12 @@
   }
 
   function mapPhotoToRow(photo, projectId, index) {
+    const publicUrl = photo.publicUrl || photo.public_url || photo.uri || "";
     return {
       project_id: projectId,
       client_id: photo.id,
-      storage_path: photo.storagePath || photo.uri,
-      public_url: photo.uri,
+      storage_path: photo.storagePath || publicUrl,
+      public_url: publicUrl,
       file_name: photo.fileName,
       category: photo.category,
       sort_order: index + 1,
@@ -304,6 +305,8 @@
     return {
       id: row.client_id || row.id,
       uri: row.public_url || row.storage_path,
+      publicUrl: row.public_url || "",
+      public_url: row.public_url || "",
       storagePath: row.storage_path,
       fileName: row.file_name,
       size: row.file_size || 0,
