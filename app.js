@@ -118,23 +118,29 @@ const sampleProjects = [
 
 const sceneTypes = [
   "Exterior hero",
-  "Entry transition",
+  "Entry / front door",
   "Kitchen",
   "Living room",
+  "Dining",
   "Primary bedroom",
   "Bathroom",
-  "Backyard",
+  "Backyard / pool",
+  "Neighborhood / amenities",
   "Detail shots"
 ];
 
 const featuredPropertyFlow = [
   "Exterior hero",
-  "Entry transition",
+  "Entry / front door",
+  "Interior reveal",
   "Kitchen",
   "Living room",
+  "Dining",
   "Primary bedroom",
   "Bathroom",
-  "Backyard",
+  "Backyard / pool",
+  "Neighborhood / amenities",
+  "CTA close",
   "Detail shots"
 ];
 
@@ -143,17 +149,83 @@ const hookPresets = {
   "Open House": "Open house this week: step inside this {city} listing",
   Luxury: "Inside a luxury {city} home with standout design",
   "Under $X": "Inside this {city} home under {price}",
-  "Investment Opportunity": "Investment opportunity in {city} with strong buyer appeal"
+  "Investment Opportunity": "Investment opportunity in {city} with strong buyer appeal",
+  "Scottsdale Luxury": "Inside this Scottsdale luxury listing built for desert resort living",
+  "Phoenix Starter Home": "Inside this Phoenix starter home buyers can actually picture themselves in",
+  "Arcadia Family Home": "Arcadia family living with the spaces buyers replay"
 };
 
 const captionTonePresets = {
   Luxury: "Elevated, polished, and cinematic with a premium real estate voice.",
   Friendly: "Warm, approachable, and easy for everyday buyers to understand.",
+  Viral: "Short, curiosity-led, and social-native with fast pattern interrupts.",
   Investor: "Numbers-aware, opportunity-focused, and direct.",
-  "First-time buyer": "Clear, encouraging, and focused on value and livability."
+  "First-time buyer": "Clear, encouraging, and focused on value and livability.",
+  "Local agent mode": "Neighborhood-specific, agent-led, and grounded in local market language."
 };
 
-const ctaPresets = ["DM for price", "Tour this home", "Ask for details", "Schedule showing"];
+const ctaPresets = ["DM for price", "Book a showing", "Schedule private tour", "Tour this home", "Ask for details", "Schedule showing"];
+
+const sceneIntelligence = {
+  "Exterior hero": {
+    keywords: ["exterior", "front", "curb", "street", "hero", "facade", "elevation"],
+    suggestedMotion: "Depth zoom",
+    overlay: "Curb appeal opener"
+  },
+  "Entry / front door": {
+    keywords: ["entry", "foyer", "door", "front-door", "hall", "arrival", "porch"],
+    suggestedMotion: "Push-in",
+    overlay: "Step inside"
+  },
+  Kitchen: {
+    keywords: ["kitchen", "island", "pantry", "cabinet", "range", "counter"],
+    suggestedMotion: "Slow pan",
+    overlay: "Kitchen spotlight"
+  },
+  "Living room": {
+    keywords: ["living", "great", "family", "lounge", "fireplace"],
+    suggestedMotion: "Pull-out",
+    overlay: "Main living reveal"
+  },
+  Dining: {
+    keywords: ["dining", "breakfast", "nook", "table"],
+    suggestedMotion: "Slow pan",
+    overlay: "Dining moment"
+  },
+  "Primary bedroom": {
+    keywords: ["primary", "master", "bedroom", "suite"],
+    suggestedMotion: "Push-in",
+    overlay: "Primary suite"
+  },
+  Bathroom: {
+    keywords: ["bath", "vanity", "shower", "tub", "powder"],
+    suggestedMotion: "Vertical social framing",
+    overlay: "Bath detail"
+  },
+  "Backyard / pool": {
+    keywords: ["yard", "pool", "patio", "garden", "terrace", "balcony", "outdoor", "spa"],
+    suggestedMotion: "Orbit simulation",
+    overlay: "Outdoor lifestyle"
+  },
+  "Neighborhood / amenities": {
+    keywords: ["neighborhood", "amenity", "club", "park", "community", "view", "mountain", "golf"],
+    suggestedMotion: "Slow pan",
+    overlay: "Neighborhood context"
+  },
+  "Detail shots": {
+    keywords: ["detail", "fixture", "finish", "tile", "hardware", "lighting"],
+    suggestedMotion: "Depth zoom",
+    overlay: "Design detail"
+  }
+};
+
+const motionSystems = {
+  Luxury: { defaultMotion: "Depth zoom", tempo: "slow cinematic", baseDuration: 2.4, transition: "soft dissolve", beatEvery: 2 },
+  Viral: { defaultMotion: "Push-in", tempo: "punchy cuts", baseDuration: 1.25, transition: "snap cut", beatEvery: 1 },
+  "Open House": { defaultMotion: "Pull-out", tempo: "energetic invite", baseDuration: 1.55, transition: "whip reveal", beatEvery: 1 },
+  Investor: { defaultMotion: "Slow pan", tempo: "strategic proof", baseDuration: 1.9, transition: "clean cut", beatEvery: 2 },
+  "First-time buyer": { defaultMotion: "Push-in", tempo: "approachable tour", baseDuration: 1.75, transition: "friendly slide", beatEvery: 2 }
+};
 
 const reelThemes = [
   {
@@ -627,6 +699,16 @@ function analyticsSummary() {
     return counts;
   }, {});
   const mostClicked = Object.entries(pricingCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "None yet";
+  const templateCounts = events.filter((event) => event.type === "template_select").reduce((counts, event) => {
+    const templateId = event.metadata.templateId ?? "Unknown";
+    counts[templateId] = (counts[templateId] ?? 0) + 1;
+    return counts;
+  }, {});
+  const hookCounts = events.filter((event) => event.type === "hook_preset_apply").reduce((counts, event) => {
+    const preset = event.metadata.preset ?? "Unknown";
+    counts[preset] = (counts[preset] ?? 0) + 1;
+    return counts;
+  }, {});
   const visits = events.filter((event) => event.type === "demo_visit").length;
   const leads = state.leads.length;
   const leadSubmissions = events.filter((event) => event.type === "early_access_submit").length;
@@ -636,7 +718,9 @@ function analyticsSummary() {
     leads,
     conversionRate: visits ? Math.min(100, Math.round((leadSubmissions / visits) * 100)) : 0,
     mostClicked,
-    exportIntent
+    exportIntent,
+    mostUsedTemplate: Object.entries(templateCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "None yet",
+    mostUsedHook: Object.entries(hookCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "None yet"
   };
 }
 
@@ -775,26 +859,58 @@ function orderedPhotos() {
 }
 
 function categorizePhoto(fileName) {
-  const name = fileName.toLowerCase();
-  if (/(exterior|front|curb|street|hero)/.test(name)) return "Exterior hero";
-  if (/(entry|foyer|door|hall|transition)/.test(name)) return "Entry transition";
-  if (/(kitchen|island|pantry)/.test(name)) return "Kitchen";
-  if (/(living|great|family|lounge)/.test(name)) return "Living room";
-  if (/(primary|master|bedroom|suite)/.test(name)) return "Primary bedroom";
-  if (/(bath|vanity|shower|tub)/.test(name)) return "Bathroom";
-  if (/(yard|pool|patio|garden|terrace|balcony)/.test(name)) return "Backyard";
-  return "Detail shots";
+  return classifyPhoto(fileName).category;
+}
+
+function classifyPhoto(fileName, index = 0) {
+  const name = String(fileName || "").toLowerCase().replaceAll("_", "-");
+  const scores = Object.entries(sceneIntelligence).map(([category, config]) => {
+    const keywordHits = config.keywords.filter((keyword) => name.includes(keyword)).length;
+    const orderBoost = sceneOrderBoost(category, index);
+    const base = category === "Detail shots" ? 0.24 : 0.18;
+    const score = Math.min(0.97, base + keywordHits * 0.28 + orderBoost);
+    return { category, score };
+  }).sort((a, b) => b.score - a.score);
+  const winner = scores[0] ?? { category: "Detail shots", score: 0.5 };
+  const alternatives = scores.slice(1, 3).map((item) => item.category);
+  return {
+    category: winner.category,
+    confidence: Math.round(winner.score * 100),
+    suggestedCorrections: alternatives,
+    intelligence: sceneIntelligence[winner.category]
+  };
+}
+
+function sceneOrderBoost(category, index) {
+  if (index === 0 && category === "Exterior hero") return 0.24;
+  if (index === 1 && category === "Entry / front door") return 0.16;
+  if (index >= 2 && index <= 4 && ["Kitchen", "Living room", "Dining"].includes(category)) return 0.08;
+  if (index >= 5 && ["Primary bedroom", "Bathroom", "Backyard / pool"].includes(category)) return 0.06;
+  return 0;
 }
 
 function sceneLabel(category) {
   if (category === "Exterior") return "Exterior hero";
+  if (category === "Entry transition") return "Entry / front door";
+  if (category === "Backyard") return "Backyard / pool";
+  if (category === "Interior reveal") return "Living room";
+  if (category === "CTA close") return "Detail shots";
   return category;
+}
+
+function sceneConfidence(photo) {
+  return Math.max(35, Math.min(99, Number(photo.confidence ?? classifyPhoto(photo.fileName, photo.order - 1).confidence)));
+}
+
+function sceneSuggestions(photo) {
+  return photo.suggestedCorrections?.length ? photo.suggestedCorrections : classifyPhoto(photo.fileName, photo.order - 1).suggestedCorrections;
 }
 
 function applyHookPreset(preset) {
   const template = hookPresets[preset];
   if (!template) return;
   const hook = template.replace("{city}", state.project.city || "this market").replace("{price}", state.project.price || "$X");
+  trackEvent("hook_preset_apply", { preset });
   setState((current) => ({ ...current, project: { ...current.project, hookPreset: preset, hookText: hook } }));
   showToast(`${preset} hook applied`);
 }
@@ -894,8 +1010,13 @@ function contentPack() {
   return [
     { id: "full", title: "Full Property Reel", format: "9:16", duration: 28, hook: copy.hook, photoIds: photos.map((photo) => photo.id) },
     { id: "kitchen", title: "Kitchen Highlight", format: "9:16", duration: 12, hook: "The kitchen buyers will replay", photoIds: byCategory(["Kitchen", "Detail shots", "Living room"]) },
-    { id: "curb", title: "Exterior Curb Appeal Reel", format: "1:1", duration: 10, hook: `${state.project.city} curb appeal in one glance`, photoIds: byCategory(["Exterior hero", "Backyard"]) },
-    { id: "story", title: "Open House Story", format: "9:16 Story", duration: 15, hook: state.project.listingType === "Open House" ? "Open house this week" : "Tour this listing", photoIds: byCategory(["Exterior hero", "Entry transition", "Kitchen", "Living room"]) },
+    { id: "curb", title: "Exterior Curb Appeal Reel", format: "1:1", duration: 10, hook: `${state.project.city} curb appeal in one glance`, photoIds: byCategory(["Exterior hero", "Backyard / pool", "Neighborhood / amenities"]) },
+    { id: "story", title: "Open House Story", format: "9:16 Story", duration: 15, hook: state.project.listingType === "Open House" ? "Open house this week" : "Tour this listing", photoIds: byCategory(["Exterior hero", "Entry / front door", "Kitchen", "Living room"]) },
+    { id: "top3", title: "Top 3 Features Reel", format: "9:16", duration: 18, hook: "3 things buyers will notice first", photoIds: photos.filter((photo) => ["Kitchen", "Living room", "Primary bedroom", "Backyard / pool"].includes(sceneLabel(photo.category))).slice(0, 5).map((photo) => photo.id) },
+    { id: "neighborhood", title: "Neighborhood Teaser", format: "9:16", duration: 12, hook: `${state.project.neighborhood || state.project.city} lifestyle in under 15 seconds`, photoIds: byCategory(["Neighborhood / amenities", "Exterior hero", "Backyard / pool"]) },
+    { id: "investor", title: "Investor Angle", format: "1:1", duration: 16, hook: "The buyer-demand angle investors should see", photoIds: photos.slice(0, 6).map((photo) => photo.id) },
+    { id: "luxury", title: "Luxury Angle", format: "16:9", duration: 22, hook: copy.hook, photoIds: photos.filter((photo) => sceneConfidence(photo) >= 65).map((photo) => photo.id) },
+    { id: "viral", title: "Viral Social Angle", format: "9:16", duration: 11, hook: "Would you live here?", photoIds: photos.slice(0, 5).map((photo) => photo.id) },
     { id: "copy", title: "Caption + Hashtags", format: "Text", duration: 0, hook: copy.instagramCaption, photoIds: [] }
   ];
 }
@@ -1373,11 +1494,21 @@ function renderUpload() {
     </label>
     <div class="actions">
       <button class="primary" data-add-more type="button">Add More Photos</button>
-      <button class="secondary" data-featured-flow>Featured Property Flow</button>
-      <button class="secondary" data-sort>AI sort photos</button>
+      <button class="secondary" data-featured-flow>Best Listing Flow</button>
+      <button class="secondary" data-sort>Magic Sort Intelligence</button>
       <button class="ghost" data-demo>Add demo photos</button>
       <button class="primary" data-next="details">Continue to details</button>
     </div>
+    <section class="panel engine-panel">
+      <div class="section-title"><p>Reel-E style workflow engine</p><h3>Smart scene intelligence</h3></div>
+      <div class="engine-grid">
+        ${engineMetric("Avg confidence", `${averageConfidence(photos)}%`)}
+        ${engineMetric("Scene types found", new Set(photos.map((photo) => sceneLabel(photo.category))).size || 0)}
+        ${engineMetric("Motion system", selectedMotionSystem().tempo)}
+        ${engineMetric("Render-ready scenes", photos.length)}
+      </div>
+      <p class="muted">Magic Sort uses filename, order, and real estate scene logic to suggest a listing flow. Manual overrides stay available for accuracy.</p>
+    </section>
     <section class="photo-grid">
       ${photos.length ? photos.map((photo, index) => photoCard(photo, index)).join("") : emptyState("No photos selected", "Choose listing photos or add demo photos to continue.")}
     </section>
@@ -1396,11 +1527,24 @@ function renderUpload() {
   bindPhotoControls();
 }
 
+function averageConfidence(photos) {
+  if (!photos.length) return 0;
+  return Math.round(photos.reduce((sum, photo) => sum + sceneConfidence(photo), 0) / photos.length);
+}
+
+function engineMetric(label, value) {
+  return `<article><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></article>`;
+}
+
 function photoCard(photo, index) {
+  const confidence = sceneConfidence(photo);
+  const suggestions = sceneSuggestions(photo).filter((item) => item !== sceneLabel(photo.category)).slice(0, 2);
   return `
     <article class="photo-card" draggable="true" data-photo-id="${photo.id}">
       <div class="photo-thumb"><img src="${photo.uri}" alt=""></div>
       <div class="photo-meta"><span>${index + 1}. ${escapeHtml(sceneLabel(photo.category))}</span><span>${escapeHtml(photo.fileName)}</span></div>
+      <div class="confidence-row"><span>${confidence}% confidence</span><b>${confidence >= 78 ? "Strong match" : "Review suggested"}</b></div>
+      ${suggestions.length ? `<div class="suggestion-row"><span>Suggested:</span>${suggestions.map((suggestion) => `<button data-suggest-photo="${photo.id}" data-suggest-category="${escapeAttr(suggestion)}">${escapeHtml(suggestion)}</button>`).join("")}</div>` : ""}
       <label class="photo-type-select">
         <span>Scene type</span>
         <select data-photo-type="${photo.id}">
@@ -1454,15 +1598,20 @@ async function processSelectedFiles(selectedFiles) {
   setState({ loading: featureFlags.MOCK_SUPABASE ? "Preparing uploaded photos..." : "Uploading photos to Supabase Storage...", error: "" });
   try {
     const uploadedAssets = await Promise.all(uniqueFiles.map((file, index) => prepareProjectPhoto(file, index)));
-    const uploadedPhotos = uniqueFiles.map((file, index) => ({
-      id: `local-${Date.now()}-${index}`,
-      uri: uploadedAssets[index].publicUrl,
-      storagePath: uploadedAssets[index].path,
-      fileName: file.name,
-      size: file.size,
-      category: categorizePhoto(file.name),
-      order: currentPhotos.length + index + 1
-    }));
+    const uploadedPhotos = uniqueFiles.map((file, index) => {
+      const classification = classifyPhoto(file.name, currentPhotos.length + index);
+      return {
+        id: `local-${Date.now()}-${index}`,
+        uri: uploadedAssets[index].publicUrl,
+        storagePath: uploadedAssets[index].path,
+        fileName: file.name,
+        size: file.size,
+        category: classification.category,
+        confidence: classification.confidence,
+        suggestedCorrections: classification.suggestedCorrections,
+        order: currentPhotos.length + index + 1
+      };
+    });
     setState((current) => {
       const existing = [...current.project.photos].sort((a, b) => a.order - b.order);
       const photos = [...existing, ...uploadedPhotos].map((photo, index) => ({ ...photo, order: index + 1 }));
@@ -1569,10 +1718,13 @@ function bindPhotoControls() {
       setState((current) => ({ ...current, project: { ...current.project, photos } }));
     });
   });
+  document.querySelectorAll("[data-suggest-photo]").forEach((button) => {
+    button.addEventListener("click", () => updatePhotoType(button.dataset.suggestPhoto, button.dataset.suggestCategory));
+  });
 }
 
 function updatePhotoType(id, category) {
-  const photos = orderedPhotos().map((photo) => photo.id === id ? { ...photo, category } : photo);
+  const photos = orderedPhotos().map((photo) => photo.id === id ? { ...photo, category, confidence: 100, suggestedCorrections: [] } : photo);
   setState((current) => ({ ...current, project: { ...current.project, photos } }));
   showToast("Photo scene type updated");
 }
@@ -1620,7 +1772,7 @@ function movePhoto(id, direction) {
 }
 
 function sortPhotos() {
-  const photos = [...state.project.photos].sort((a, b) => featuredPropertyFlow.indexOf(sceneLabel(a.category)) - featuredPropertyFlow.indexOf(sceneLabel(b.category)) || a.order - b.order).map((photo, index) => ({ ...photo, order: index + 1 }));
+  const photos = [...state.project.photos].sort((a, b) => flowRank(sceneLabel(a.category)) - flowRank(sceneLabel(b.category)) || sceneConfidence(b) - sceneConfidence(a) || a.order - b.order).map((photo, index) => ({ ...photo, order: index + 1 }));
   setState((current) => ({ ...current, project: { ...current.project, photos } }));
   showToast("Photos sorted for a real estate reel");
 }
@@ -1640,7 +1792,13 @@ function applyFeaturedPropertyFlow() {
     if (!used.has(photo.id)) ordered.push(photo);
   });
   setState((current) => ({ ...current, project: { ...current.project, photos: ordered.map((photo, order) => ({ ...photo, order: order + 1 })) } }));
-  showToast("Featured Property Flow applied");
+  showToast("Best Listing Flow applied");
+}
+
+function flowRank(category) {
+  const normalized = sceneLabel(category);
+  const index = featuredPropertyFlow.findIndex((item) => sceneLabel(item) === normalized || item === normalized);
+  return index === -1 ? 999 : index;
 }
 
 function renderDetails() {
@@ -1719,7 +1877,10 @@ function renderTemplate() {
     button.addEventListener("click", () => updateProject("reelTheme", button.dataset.reelTheme));
   });
   document.querySelector("[data-generate-variations]").addEventListener("click", generateReelVariations);
-  document.querySelectorAll("[data-template]").forEach((button) => button.addEventListener("click", () => setState({ selectedTemplateId: button.dataset.template })));
+  document.querySelectorAll("[data-template]").forEach((button) => button.addEventListener("click", () => {
+    trackEvent("template_select", { templateId: button.dataset.template });
+    setState({ selectedTemplateId: button.dataset.template });
+  }));
   document.querySelector("[data-next]").addEventListener("click", () => guard(validateProjectBasics() || validatePhotos() || validateTemplate(), () => navigate("preview")));
 }
 
@@ -1731,19 +1892,23 @@ function renderPreview() {
   const theme = selectedReelTheme();
   const currentSceneLabel = sceneBeatLabel(photo, state.selectedScene, photos.length);
   const pacing = reelPacing(photos);
+  const currentPlan = pacing[state.selectedScene] ?? motionPlanForPhoto(photo, state.selectedScene);
   renderLayout(`
     <div class="screen-title"><p class="eyebrow">${template.name}</p><h2>Preview Video</h2><p>Scene ${Math.min(state.selectedScene + 1, photos.length)} of ${photos.length}. This is a deterministic local render preview.</p></div>
     ${photos.length ? `<section class="preview-grid">
       ${reelStage(photo, copy, template, state.selectedScene, photos.length)}
       <aside class="preview-inspector panel">
         <div class="section-title"><p>${currentSceneLabel}</p><h3>${escapeHtml(sceneLabel(photo.category))}</h3></div>
-        <p class="muted">${escapeHtml(photo.fileName)} plays as a ${pacing[state.selectedScene]?.duration ?? "2.0"}s ${pacing[state.selectedScene]?.move ?? "push-in"} beat with ${template.transitionStyle} transition styling.</p>
+        <p class="muted">${escapeHtml(photo.fileName)} plays as a ${currentPlan.duration}s ${currentPlan.motionStyle} beat with ${currentPlan.transition} transition styling. Depth simulation preserves property integrity with no hallucinated rooms.</p>
         <div class="metric-row"><span>Theme</span><b>${escapeHtml(theme.name)}</b></div>
         <div class="metric-row"><span>Animation</span><b>${escapeHtml(state.project.textAnimation)}</b></div>
         <div class="metric-row"><span>Music</span><b>${escapeHtml(state.project.musicMood)}</b></div>
+        <div class="metric-row"><span>Motion</span><b>${escapeHtml(currentPlan.motionStyle)}</b></div>
+        <div class="metric-row"><span>Depth</span><b>${escapeHtml(currentPlan.depthModel)}</b></div>
+        <div class="metric-row"><span>Beat</span><b>${escapeHtml(currentPlan.beatMarker)}</b></div>
         <div class="metric-row"><span>Format</span><b>9:16</b></div>
         <div class="metric-row"><span>Text</span><b>${template.textPlacement}</b></div>
-        <div class="metric-row"><span>Pacing</span><b>${pacing[state.selectedScene]?.duration ?? "2.0"}s</b></div>
+        <div class="metric-row"><span>Pacing</span><b>${currentPlan.duration}s</b></div>
         <div class="metric-row"><span>CTA</span><b>${escapeHtml(template.ctaWording)}</b></div>
       </aside>
     </section>` : emptyState("Preview needs photos", "Upload at least 3 listing photos to preview the reel.")}
@@ -1777,7 +1942,7 @@ function renderPreview() {
     </section>
     <section class="panel timeline">
       <div class="section-title"><p>Sequence</p><h3>Ordered scenes</h3></div>
-      ${photos.length ? photos.map((item, index) => `<button class="timeline-row" data-jump="${index}"><img src="${item.uri}" alt=""><span><strong>${index + 1}. ${escapeHtml(sceneLabel(item.category))}</strong><br><span class="muted">${pacing[index]?.duration ?? "2.0"}s - ${escapeHtml(item.fileName)}</span></span></button>`).join("") : emptyState("No sequence yet", "Photos appear here after upload.")}
+      ${photos.length ? photos.map((item, index) => `<button class="timeline-row" data-jump="${index}"><img src="${item.uri}" alt=""><span><strong>${index + 1}. ${escapeHtml(sceneLabel(item.category))}</strong><br><span class="muted">${pacing[index]?.duration ?? "2.0"}s - ${escapeHtml(pacing[index]?.motionStyle ?? "Push-in")} - ${escapeHtml(item.fileName)}</span></span></button>`).join("") : emptyState("No sequence yet", "Photos appear here after upload.")}
     </section>
   `);
   document.querySelectorAll("[data-scene]").forEach((button) => {
@@ -1795,7 +1960,7 @@ function reelStage(photo, copy, template, index = 0, total = 1) {
   const pacing = reelPacing(orderedPhotos())[index] ?? { move: "push-in", duration: "2.0" };
   const theme = selectedReelTheme();
   return `
-    <section class="reel-stage reel-${pacing.move} text-${slug(state.project.textAnimation)}" style="border-color:${theme.accent};--reel-accent:${theme.accent};--reel-bg:${theme.background}">
+    <section class="reel-stage reel-${slug(pacing.move)} text-${slug(state.project.textAnimation)}" style="border-color:${theme.accent};--reel-accent:${theme.accent};--reel-bg:${theme.background}">
       <img src="${photo.uri}" alt="">
       <div class="reel-overlay">
         <div class="intro-card">
@@ -1822,14 +1987,57 @@ function sceneBeatLabel(photo, index, total) {
 }
 
 function reelPacing(photos) {
-  return photos.map((photo, index) => {
-    const category = sceneLabel(photo.category);
-    if (index === 0) return { duration: "1.8", move: "hero-push" };
-    if (category === "Entry transition") return { duration: "1.2", move: "whip" };
-    if (["Kitchen", "Living room"].includes(category)) return { duration: "2.1", move: "slow-pan" };
-    if (["Primary bedroom", "Backyard"].includes(category)) return { duration: "1.9", move: "lift" };
-    return { duration: "1.5", move: "cut" };
-  });
+  return photos.map((photo, index) => motionPlanForPhoto(photo, index));
+}
+
+function selectedMotionSystem() {
+  if (state.project.captionTone === "Viral") return motionSystems.Viral;
+  if (state.project.captionTone === "Investor" || state.project.reelTheme === "investor-cash-flow") return motionSystems.Investor;
+  if (state.project.listingType === "Open House" || state.project.reelTheme === "open-house-fast-cut") return motionSystems["Open House"];
+  if (state.project.captionTone === "First-time buyer" || state.project.reelTheme === "first-time-buyer-friendly") return motionSystems["First-time buyer"];
+  return motionSystems.Luxury;
+}
+
+function motionPlanForPhoto(photo, index = 0) {
+  const category = sceneLabel(photo?.category ?? "Detail shots");
+  const system = selectedMotionSystem();
+  const intelligence = sceneIntelligence[category] ?? sceneIntelligence["Detail shots"];
+  const motionStyle = index === 0 ? "Depth zoom" : intelligence.suggestedMotion || system.defaultMotion;
+  const duration = Math.max(1.05, system.baseDuration + sceneDurationAdjustment(category, index)).toFixed(2);
+  const beatIndex = index + 1;
+  return {
+    sceneId: photo?.id,
+    sceneType: category,
+    confidence: sceneConfidence(photo ?? { fileName: "", order: index + 1 }),
+    motionStyle,
+    move: motionToClass(motionStyle),
+    duration,
+    transition: system.transition,
+    beatMarker: `Beat ${beatIndex}${beatIndex % system.beatEvery === 0 ? " / transition accent" : ""}`,
+    musicPacing: system.tempo,
+    depthModel: ["Exterior hero", "Backyard / pool", "Living room"].includes(category) ? "layered parallax" : "subtle monocular depth",
+    realismGuardrail: "Preserve exact property geometry; no hallucinated rooms, windows, furniture, or warped architecture.",
+    overlayText: intelligence.overlay
+  };
+}
+
+function sceneDurationAdjustment(category, index) {
+  if (index === 0) return 0.35;
+  if (["Kitchen", "Living room", "Backyard / pool"].includes(category)) return 0.18;
+  if (["Detail shots", "Bathroom"].includes(category)) return -0.25;
+  return 0;
+}
+
+function motionToClass(motionStyle) {
+  const map = {
+    "Push-in": "push-in",
+    "Pull-out": "pull-out",
+    "Slow pan": "slow-pan",
+    "Depth zoom": "depth-zoom",
+    "Orbit simulation": "orbit-simulation",
+    "Vertical social framing": "vertical-social-framing"
+  };
+  return map[motionStyle] ?? "push-in";
 }
 
 function renderEdit() {
@@ -1908,7 +2116,7 @@ function renderExport() {
   renderLayout(`
     <div class="screen-title"><p class="eyebrow">Export</p><h2>Content Pack Render</h2><p>${featureFlags.MOCK_RENDERING ? "Mock rendering is enabled. Queue states are real locally; MP4 output falls back to JSON and preview HTML." : "Live rendering is enabled. The app will call the configured render endpoint for MP4 jobs."}</p></div>
     <section class="panel elevated">
-      <div class="section-title"><p>Content Pack</p><h3>5 deliverables</h3></div>
+      <div class="section-title"><p>Content Pack</p><h3>${pack.length} deliverables</h3></div>
       <div class="pack-grid">${pack.map((item) => contentPackCard(item)).join("")}</div>
       <div class="actions">
         <button class="primary" data-queue-pack>${mp4Ready ? "Queue MP4 content pack" : "Queue mock content pack"}</button>
@@ -1971,7 +2179,7 @@ function queueContentPack() {
     return;
   }
   const now = new Date().toISOString();
-  trackEvent("queue_content_pack", { mockRendering: featureFlags.MOCK_RENDERING });
+  trackEvent("queue_content_pack", { mockRendering: featureFlags.MOCK_RENDERING, exportTypes: contentPack().map((item) => item.id), templateId: state.selectedTemplateId });
   const jobs = contentPack().map((item) => ({
     id: `${item.id}-${Date.now()}`,
     packId: item.id,
@@ -2047,10 +2255,11 @@ function renderQueuePanel() {
 
 function buildExportPayload() {
   const copy = aiCopy();
+  const scenes = renderManifestScenes();
   return {
     app: "EstateMotion",
     createdAt: new Date().toISOString(),
-    limitation: "Local MVP export. MP4 rendering is mocked; use this manifest for a backend FFmpeg/Remotion worker.",
+    limitation: "Static MVP export. MP4 rendering may be mocked; this manifest is structured for a Remotion/FFmpeg render worker.",
     project: state.project,
     brandKit: state.brandKit,
     compliance: {
@@ -2064,15 +2273,24 @@ function buildExportPayload() {
     renderQueue: state.renderQueue,
     template: selectedTemplate(),
     reelTheme: selectedReelTheme(),
+    formats: [
+      { id: "vertical", label: "9:16 Reels/TikTok/Shorts", width: 1080, height: 1920, branded: true },
+      { id: "square", label: "1:1 Instagram", width: 1080, height: 1080, branded: true },
+      { id: "wide", label: "16:9 YouTube/web", width: 1920, height: 1080, branded: true },
+      { id: "mls", label: "MLS-compliant", width: 1920, height: 1080, branded: false }
+    ],
     creative: {
       textAnimation: state.project.textAnimation,
       musicMood: state.project.musicMood,
       outroVariation: state.project.outroVariation,
       thumbnailPreset: state.project.thumbnailPreset,
-      reelVariations: state.project.reelVariations
+      reelVariations: state.project.reelVariations,
+      motionSystem: selectedMotionSystem(),
+      beatSync: beatSyncPlan(scenes)
     },
     topFeatures: topFeatures(),
     orderedPhotos: orderedPhotos(),
+    scenes,
     copy,
     contentPack: contentPack(),
     renderPlan: [
@@ -2084,6 +2302,48 @@ function buildExportPayload() {
       "Add personal brand end card",
       "Export MP4, thumbnail, caption, hashtags"
     ]
+  };
+}
+
+function renderManifestScenes() {
+  const photos = orderedPhotos();
+  const copy = aiCopy();
+  return photos.map((photo, index) => {
+    const motion = motionPlanForPhoto(photo, index);
+    return {
+      order: index + 1,
+      photoId: photo.id,
+      fileName: photo.fileName,
+      storagePath: photo.storagePath || "",
+      sceneType: motion.sceneType,
+      confidence: motion.confidence,
+      suggestedCorrections: sceneSuggestions(photo),
+      duration: Number(motion.duration),
+      motionStyle: motion.motionStyle,
+      depthModel: motion.depthModel,
+      transition: motion.transition,
+      beatMarker: motion.beatMarker,
+      overlayText: index === 0 ? copy.hook : motion.overlayText,
+      featureCard: topFeatures()[index % Math.max(1, topFeatures().length)] || "",
+      branding: index === photos.length - 1 ? "Personal brand end card" : "Subtle lower-third safe area",
+      cta: index === photos.length - 1 ? state.project.cta : "",
+      complianceFooter: state.brandKit.complianceEnabled ? state.brandKit.listingCourtesyOf : "",
+      realismGuardrail: motion.realismGuardrail
+    };
+  });
+}
+
+function beatSyncPlan(scenes) {
+  const totalDuration = scenes.reduce((sum, scene) => sum + Number(scene.duration || 0), 0);
+  return {
+    musicMood: state.project.musicMood,
+    pacingSystem: selectedMotionSystem().tempo,
+    totalDuration: Number(totalDuration.toFixed(2)),
+    markers: scenes.map((scene, index) => ({
+      time: Number(scenes.slice(0, index).reduce((sum, item) => sum + Number(item.duration || 0), 0).toFixed(2)),
+      label: scene.beatMarker,
+      transition: scene.transition
+    }))
   };
 }
 
@@ -2175,6 +2435,8 @@ function renderAnalytics() {
       ${metricCard("Conversion rate", `${summary.conversionRate}%`)}
       ${metricCard("Most clicked pricing option", summary.mostClicked)}
       ${metricCard("Export intent count", summary.exportIntent)}
+      ${metricCard("Most used template", summary.mostUsedTemplate)}
+      ${metricCard("Most used hook", summary.mostUsedHook)}
     </section>
     <section class="panel">
       <div class="section-title"><p>Pricing clicks</p><h3>${pricingEvents.length} total</h3></div>
