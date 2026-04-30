@@ -1016,8 +1016,31 @@ function leadField(label, key, options = {}) {
 
 function renderLayout(content) {
   const stepLabel = state.screen === "pricing" ? "Pricing" : screenToStep(state.screen) > 0 ? `Step ${screenToStep(state.screen)} of 9` : "MVP v2";
+  const navItems = [
+    { screen: "demo", label: "Launch" },
+    { screen: "dashboard", label: "Studio" },
+    { screen: "create", label: "Project" },
+    { screen: "analytics", label: "Signals" },
+    { screen: "export", label: "Exports" }
+  ];
   app.innerHTML = `
     <main class="app">
+      <aside class="side-nav">
+        <div class="side-brand">
+          <span>EM</span>
+          <div>
+            <strong>EstateMotion</strong>
+            <small>AI listing media studio</small>
+          </div>
+        </div>
+        <nav>
+          ${navItems.map((item) => `<button class="${state.screen === item.screen ? "active" : ""}" data-nav="${item.screen}"><span>${item.label}</span><small>${item.screen === "dashboard" ? "Reel command" : item.screen === "demo" ? "Acquisition" : item.screen === "create" ? "Listing setup" : item.screen === "analytics" ? "Validation" : "Handoff"}</small></button>`).join("")}
+        </nav>
+        <div class="side-proof">
+          <span>Positioning</span>
+          <strong>Built for agents who sell status, speed, and story.</strong>
+        </div>
+      </aside>
       <header class="topbar">
         <div class="brand">
           <p>EstateMotion</p>
@@ -1039,7 +1062,7 @@ function renderLayout(content) {
         ${content}
       </section>
       <nav class="bottom-nav">
-        ${["demo", "dashboard", "create", "analytics", "export"].map((screen) => `<button class="${state.screen === screen ? "active" : ""}" data-nav="${screen}">${screen === "create" ? "Project" : screen === "export" ? "Results" : screen === "demo" ? "Demo" : screen === "analytics" ? "Stats" : capitalize(screen)}</button>`).join("")}
+        ${navItems.map((item) => `<button class="${state.screen === item.screen ? "active" : ""}" data-nav="${item.screen}">${item.label}</button>`).join("")}
       </nav>
       <div class="toast-stack">${state.toasts.map((toast) => `<div class="toast ${toast.type}">${escapeHtml(toast.message)}</div>`).join("")}</div>
     </main>
@@ -1072,10 +1095,10 @@ function renderDashboard() {
   const hasPhotos = orderedPhotos().length > 0;
   const showcase = selectedShowcase();
   renderLayout(`
-    <div class="screen-title">
-      <p class="eyebrow">${state.user.subscriptionStatus} workspace</p>
-      <h2>Dashboard</h2>
-      <p>One working local project is persisted in this browser. Create, upload, preview, edit, queue renders, and export a content pack.</p>
+    <div class="screen-title dashboard-title">
+      <p class="eyebrow">${state.user.subscriptionStatus} workspace / Scottsdale-ready launch system</p>
+      <h2>Listing content command center.</h2>
+      <p>Turn real listing photography into premium reels, captions, compliance-ready assets, and brokerage-grade content packs.</p>
     </div>
     <section class="hero-card elevated">
       <img src="${photo.uri}" alt="">
@@ -1090,6 +1113,22 @@ function renderDashboard() {
       <button class="primary" data-action="continue">Continue project</button>
       <button class="secondary" data-action="new">New demo project</button>
     </div>
+    <section class="luxury-metrics">
+      ${metricCard("Assets in pack", pack.length)}
+      ${metricCard("Photos sequenced", orderedPhotos().length)}
+      ${metricCard("Export intent", analyticsSummary().exportIntent)}
+      ${metricCard("Credits", state.user.creditBalance)}
+    </section>
+    <section class="panel brand-authority">
+      <div class="section-title"><p>Agent authority layer</p><h3>${escapeHtml(state.brandKit.name)} / ${escapeHtml(state.brandKit.brokerage)}</h3></div>
+      <p class="muted">Every reel closes with personal brand authority, brokerage trust, clean compliance language, and a social-first CTA built for high-intent DMs.</p>
+      <div class="authority-grid">
+        <span>Brokerage trust</span>
+        <span>Luxury pacing</span>
+        <span>AI copy system</span>
+        <span>Social conversion</span>
+      </div>
+    </section>
     <section class="panel showcase-section">
       <div class="section-title"><p>Internal Showcase Mode</p><h3>Showcase Projects</h3></div>
       <p class="muted">Prebuilt, presentation-ready listings for sales calls, partner meetings, and founder-led validation.</p>
@@ -1164,12 +1203,30 @@ function renderDemoLanding() {
   trackDemoVisitOnce();
   renderLayout(`
     <section class="demo-hero panel elevated">
-      <p class="eyebrow">Founder validation</p>
+      <p class="eyebrow">Luxury AI content platform for modern agents</p>
       <h2>AI listing reels for real estate agents in minutes.</h2>
-      <p>EstateMotion helps agents turn real listing photos into branded reels, captions, and launch-ready content packs without editing software.</p>
+      <p>EstateMotion turns real listing photography into premium, branded short-form content packs for ambitious agents, teams, and brokerages that want status and scale.</p>
       <div class="actions">
         <button class="primary" data-nav="dashboard">Open product demo</button>
         <button class="secondary" data-scroll-leads>Request early access</button>
+      </div>
+    </section>
+    <section class="luxury-metrics">
+      ${metricCard("Launch assets", "5")}
+      ${metricCard("Formats", "Reels / Stories / Shorts")}
+      ${metricCard("Setup time", "Minutes")}
+      ${metricCard("Brand control", "Agent + Brokerage")}
+    </section>
+    <section class="panel founder-story">
+      <div class="section-title"><p>Founder thesis</p><h3>Built for agents becoming media brands.</h3></div>
+      <p>Luxury listings already have the raw material: photography, architecture, neighborhood context, and agent trust. EstateMotion turns those ingredients into social-native campaigns without making the property look fake, cheap, or overproduced.</p>
+    </section>
+    <section class="panel transformation-section">
+      <div class="section-title"><p>Before / after</p><h3>From static MLS gallery to launch campaign</h3></div>
+      <div class="comparison-grid">
+        <article class="comparison-card before-card"><span>Before</span><strong>25 photos sitting in a folder</strong><small>No hook, no pacing, no CTA, no personal brand lift.</small><p>Agents post late, inconsistently, or outsource simple listing content.</p></article>
+        <article class="comparison-card"><span>After</span><strong>Premium content pack</strong><small>Full reel, highlights, story, caption, hashtags, and end card.</small><p>Every listing becomes a fast, polished social launch moment.</p></article>
+        <article class="comparison-card pro-card"><span>Result</span><strong>More authority per listing</strong><small>Looks premium enough for sellers and native enough for buyers.</small><p>The agent is positioned as a marketer, not just a license holder.</p></article>
       </div>
     </section>
     <section class="panel">
@@ -1180,12 +1237,28 @@ function renderDemoLanding() {
         <article><span>3</span><strong>Export reels, captions, and content packs</strong><small>Leave with launch assets for Reels, Stories, Shorts, and Instagram.</small></article>
       </div>
     </section>
+    <section class="panel modern-agents">
+      <div class="section-title"><p>Built for modern agents</p><h3>Status, speed, and repeatable content operations.</h3></div>
+      <div class="steps-grid">
+        <article><span>A</span><strong>Solo agents</strong><small>Look like a premium media team without hiring one.</small></article>
+        <article><span>B</span><strong>Brokerages</strong><small>Standardize listing launch quality and compliance language.</small></article>
+        <article><span>C</span><strong>Personal brands</strong><small>Turn every listing into proof of taste, authority, and market presence.</small></article>
+      </div>
+    </section>
     <section class="panel">
       <div class="section-title"><p>Pricing test</p><h3>What would agents pay?</h3></div>
       <div class="pricing-grid">
         ${pricingCard("Starter", "$19/export", "1 content pack", "For agents with occasional listings.", "Test price")}
         ${pricingCard("Pro", "$49/month", "Monthly content credits", "For agents posting every week.", "Test price")}
         ${pricingCard("Brokerage", "Custom", "Team workflow", "For offices that need compliance and brand control.", "Test price")}
+      </div>
+    </section>
+    <section class="panel testimonials">
+      <div class="section-title"><p>Early signal</p><h3>What brokerages should feel immediately</h3></div>
+      <div class="steps-grid">
+        <article><strong>"This makes us look faster and more expensive."</strong><small>Placeholder seller-facing brokerage reaction.</small></article>
+        <article><strong>"I would use this for every listing launch."</strong><small>Placeholder agent validation quote.</small></article>
+        <article><strong>"This solves the content bottleneck."</strong><small>Placeholder team lead reaction.</small></article>
       </div>
     </section>
     <section class="panel elevated" id="earlyAccess">
@@ -1239,7 +1312,7 @@ function trackDemoVisitOnce() {
 
 function renderOnboarding() {
   renderLayout(`
-    <div class="screen-title"><p class="eyebrow">Agent onboarding</p><h2>Set up your brand once</h2><p>These details drive every end card, CTA, compliance block, and social caption.</p></div>
+    <div class="screen-title cinematic-title"><p class="eyebrow">Agent onboarding</p><h2>Build the brand layer once.</h2><p>These details turn every listing into a polished, personal-brand media asset with brokerage trust built in.</p></div>
     <section class="panel elevated">
       <div class="grid-2">${brandField("Name", "name")}${brandField("Brokerage", "brokerage")}</div>
       <div class="grid-2">${brandField("Headshot URL", "headshotUri")}${brandField("Logo URL", "logoUri")}</div>
@@ -1284,7 +1357,13 @@ function renderCreate() {
 function renderUpload() {
   const photos = orderedPhotos();
   renderLayout(`
-    <div class="screen-title"><p class="eyebrow">Upload</p><h2>Listing Photos</h2><p>Upload real images on web, then auto-sort by filename/category or manually adjust order.</p></div>
+    <div class="screen-title cinematic-title"><p class="eyebrow">Luxury media studio</p><h2>Curate the property story.</h2><p>Upload real photography, sequence the reveal, and shape the reel like a high-performing listing launch.</p></div>
+    <section class="studio-strip">
+      <span>Exterior hero</span>
+      <span>Interior rhythm</span>
+      <span>Feature proof</span>
+      <span>Brand end card</span>
+    </section>
     <label class="upload-zone" data-upload-zone>
       <input id="photoInput" type="file" accept="image/*" multiple>
       <span class="upload-plus">+</span>
