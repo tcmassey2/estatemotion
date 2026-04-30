@@ -155,8 +155,15 @@ http://localhost:4173/app/
 https://YOUR-VERCEL-DOMAIN.vercel.app/app/
 ```
 
-5. In Vercel, import this project and keep the default static output settings. No build command is required for the browser MVP.
-6. Add Vercel environment variables:
+5. In Vercel, import this project as a static browser MVP. The repo intentionally has no active React, Expo, or Remotion dependencies for this deploy.
+6. Keep the Vercel build command as:
+
+```bash
+npm run build
+```
+
+This runs `scripts/verify-static-deploy.mjs`, which only checks that the static MVP files are present.
+7. Add Vercel environment variables:
 
 ```text
 MOCK_SUPABASE=false
@@ -172,14 +179,14 @@ STRIPE_CHECKOUT_ENDPOINT=https://your-api-domain.com/create-checkout-session
 RENDER_ENDPOINT=https://your-render-worker.com/render
 ```
 
-7. Deploy, then verify:
+8. Deploy, then verify:
 
 ```text
 https://YOUR-VERCEL-DOMAIN.vercel.app/demo
 https://YOUR-VERCEL-DOMAIN.vercel.app/app
 ```
 
-8. For local production-mode auth testing, edit `env.js` or use query params:
+9. For local production-mode auth testing, edit `env.js` or use query params:
 
 ```text
 http://localhost:4173/app/?MOCK_SUPABASE=false
@@ -187,41 +194,31 @@ http://localhost:4173/app/?MOCK_SUPABASE=false
 
 Use real Supabase values in `env.js` for local auth testing. Do not commit production secrets.
 
-## Expo App Setup
+## Future Expo and Remotion Setup
 
-Install dependencies:
+The current `package.json` is static-only so Vercel does not install conflicting Expo, React Native, or Remotion packages. The code folders remain in the repo for future work:
+
+- `src/`
+- `App.tsx`
+- `remotion/`
+- `backend/rendering/`
+
+See `docs/FUTURE_NATIVE_RENDERING_DEPS.md` for the dependency lists to re-enable later in a separate Expo app or render worker.
+
+For the static MVP, install/check with:
 
 ```bash
 npm install
+npm run build
 ```
 
-Run Expo:
+When the native app stack is split back out, restore the Expo scripts and run:
 
 ```bash
 npm run start
-```
-
-Run Expo web:
-
-```bash
 npm run web
-```
-
-Run typecheck:
-
-```bash
 npm run typecheck
-```
-
-Run render mock:
-
-```bash
 npm run render:mock
-```
-
-Run Remotion MP4 render after installing dependencies:
-
-```bash
 npm run render:remotion
 ```
 
