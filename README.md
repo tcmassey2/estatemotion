@@ -83,7 +83,7 @@ Open `Stats` in the bottom nav to view total visits, total leads, conversion rat
 Core journey that works locally:
 
 ```text
-Dashboard -> Create Project -> Upload Photos -> Listing Details -> Choose Template -> Preview -> Edit -> Export
+Studio -> Upload Photos -> Choose Style -> Preview Reel -> Export Assets
 ```
 
 What is live in the local browser MVP v2:
