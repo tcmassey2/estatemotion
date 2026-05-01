@@ -712,6 +712,7 @@ const app = document.querySelector("#app");
 let authUser = null;
 let remoteWorkspaceLoaded = featureFlags.MOCK_SUPABASE;
 let saveTimer = null;
+let quietSaveTimer = null;
 
 function loadState() {
   try {
@@ -782,6 +783,17 @@ function saveState() {
   scheduleRemoteSave();
 }
 
+function saveStateQuietly() {
+  window.clearTimeout(quietSaveTimer);
+  quietSaveTimer = window.setTimeout(() => {
+    if (shouldUseLocalPersistence()) {
+      localStorage.setItem(storageKey, JSON.stringify(state));
+      return;
+    }
+    scheduleRemoteSave();
+  }, 350);
+}
+
 function shouldUseLocalPersistence() {
   return featureFlags.MOCK_SUPABASE || isDemoRoute();
 }
@@ -841,6 +853,11 @@ function setState(patch) {
   state = typeof patch === "function" ? patch(state) : { ...state, ...patch };
   saveState();
   render();
+}
+
+function setStateQuietly(patch) {
+  state = typeof patch === "function" ? patch(state) : { ...state, ...patch };
+  saveStateQuietly();
 }
 
 function showToast(message, type = "success") {
@@ -1536,24 +1553,29 @@ function renderQueueSummary() {
   `;
 }
 
-function updateProject(key, value) {
-  setState((current) => ({ ...current, error: "", project: { ...current.project, [key]: value } }));
+function updateProject(key, value, options = {}) {
+  const commit = options.quiet ? setStateQuietly : setState;
+  commit((current) => ({ ...current, error: "", project: { ...current.project, [key]: value } }));
 }
 
-function updateProjectAndResetPlan(key, value) {
-  setState((current) => ({ ...current, error: "", project: { ...current.project, [key]: value, reelPlanEdits: null } }));
+function updateProjectAndResetPlan(key, value, options = {}) {
+  const commit = options.quiet ? setStateQuietly : setState;
+  commit((current) => ({ ...current, error: "", project: { ...current.project, [key]: value, reelPlanEdits: null } }));
 }
 
-function updateBrand(key, value) {
-  setState((current) => ({ ...current, error: "", brandKit: { ...current.brandKit, [key]: value } }));
+function updateBrand(key, value, options = {}) {
+  const commit = options.quiet ? setStateQuietly : setState;
+  commit((current) => ({ ...current, error: "", brandKit: { ...current.brandKit, [key]: value } }));
 }
 
-function updateEarlyAccess(key, value) {
-  setState((current) => ({ ...current, error: "", earlyAccessForm: { ...current.earlyAccessForm, [key]: value } }));
+function updateEarlyAccess(key, value, options = {}) {
+  const commit = options.quiet ? setStateQuietly : setState;
+  commit((current) => ({ ...current, error: "", earlyAccessForm: { ...current.earlyAccessForm, [key]: value } }));
 }
 
-function updateBetaFeedback(key, value) {
-  setState((current) => ({ ...current, error: "", betaFeedbackForm: { ...current.betaFeedbackForm, [key]: value } }));
+function updateBetaFeedback(key, value, options = {}) {
+  const commit = options.quiet ? setStateQuietly : setState;
+  commit((current) => ({ ...current, error: "", betaFeedbackForm: { ...current.betaFeedbackForm, [key]: value } }));
 }
 
 function resetProject() {
@@ -1747,21 +1769,33 @@ function navMicrocopy(screen) {
 
 function bindInputs() {
   document.querySelectorAll("[data-project]").forEach((input) => {
-    input.addEventListener("input", () => updateProject(input.dataset.project, input.type === "checkbox" ? input.checked : input.value));
+    bindStableField(input, (value, quiet) => updateProject(input.dataset.project, value, { quiet }));
   });
   document.querySelectorAll("[data-brand]").forEach((input) => {
-    input.addEventListener("input", () => updateBrand(input.dataset.brand, input.type === "checkbox" ? input.checked : input.value));
+    bindStableField(input, (value, quiet) => updateBrand(input.dataset.brand, value, { quiet }));
   });
   document.querySelectorAll("[data-lead]").forEach((input) => {
-    input.addEventListener("input", () => updateEarlyAccess(input.dataset.lead, input.value));
+    bindStableField(input, (value, quiet) => updateEarlyAccess(input.dataset.lead, value, { quiet }));
   });
   document.querySelectorAll("[data-beta-feedback]").forEach((input) => {
-    input.addEventListener("input", () => updateBetaFeedback(input.dataset.betaFeedback, input.type === "checkbox" ? input.checked : input.value));
-    input.addEventListener("change", () => updateBetaFeedback(input.dataset.betaFeedback, input.type === "checkbox" ? input.checked : input.value));
+    bindStableField(input, (value, quiet) => updateBetaFeedback(input.dataset.betaFeedback, value, { quiet }));
   });
   document.querySelectorAll("[data-auth]").forEach((input) => {
-    input.addEventListener("input", () => setState({ [input.dataset.auth]: input.value, error: "" }));
+    bindStableField(input, (value, quiet) => {
+      if (quiet) setStateQuietly({ [input.dataset.auth]: value, error: "" });
+      else setState({ [input.dataset.auth]: value, error: "" });
+    });
   });
+}
+
+function bindStableField(input, commit) {
+  const readValue = () => input.type === "checkbox" ? input.checked : input.value;
+  if (input.type === "checkbox" || input.tagName === "SELECT") {
+    input.addEventListener("change", () => commit(readValue(), false));
+    return;
+  }
+  input.addEventListener("input", () => commit(readValue(), true));
+  input.addEventListener("blur", () => commit(readValue(), true));
 }
 
 function renderDashboard() {
@@ -3027,7 +3061,7 @@ function renderDetails() {
     button.addEventListener("click", () => applyHookPreset(button.dataset.hookPreset));
   });
   document.querySelectorAll("[data-investor-metric]").forEach((input) => {
-    input.addEventListener("input", () => updateInvestorMetric(input.dataset.investorMetric, input.value));
+    bindStableField(input, (value, quiet) => updateInvestorMetric(input.dataset.investorMetric, value, { quiet }));
   });
   document.querySelector("[data-next]").addEventListener("click", () => guard(validateProjectBasics() || validatePhotos(), () => {
     showToast("AI copy refreshed");
@@ -3049,8 +3083,9 @@ function investorField(label) {
   return `<label class="field"><span>${escapeHtml(label)}</span><input data-investor-metric="${escapeAttr(key)}" value="${escapeAttr(value)}"></label>`;
 }
 
-function updateInvestorMetric(key, value) {
-  setState((current) => ({
+function updateInvestorMetric(key, value, options = {}) {
+  const commit = options.quiet ? setStateQuietly : setState;
+  commit((current) => ({
     ...current,
     project: {
       ...current.project,
@@ -3224,17 +3259,19 @@ function reelCategoryOptions() {
 
 function bindReelPlanEditor(plan) {
   ensureReelPlanPersisted(plan);
-  document.querySelector("[data-plan-intro]")?.addEventListener("input", (event) => updateReelPlanField("introText", event.target.value));
-  document.querySelector("[data-plan-outro]")?.addEventListener("input", (event) => updateReelPlanField("outroText", event.target.value));
+  const introInput = document.querySelector("[data-plan-intro]");
+  if (introInput) bindStableField(introInput, (value, quiet) => updateReelPlanField("introText", value, { quiet }));
+  const outroInput = document.querySelector("[data-plan-outro]");
+  if (outroInput) bindStableField(outroInput, (value, quiet) => updateReelPlanField("outroText", value, { quiet }));
   document.querySelector("[data-plan-claim-confirmed]")?.addEventListener("change", (event) => updateReelPlanField("claimConfirmed", event.target.checked));
   document.querySelectorAll("[data-plan-category]").forEach((input) => {
-    input.addEventListener("input", () => updateReelPlanScene(input.dataset.planCategory, { category: input.value }));
+    bindStableField(input, (value, quiet) => updateReelPlanScene(input.dataset.planCategory, { category: value }, { quiet }));
   });
   document.querySelectorAll("[data-plan-caption]").forEach((input) => {
-    input.addEventListener("input", () => updateReelPlanScene(input.dataset.planCaption, { caption: input.value }));
+    bindStableField(input, (value, quiet) => updateReelPlanScene(input.dataset.planCaption, { caption: value }, { quiet }));
   });
   document.querySelectorAll("[data-plan-duration]").forEach((input) => {
-    input.addEventListener("input", () => updateReelPlanScene(input.dataset.planDuration, { duration: Number(input.value || 2) }));
+    bindStableField(input, (value, quiet) => updateReelPlanScene(input.dataset.planDuration, { duration: Number(value || 2) }, { quiet }));
   });
   document.querySelectorAll("[data-plan-move]").forEach((button) => {
     button.addEventListener("click", () => moveReelPlanScene(button.dataset.planMove, Number(button.dataset.dir)));
@@ -3252,7 +3289,7 @@ function ensureReelPlanPersisted(plan) {
   saveState();
 }
 
-function updateReelPlanField(key, value) {
+function updateReelPlanField(key, value, options = {}) {
   if (key === "claimConfirmed") {
     const plan = activeEditableReelPlan();
     saveEditedReelPlan({ ...plan, claimConfirmed: Boolean(value) });
@@ -3260,7 +3297,8 @@ function updateReelPlanField(key, value) {
     return;
   }
   const safeValue = enforceMlsSafeCaption(value, activeEditableReelPlan().claimConfirmed);
-  setState((current) => ({
+  const commit = options.quiet ? setStateQuietly : setState;
+  commit((current) => ({
     ...current,
     project: {
       ...current.project,
@@ -3270,7 +3308,7 @@ function updateReelPlanField(key, value) {
   }));
 }
 
-function updateReelPlanScene(sceneId, patch) {
+function updateReelPlanScene(sceneId, patch, options = {}) {
   const plan = activeEditableReelPlan();
   const normalizedPatch = { ...patch };
   if (Object.prototype.hasOwnProperty.call(normalizedPatch, "caption")) {
@@ -3282,7 +3320,7 @@ function updateReelPlanScene(sceneId, patch) {
     normalizedPatch.duration = Math.max(1, Math.min(6, Number(normalizedPatch.duration || 2)));
   }
   const scenes = plan.scenes.map((scene) => scene.id === sceneId ? { ...scene, ...normalizedPatch } : scene);
-  saveEditedReelPlan({ ...plan, scenes });
+  saveEditedReelPlan({ ...plan, scenes }, options);
 }
 
 function moveReelPlanScene(sceneId, direction) {
@@ -3313,7 +3351,7 @@ function resetReelPlanToAi() {
   showToast("AI reel plan restored");
 }
 
-function saveEditedReelPlan(plan) {
+function saveEditedReelPlan(plan, options = {}) {
   const normalized = {
     ...plan,
     claimConfirmed: Boolean(plan.claimConfirmed),
@@ -3326,7 +3364,8 @@ function saveEditedReelPlan(plan) {
       order: index + 1
     }))
   };
-  setState((current) => ({ ...current, project: { ...current.project, reelPlanEdits: normalized, introText: normalized.introText, outroText: normalized.outroText } }));
+  const commit = options.quiet ? setStateQuietly : setState;
+  commit((current) => ({ ...current, project: { ...current.project, reelPlanEdits: normalized, introText: normalized.introText, outroText: normalized.outroText } }));
 }
 
 function validateReelPlanBeforePreview() {
