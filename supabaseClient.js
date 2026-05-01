@@ -128,24 +128,18 @@
   async function saveWorkspace(snapshot, authUser) {
     const supabase = await client();
     if (!supabase || !authUser) return {};
+    const activeUser = await activeSessionUser(authUser);
 
-    const profile = {
-      id: authUser.id,
-      email: authUser.email ?? snapshot.user.email,
-      full_name: snapshot.user.name || snapshot.brandKit.name,
-      subscription_status: snapshot.user.subscriptionStatus,
-      credit_balance: snapshot.user.creditBalance
-    };
-    const profileResult = await supabase.from("users").upsert(profile).select().single();
-    throwIf(profileResult.error);
+    const profileResult = await syncUserProfile(snapshot, activeUser);
+    const warnings = profileResult.warning ? [profileResult.warning] : [];
 
-    const brandPayload = mapBrandToRow(snapshot.brandKit, authUser.id);
+    const brandPayload = mapBrandToRow(snapshot.brandKit, activeUser.id);
     const brandResult = brandPayload.id
       ? await supabase.from("brand_kits").upsert(brandPayload).select().single()
       : await supabase.from("brand_kits").insert(brandPayload).select().single();
     throwIf(brandResult.error);
 
-    const projectPayload = mapProjectToRow(snapshot.project, authUser.id, brandResult.data.id, snapshot.selectedTemplateId);
+    const projectPayload = mapProjectToRow(snapshot.project, activeUser.id, brandResult.data.id, snapshot.selectedTemplateId);
     const projectResult = projectPayload.id
       ? await supabase.from("projects").upsert(projectPayload).select().single()
       : await supabase.from("projects").insert(projectPayload).select().single();
@@ -165,8 +159,49 @@
 
     return {
       brandKitId: brandResult.data.id,
-      projectId: projectResult.data.id
+      projectId: projectResult.data.id,
+      warnings
     };
+  }
+
+  async function activeSessionUser(fallbackUser) {
+    const session = await getSession();
+    const sessionUser = session.user || fallbackUser;
+    if (!sessionUser?.id) throw new Error("Supabase session is missing a user id. Sign out and sign back in before syncing your profile.");
+    return sessionUser;
+  }
+
+  async function syncUserProfile(snapshot, sessionUser) {
+    const supabase = await client();
+    const profile = mapUserProfileToRow(snapshot, sessionUser);
+    try {
+      const profileResult = await supabase
+        .from("users")
+        .upsert(profile, { onConflict: "id" })
+        .select()
+        .maybeSingle();
+      if (profileResult.error) throw profileResult.error;
+      return { data: profileResult.data, warning: "" };
+    } catch (error) {
+      if (isDuplicateRowError(error)) {
+        return { data: null, warning: "Profile already exists; continuing with existing Supabase user profile." };
+      }
+      throw error;
+    }
+  }
+
+  function mapUserProfileToRow(snapshot, sessionUser) {
+    return {
+      id: sessionUser.id,
+      email: sessionUser.email || snapshot.user.email || "",
+      full_name: snapshot.user.name || snapshot.brandKit.name || "",
+      subscription_status: snapshot.user.subscriptionStatus || "free",
+      credit_balance: Number.isFinite(Number(snapshot.user.creditBalance)) ? Number(snapshot.user.creditBalance) : 0
+    };
+  }
+
+  function isDuplicateRowError(error) {
+    return error?.code === "23505" || /duplicate key/i.test(error?.message || "");
   }
 
   async function saveBetaFeedback(feedback, authUser) {
