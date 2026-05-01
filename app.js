@@ -742,7 +742,7 @@ function analyticsSummary() {
 }
 
 function screenToStep(screen) {
-  const order = ["dashboard", "upload", "template", "preview", "export"];
+  const order = ["upload", "template", "processing", "preview", "export"];
   return order.indexOf(screen) + 1;
 }
 
@@ -1172,10 +1172,9 @@ function leadField(label, key, options = {}) {
 function renderLayout(content) {
   const stepLabel = state.screen === "pricing" ? "Pricing" : screenToStep(state.screen) > 0 ? `Step ${screenToStep(state.screen)} of 5` : "AI reel studio";
   const navItems = [
-    { screen: "demo", label: "Launch" },
-    { screen: "dashboard", label: "Studio" },
     { screen: "upload", label: "Upload" },
     { screen: "template", label: "Style" },
+    { screen: "processing", label: "AI" },
     { screen: "preview", label: "Preview" },
     { screen: "export", label: "Export" }
   ];
@@ -1231,10 +1230,9 @@ function renderLayout(content) {
 
 function navMicrocopy(screen) {
   const labels = {
-    demo: "Outcome page",
-    dashboard: "Reel command",
     upload: "Listing photos",
     template: "Video style",
+    processing: "Build reel",
     preview: "Review reel",
     export: "Social assets"
   };
@@ -1258,20 +1256,16 @@ function bindInputs() {
 
 function renderDashboard() {
   const photo = orderedPhotos()[0] ?? demoPhotos[0];
-  const pack = contentPack();
-  const queueSummary = renderQueueSummary();
-  const hasPhotos = orderedPhotos().length > 0;
-  const showcase = selectedShowcase();
   renderLayout(`
     <section class="dashboard-command">
       <div class="dashboard-copy">
-        <p class="eyebrow">${state.user.subscriptionStatus} workspace / AI reel studio</p>
-        <h2>Upload photos. Get the reel.</h2>
-        <p>EstateMotion turns listing photography into a finished, branded, social-ready reel with captions, thumbnails, and export packs in minutes.</p>
+        <p class="eyebrow">EstateMotion AI reel studio</p>
+        <h2>Drop in listing photos. Get polished content.</h2>
+        <p>The default flow is simple: upload photos, choose a style, let AI build the reel, preview, then export.</p>
         <div class="actions">
-          <button class="primary" data-action="one-click">One-Click Reel</button>
-          <button class="secondary" data-action="continue">Upload photos</button>
-          <button class="ghost" data-action="new">Reset demo</button>
+          <button class="primary" data-action="continue">Upload Photos</button>
+          <button class="secondary" data-action="one-click">One-Click Reel</button>
+          <button class="ghost" data-action="pro">Pro Mode</button>
         </div>
       </div>
       <div class="dashboard-reel-card">
@@ -1279,68 +1273,16 @@ function renderDashboard() {
       </div>
     </section>
     <section class="quick-flow panel elevated">
-      ${quickStep("1", "Upload", `${orderedPhotos().length} photos`)}
-      ${quickStep("2", "Style", selectedTemplate().name)}
-      ${quickStep("3", "Preview", `${reelPacing(orderedPhotos()).length || 0} scenes`)}
-      ${quickStep("4", "Export", `${contentPack().length} assets`)}
-    </section>
-    <section class="luxury-metrics">
-      ${metricCard("Assets in pack", pack.length)}
-      ${metricCard("Photos sequenced", orderedPhotos().length)}
-      ${metricCard("Export intent", analyticsSummary().exportIntent)}
-      ${metricCard("Credits", state.user.creditBalance)}
-    </section>
-    <section class="panel brand-authority">
-      <div class="section-title"><p>Agent authority layer</p><h3>${escapeHtml(state.brandKit.name)} / ${escapeHtml(state.brandKit.brokerage)}</h3></div>
-      <p class="muted">Every reel closes with personal brand authority, brokerage trust, clean compliance language, and a social-first CTA built for high-intent DMs.</p>
-      <div class="authority-grid">
-        <span>Brokerage trust</span>
-        <span>Luxury pacing</span>
-        <span>AI copy system</span>
-        <span>Social conversion</span>
-      </div>
-    </section>
-    <section class="panel showcase-section">
-      <div class="section-title"><p>Internal Showcase Mode</p><h3>Showcase Projects</h3></div>
-      <p class="muted">Prebuilt, presentation-ready listings for sales calls, partner meetings, and founder-led validation.</p>
-      <div class="showcase-grid">
-        ${showcaseProjects.map((project) => showcaseCard(project)).join("")}
-      </div>
-    </section>
-    <section class="panel showcase-comparison">
-      <div class="section-title"><p>Side-by-side comparison</p><h3>${escapeHtml(showcase.title)}</h3></div>
-      <div class="comparison-grid">
-        ${showcase.project.reelVariations.map((variation) => comparisonCard(variation)).join("")}
-      </div>
-    </section>
-    <section class="panel why-section">
-      <div class="section-title"><p>Why this works</p><h3>Sales demo talking points</h3></div>
-      <div class="why-grid">
-        ${Object.entries(showcase.whyThisWorks).map(([label, body]) => `<article><span>${escapeHtml(label)}</span><strong>${escapeHtml(body)}</strong></article>`).join("")}
-      </div>
-    </section>
-    <section class="panel sample-section">
-      <div class="section-title"><p>Sample projects</p><h3>Ready for demo</h3></div>
-      <div class="sample-grid">
-        ${sampleProjects.map((project) => `<article class="sample-card"><img src="${project.thumbnail}" alt=""><span>${project.type}</span><strong>${project.title}</strong><small>${project.location}</small></article>`).join("")}
-      </div>
-    </section>
-    ${!hasPhotos ? emptyState("No listing photos yet", "Upload at least 3 photos to generate a reel preview.") : ""}
-    <section class="project-thumbnails">
-      ${orderedPhotos().slice(0, 5).map((item, index) => `<article><img src="${item.uri}" alt=""><span>${index + 1}</span><strong>${escapeHtml(item.category)}</strong></article>`).join("")}
-    </section>
-    ${queueSummary}
-    <section class="panel">
-      <div class="section-title"><p>AI generated</p><h3>Content Pack</h3></div>
-      <div class="pack-grid">${pack.map((item) => contentPackCard(item)).join("")}</div>
+      ${quickStep("1", "Upload Photos", `${orderedPhotos().length} selected`)}
+      ${quickStep("2", "Choose Style", selectedTemplate().name)}
+      ${quickStep("3", "AI Processing", "Auto-build")}
+      ${quickStep("4", "Preview", "Vertical reel")}
+      ${quickStep("5", "Export", "MP4 + assets")}
     </section>
   `);
   document.querySelector('[data-action="one-click"]').addEventListener("click", oneClickReel);
   document.querySelector('[data-action="continue"]').addEventListener("click", () => navigate("upload"));
-  document.querySelector('[data-action="new"]').addEventListener("click", resetProject);
-  document.querySelectorAll("[data-showcase-id]").forEach((button) => {
-    button.addEventListener("click", () => loadShowcaseProject(button.dataset.showcaseId));
-  });
+  document.querySelector('[data-action="pro"]').addEventListener("click", () => navigate("details"));
 }
 
 function quickStep(number, title, value) {
@@ -2048,7 +1990,7 @@ function oneClickReel() {
     ...current,
     selectedTemplateId: template.id,
     selectedScene: 0,
-    screen: "preview",
+    screen: "processing",
     error: "",
     project: {
       ...current.project,
@@ -2062,7 +2004,7 @@ function oneClickReel() {
     }
   }));
   trackEvent("one_click_reel", { templateId: template.id, photos: ordered.length });
-  showToast("One-Click Reel prepared");
+  showToast("AI reel build started");
 }
 
 function flowRank(category) {
@@ -2101,7 +2043,7 @@ function renderDetails() {
       <div class="feature-cards">
         ${topFeatures().map((item, index) => `<div><strong>Top feature ${index + 1}</strong><br>${escapeHtml(item)}</div>`).join("")}
       </div>
-      <button class="primary" data-next="template">Choose style</button>
+      <button class="primary" data-next="template">Choose Style</button>
     </section>
   `);
   document.querySelectorAll("[data-hook-preset]").forEach((button) => {
@@ -2114,11 +2056,12 @@ function renderDetails() {
 }
 
 function renderTemplate() {
+  const simpleTemplates = templates.filter((template) => ["modern-luxury", "viral-fast-cut", "open-house", "mls-clean"].includes(template.id));
   renderLayout(`
     <div class="screen-title cinematic-title"><p class="eyebrow">Choose video style</p><h2>Pick the feel of the reel.</h2><p>Each style changes the pacing, overlays, motion system, CTA, and export manifest while keeping the listing photography real.</p></div>
     <section class="panel">
       <div class="template-showcase">
-        ${templates.map((template) => templateChoiceCard(template)).join("")}
+        ${simpleTemplates.map((template) => templateChoiceCard(template, simpleStyleName(template))).join("")}
       </div>
       ${!templates.length ? emptyState("No templates available", "Check template configuration before previewing.") : ""}
     </section>
@@ -2142,7 +2085,7 @@ function renderTemplate() {
     </details>
     <div class="actions">
       <button class="secondary" data-one-click>One-Click Reel</button>
-      <button class="primary" data-next="preview">Review preview</button>
+      <button class="primary" data-next="processing">Start AI Processing</button>
     </div>
   `);
   document.querySelectorAll("[data-reel-theme]").forEach((button) => {
@@ -2154,10 +2097,20 @@ function renderTemplate() {
     setState({ selectedTemplateId: button.dataset.template });
   }));
   document.querySelector("[data-one-click]").addEventListener("click", oneClickReel);
-  document.querySelector("[data-next]").addEventListener("click", () => guard(validateProjectBasics() || validatePhotos() || validateTemplate(), () => navigate("preview")));
+  document.querySelector("[data-next]").addEventListener("click", () => guard(validateProjectBasics() || validatePhotos() || validateTemplate(), () => navigate("processing")));
 }
 
-function templateChoiceCard(template) {
+function simpleStyleName(template) {
+  const names = {
+    "modern-luxury": "Luxury",
+    "viral-fast-cut": "Viral",
+    "open-house": "Open House",
+    "mls-clean": "MLS Clean"
+  };
+  return names[template.id] || template.name;
+}
+
+function templateChoiceCard(template, displayName = template.name) {
   return `
     <button class="template-card template-premium-card ${template.id === normalizeTemplateId(state.selectedTemplateId) ? "selected" : ""}" data-template="${template.id}" style="--template-accent:${template.accentColor}">
       <span class="template-preview">
@@ -2165,11 +2118,54 @@ function templateChoiceCard(template) {
       </span>
       <span class="template-copy">
         <em>${escapeHtml(template.visualCue || "Reel style")}</em>
-        <strong>${escapeHtml(template.name)}</strong>
+        <strong>${escapeHtml(displayName)}</strong>
         <small>${escapeHtml(template.description)}</small>
         <small>${template.motionSpeed} motion / ${template.transitionStyle} / ${template.textPlacement} text</small>
       </span>
     </button>
+  `;
+}
+
+function renderProcessing() {
+  const steps = [
+    ["Sorting photos", "Best Listing Flow", "complete"],
+    ["Identifying rooms", `${new Set(orderedPhotos().map((photo) => sceneLabel(photo.category))).size || 0} scene types`, "complete"],
+    ["Adding camera motion", selectedMotionSystem().tempo, "rendering"],
+    ["Syncing music", state.project.musicMood, "queued"],
+    ["Rendering formats", "MP4 / Reel / MLS", "queued"]
+  ];
+  renderLayout(`
+    <section class="processing-hero">
+      <div>
+        <p class="eyebrow">AI Processing</p>
+        <h2>Building your listing reel.</h2>
+        <p>EstateMotion is turning ${orderedPhotos().length} photos into a polished real estate video package.</p>
+      </div>
+      ${miniReelPreview(orderedPhotos()[0] ?? demoPhotos[0], "processing")}
+    </section>
+    <section class="processing-steps">
+      ${steps.map(([title, detail, status]) => processingStep(title, detail, status)).join("")}
+    </section>
+    <section class="panel processing-confidence">
+      <div class="section-title"><p>Ready next</p><h3>Preview the reel before exporting.</h3></div>
+      <p class="muted">The preview keeps the render manifest, Supabase photo URLs, motion plan, brand end card, captions, and mock/live render fallback intact.</p>
+      <div class="actions">
+        <button class="secondary" data-back-style>Change Style</button>
+        <button class="primary" data-next-preview>Review Preview</button>
+      </div>
+    </section>
+  `);
+  document.querySelector("[data-back-style]").addEventListener("click", () => navigate("template"));
+  document.querySelector("[data-next-preview]").addEventListener("click", () => navigate("preview"));
+}
+
+function processingStep(title, detail, status) {
+  return `
+    <article class="processing-step ${status}">
+      <span></span>
+      <div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(detail)}</small></div>
+      <b>${escapeHtml(status)}</b>
+    </article>
   `;
 }
 
@@ -2213,24 +2209,27 @@ function renderPreview() {
         ${photos.length ? photos.map((item, index) => sceneCard(item, index, pacing[index])).join("") : emptyState("No sequence yet", "Photos appear here after upload.")}
       </div>
     </section>
-    <section class="panel">
-      <div class="section-title"><p>Neighborhood spotlight</p><h3>${escapeHtml(state.project.thumbnailPreset)}</h3></div>
-      <section class="spotlight-card">
-        <div><span>Address</span><strong>${escapeHtml(state.project.address)}</strong></div>
-        <div><span>Area</span><strong>${escapeHtml(state.project.neighborhood || state.project.city)}</strong></div>
-        <div><span>Beds/Baths</span><strong>${state.project.beds} / ${state.project.baths}</strong></div>
-        <div><span>Square footage</span><strong>${escapeHtml(state.project.squareFeet)}</strong></div>
-        <div><span>Price</span><strong>${escapeHtml(state.project.price)}</strong></div>
+    <details class="advanced-panel">
+      <summary>Advanced Customization: features, property facts, and brand end card</summary>
+      <section class="panel">
+        <div class="section-title"><p>Neighborhood spotlight</p><h3>${escapeHtml(state.project.thumbnailPreset)}</h3></div>
+        <section class="spotlight-card">
+          <div><span>Address</span><strong>${escapeHtml(state.project.address)}</strong></div>
+          <div><span>Area</span><strong>${escapeHtml(state.project.neighborhood || state.project.city)}</strong></div>
+          <div><span>Beds/Baths</span><strong>${state.project.beds} / ${state.project.baths}</strong></div>
+          <div><span>Square footage</span><strong>${escapeHtml(state.project.squareFeet)}</strong></div>
+          <div><span>Price</span><strong>${escapeHtml(state.project.price)}</strong></div>
+        </section>
       </section>
-    </section>
-    <section class="panel">
-      <div class="section-title"><p>Top 3 Features</p><h3>Auto card</h3></div>
-      <div class="feature-cards">${topFeatures().map((item, index) => `<div><strong>${index + 1}</strong><br>${escapeHtml(item)}</div>`).join("")}</div>
-    </section>
-    <section class="panel brand-end-preview">
-      <div class="section-title"><p>Brand end card</p><h3>${escapeHtml(state.brandKit.name)} / ${escapeHtml(state.brandKit.brokerage)}</h3></div>
-      ${agentStrip()}
-    </section>
+      <section class="panel">
+        <div class="section-title"><p>Top 3 Features</p><h3>Auto card</h3></div>
+        <div class="feature-cards">${topFeatures().map((item, index) => `<div><strong>${index + 1}</strong><br>${escapeHtml(item)}</div>`).join("")}</div>
+      </section>
+      <section class="panel brand-end-preview">
+        <div class="section-title"><p>Brand end card</p><h3>${escapeHtml(state.brandKit.name)} / ${escapeHtml(state.brandKit.brokerage)}</h3></div>
+        ${agentStrip()}
+      </section>
+    </details>
     ${state.project.reelVariations?.length ? `<section class="panel"><div class="section-title"><p>Generated variations</p><h3>3 reel directions</h3></div><div class="variation-grid">${state.project.reelVariations.map((variation) => `<article><strong>${variation.name}</strong><span>${escapeHtml(variation.settings.textAnimation)} / ${escapeHtml(variation.settings.musicMood)}</span></article>`).join("")}</div></section>` : ""}
     <details class="advanced-panel">
       <summary>Pro Controls: copy, compliance, and full timeline</summary>
@@ -2426,14 +2425,11 @@ function renderExport() {
   const mp4Ready = !featureFlags.MOCK_RENDERING;
   const renderUrl = state.exportResult?.mp4Url || state.exportResult?.output || "";
   const exportOptions = [
-    ["Branded MP4", "Agent end card + CTA", "9:16"],
-    ["Unbranded MP4", "MLS-safe version", "16:9"],
-    ["9:16 Reel", "Instagram / TikTok / Shorts", "1080x1920"],
-    ["16:9 YouTube/Web", "Website and YouTube", "1920x1080"],
-    ["Caption", "AI-written Instagram copy", "Text"],
-    ["Hashtags", "Local discovery set", "Text"],
-    ["Thumbnail", state.project.thumbnailPreset, "PNG"],
-    ["Content Pack", `${pack.length} launch assets`, "Bundle"]
+    ["MP4", "Branded video file", "Video"],
+    ["Reel", "9:16 social cut", "Social"],
+    ["MLS", "Clean unbranded version", "MLS"],
+    ["Caption", "Copy + hashtags", "Text"],
+    ["Thumbnail", state.project.thumbnailPreset, "PNG"]
   ];
   renderLayout(`
     <div class="screen-title cinematic-title"><p class="eyebrow">Export</p><h2>Leave with social-ready assets.</h2><p>${featureFlags.MOCK_RENDERING ? "Mock rendering is enabled. Queue states are real locally; MP4 output falls back to JSON and preview HTML." : "Live rendering is enabled. EstateMotion will call the render worker for MP4 jobs."}</p></div>
@@ -2448,10 +2444,13 @@ function renderExport() {
       </div>
     </section>
     ${renderQueuePanel()}
+    <details class="advanced-panel">
+      <summary>Advanced Customization: full content pack manifest</summary>
     <section class="panel elevated">
       <div class="section-title"><p>Content Pack</p><h3>${pack.length} deliverables</h3></div>
       <div class="pack-grid">${pack.map((item) => contentPackCard(item)).join("")}</div>
     </section>
+    </details>
     <section class="panel share-panel">
       <div class="section-title"><p>Share & downloads</p><h3>Agent handoff assets</h3></div>
       <div class="actions">
@@ -3067,6 +3066,7 @@ function render() {
     upload: renderUpload,
     details: renderDetails,
     template: renderTemplate,
+    processing: renderProcessing,
     preview: renderPreview,
     edit: renderEdit,
     brand: renderBrand,

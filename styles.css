@@ -2672,6 +2672,93 @@ button:hover {
   gap: 14px;
 }
 
+.processing-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(250px, 340px);
+  gap: clamp(22px, 5vw, 58px);
+  align-items: center;
+  padding: clamp(26px, 5vw, 64px);
+  border: 1px solid rgba(199, 167, 108, 0.22);
+  border-radius: 34px;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(199, 167, 108, 0.2), transparent 30%),
+    linear-gradient(135deg, rgba(13, 13, 13, 0.98), rgba(28, 28, 28, 0.92));
+  color: var(--paper);
+  box-shadow: var(--shadow);
+}
+
+.processing-hero h2 {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(46px, 8vw, 92px);
+  line-height: 0.92;
+}
+
+.processing-hero p:not(.eyebrow) {
+  max-width: 620px;
+  color: rgba(248, 245, 239, 0.72);
+  font-size: 18px;
+  line-height: 1.55;
+}
+
+.processing-steps {
+  display: grid;
+  gap: 12px;
+}
+
+.processing-step {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  gap: 14px;
+  align-items: center;
+  padding: 18px;
+  border: 1px solid rgba(199, 167, 108, 0.22);
+  border-radius: 20px;
+  background: rgba(255, 252, 246, 0.9);
+  box-shadow: var(--soft-shadow);
+}
+
+.processing-step > span {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--line);
+}
+
+.processing-step.complete > span {
+  background: var(--success);
+}
+
+.processing-step.rendering > span {
+  background: var(--gold);
+  box-shadow: 0 0 0 8px rgba(199, 167, 108, 0.16);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.processing-step strong,
+.processing-step small {
+  display: block;
+}
+
+.processing-step small {
+  color: var(--muted);
+}
+
+.processing-step b {
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: rgba(199, 167, 108, 0.14);
+  color: var(--sand);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+@keyframes pulse {
+  50% {
+    transform: scale(1.18);
+  }
+}
+
 .quick-flow,
 .outcome-flow,
 .export-option-grid,
@@ -2962,6 +3049,7 @@ button:hover {
   .template-showcase,
   .landing-hero,
   .dashboard-command,
+  .processing-hero,
   .founder-panel,
   .early-access-panel {
     grid-template-columns: 1fr;
@@ -3037,12 +3125,14 @@ button:hover {
 
   .landing-hero,
   .dashboard-command,
+  .processing-hero,
   .landing-section {
     padding: 22px;
   }
 
   .landing-hero-copy h2,
-  .dashboard-copy h2 {
+  .dashboard-copy h2,
+  .processing-hero h2 {
     font-size: clamp(42px, 14vw, 64px);
   }
 
