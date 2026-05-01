@@ -18,6 +18,7 @@ Use this for the first production deployment. Keep `MOCK_*` flags on until each 
    - `subscriptions`
    - `exports`
 6. Confirm these Storage buckets exist:
+   - `listing-photos`
    - `project-photos`
    - `brand-assets`
    - `generated-videos`
@@ -57,6 +58,9 @@ MOCK_SUPABASE=false
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_JS_URL=https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm
+LISTING_PHOTOS_BUCKET=listing-photos
+SUPABASE_STORAGE_PRIVATE=false
+SUPABASE_SIGNED_URL_TTL_SECONDS=172800
 ```
 
 Safe to keep mocked for first deploy:
@@ -129,7 +133,8 @@ Run this after every production deploy:
 6. Upload photos
    - Upload at least 3 image files.
    - Confirm they appear in the grid.
-   - Confirm Supabase Storage receives objects in `project-photos`.
+   - Confirm Supabase Storage receives objects in `listing-photos`.
+   - Confirm each saved project photo has a durable URL for render manifests.
 
 7. Save brand kit
    - Open brand/onboarding flow.

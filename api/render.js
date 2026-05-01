@@ -22,6 +22,12 @@ export default async function handler(request, response) {
       return;
     }
 
+    const manifestError = validateManifestForServerRender(manifest, { live: !readFlag("MOCK_RENDERING", true) });
+    if (manifestError) {
+      response.status(400).json({ status: "failed", error: manifestError });
+      return;
+    }
+
     if (readFlag("MOCK_RENDERING", true)) {
       response.status(200).json({
         status: "complete",
@@ -97,6 +103,54 @@ function renderWorkerUrl() {
   const configured = process.env.RENDER_WORKER_URL || process.env.RENDER_ENDPOINT || "";
   if (!configured) return "";
   return configured.endsWith("/render") ? configured : `${configured.replace(/\/$/, "")}/render`;
+}
+
+function validateManifestForServerRender(manifest, options = {}) {
+  const photos = new Map((manifest.orderedPhotos || []).map((photo) => [photo.id, photo]));
+  const problems = [];
+  manifest.scenes.forEach((scene, index) => {
+    if (["title", "intro", "outro", "card"].includes(String(scene.type || "").toLowerCase())) return;
+    const label = scene.fileName || `scene ${index + 1}`;
+    const imageUrl = scene.durableUrl || scene.durable_url || scene.publicUrl || scene.public_url || scene.imageUrl || "";
+    if (!scene.photoId) problems.push(`${label} is missing photoId.`);
+    if (scene.photoId && photos.size && !photos.has(scene.photoId)) problems.push(`${label} is not present in orderedPhotos.`);
+    if (!imageUrl) problems.push(`${label} is missing imageUrl.`);
+    if (options.live && !(scene.durableUrl || scene.durable_url)) problems.push(`${label} is missing durableUrl.`);
+    if (options.live && isLocalOnlyUrl(imageUrl)) problems.push(`${label} uses a browser-only image URL.`);
+    if (isUnsupportedImageUrl(imageUrl)) problems.push(`${label} uses an unsupported image format.`);
+    if (isLikelyExpiredImageUrl(imageUrl)) problems.push(`${label} appears to use an expired signed URL.`);
+  });
+  if (!problems.length) return "";
+  return `Render manifest validation failed: ${problems.slice(0, 3).join(" ")}${problems.length > 3 ? ` ${problems.length - 3} more issue${problems.length - 3 === 1 ? "" : "s"} found.` : ""}`;
+}
+
+function isLocalOnlyUrl(url) {
+  const value = String(url || "");
+  return value.startsWith("blob:") || value.startsWith("data:");
+}
+
+function isUnsupportedImageUrl(url) {
+  const value = String(url || "").toLowerCase();
+  if (value.startsWith("data:")) {
+    return !value.startsWith("data:image/jpeg") && !value.startsWith("data:image/jpg") && !value.startsWith("data:image/png") && !value.startsWith("data:image/webp");
+  }
+  const path = value.split("?")[0];
+  return /\.(heic|heif|tif|tiff|bmp|svg|gif)$/i.test(path);
+}
+
+function isLikelyExpiredImageUrl(url) {
+  try {
+    const parsed = new URL(String(url));
+    const rawExpiry = parsed.searchParams.get("expires") || parsed.searchParams.get("expires_at") || parsed.searchParams.get("expiry") || parsed.searchParams.get("exp");
+    if (!rawExpiry) return false;
+    const numeric = Number(rawExpiry);
+    const expiresAt = Number.isFinite(numeric)
+      ? new Date(numeric < 10000000000 ? numeric * 1000 : numeric)
+      : new Date(rawExpiry);
+    return Number.isFinite(expiresAt.getTime()) && expiresAt.getTime() <= Date.now();
+  } catch {
+    return false;
+  }
 }
 
 function createJobId(manifest) {

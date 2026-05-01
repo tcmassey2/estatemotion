@@ -173,7 +173,13 @@ MOCK_STRIPE=true
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_JS_URL=https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm
+LISTING_PHOTOS_BUCKET=listing-photos
+SUPABASE_STORAGE_PRIVATE=false
+SUPABASE_SIGNED_URL_TTL_SECONDS=172800
 OPENAI_ENDPOINT=https://your-api-domain.com/openai-copy
+VISION_CLASSIFICATION_ENDPOINT=/api/classify-image
+OPENAI_API_KEY=sk-your-server-side-key
+OPENAI_VISION_MODEL=gpt-4.1-mini
 STRIPE_PUBLISHABLE_KEY=pk_live_or_test_xxx
 STRIPE_CHECKOUT_ENDPOINT=https://your-api-domain.com/create-checkout-session
 RENDER_WORKER_URL=https://your-render-worker.com
@@ -234,7 +240,7 @@ Then fill in:
 - `EXPO_PUBLIC_SUPABASE_URL`
 - `EXPO_PUBLIC_SUPABASE_ANON_KEY`
 - `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY`
-- `EXPO_PUBLIC_OPENAI_API_KEY`
+- `OPENAI_API_KEY` server-side only
 - `STRIPE_SECRET_KEY`
 - `RENDER_WEBHOOK_SECRET`
 - `MOCK_AI`
@@ -268,12 +274,38 @@ Or with localStorage keys like `ESTATEMOTION_MOCK_RENDERING`.
 ## Connecting OpenAI
 
 1. Keep `MOCK_AI=true` for local deterministic copy.
-2. Create a secure backend endpoint that holds `OPENAI_API_KEY`.
-3. Send project, template, local market, and brand kit fields to that endpoint.
-4. Return hook, property description, highlights, caption, hashtags, and voiceover.
-5. Replace `aiCopy()` in `app.js` or `requestOpenAICopy()` in `src/lib/ai.ts` with the endpoint response.
+2. For optional OpenAI Vision room classification, set `MOCK_AI=false`, add `OPENAI_API_KEY` in Vercel, and keep `VISION_CLASSIFICATION_ENDPOINT=/api/classify-image`.
+3. The browser sends image URLs to `/api/classify-image`; the API key stays server-side and the app falls back to filename/order classification if Vision is unavailable.
+4. For copy generation, create a secure backend endpoint that holds `OPENAI_API_KEY`.
+5. Send project, template, local market, and brand kit fields to that endpoint.
+6. Return hook, property description, highlights, caption, hashtags, and voiceover.
+7. Replace `aiCopy()` in `app.js` or `requestOpenAICopy()` in `src/lib/ai.ts` with the endpoint response.
 
 Never expose a production OpenAI API key in the browser.
+
+## Photo-to-Reel Production Hardening
+
+- Uploads accept JPG, PNG, and WebP listing images up to 25MB each.
+- Live MP4 rendering requires `durableUrl` on every photo scene. Browser-only `blob:` and local `data:` URLs are blocked before `/api/render`.
+- Supabase Storage uploads use `LISTING_PHOTOS_BUCKET` (`listing-photos` by default). If `SUPABASE_STORAGE_PRIVATE=true`, EstateMotion creates signed URLs for render jobs using `SUPABASE_SIGNED_URL_TTL_SECONDS` and refreshes them before rendering.
+- If Supabase is unavailable, EstateMotion stays in mock/demo mode and blocks live rendering with a clear re-upload/sign-in message.
+- `/api/render` repeats manifest validation server-side before forwarding to the Remotion worker.
+- In local/dev mode, the final render manifest is logged to the console and assigned to `window.ESTATEMOTION_LAST_RENDER_MANIFEST` for inspection.
+- `MOCK_AI=true` never calls `/api/classify-image`; the app shows that fallback classification is active.
+- Demo fixture metadata lives in `lib/reel/demoFixtures.js`.
+
+## Final Beta QA Checklist
+
+Before sending EstateMotion to a real estate agent, run this exact pass:
+
+1. Upload real listing photos, ideally 8-15 images from one property.
+2. Verify every live-render photo has a durable Supabase URL or refreshed signed URL.
+3. Verify AI/fallback categories match the rooms closely enough.
+4. Edit the reel sequence: remove weak photos, reorder the tour, and adjust captions.
+5. Export the MP4 or mock export pack.
+6. Open the MP4 on a mobile phone and confirm the vertical framing feels post-ready.
+7. Create an Instagram draft with the video, caption, hashtags, and thumbnail.
+8. Ask the beta agent to submit the export feedback form before leaving the demo.
 
 ## Connecting Supabase
 

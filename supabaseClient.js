@@ -1,5 +1,6 @@
 (function () {
   const buckets = {
+    listingPhotos: "listing-photos",
     projectPhotos: "project-photos",
     brandAssets: "brand-assets",
     generatedVideos: "generated-videos"
@@ -9,6 +10,10 @@
 
   function env() {
     return window.ESTATEMOTION_ENV ?? {};
+  }
+
+  function listingPhotosBucket() {
+    return env().LISTING_PHOTOS_BUCKET || buckets.listingPhotos || buckets.projectPhotos;
   }
 
   function enabled() {
@@ -146,20 +151,100 @@
     };
   }
 
-  async function uploadAsset(file, bucket, path) {
+  async function saveBetaFeedback(feedback, authUser) {
+    const supabase = await client();
+    if (!supabase || !authUser) return;
+    const result = await supabase.from("beta_feedback").insert({
+      user_id: authUser.id,
+      project_id: feedback.projectId || null,
+      project_title: feedback.projectTitle || "",
+      rating: feedback.rating,
+      usable_enough: feedback.usableEnough,
+      feedback_text: feedback.feedback || "",
+      render_metadata: feedback
+    });
+    throwIf(result.error);
+  }
+
+  async function uploadAsset(file, bucket, path, options = {}) {
     const supabase = await client();
     const cleanPath = path.replace(/[^a-zA-Z0-9/._-]+/g, "-");
-    const { data, error } = await supabase.storage.from(bucket).upload(cleanPath, file, {
-      cacheControl: "3600",
-      upsert: true,
-      contentType: file.type || "application/octet-stream"
-    });
-    if (error) throw error;
+    const data = await retryStorageOperation(async () => {
+      const result = await supabase.storage.from(bucket).upload(cleanPath, file, {
+        cacheControl: "3600",
+        upsert: true,
+        contentType: file.type || "application/octet-stream"
+      });
+      if (result.error) throw result.error;
+      return result.data;
+    }, options.retries ?? 2);
     const publicResult = supabase.storage.from(bucket).getPublicUrl(data.path);
+    const signedUrl = options.signed ? await createSignedAssetUrl(data.path, bucket, options.signedTtlSeconds) : "";
     return {
       path: data.path,
-      publicUrl: publicResult.data.publicUrl
+      bucket,
+      publicUrl: publicResult.data.publicUrl,
+      signedUrl,
+      durableUrl: signedUrl || publicResult.data.publicUrl,
+      durableUrlExpiresAt: signedUrl ? signedUrlExpiresAt(options.signedTtlSeconds) : ""
     };
+  }
+
+  async function uploadListingPhoto(file, path) {
+    return uploadAsset(file, listingPhotosBucket(), path, {
+      signed: Boolean(env().SUPABASE_STORAGE_PRIVATE),
+      signedTtlSeconds: signedUrlTtlSeconds(),
+      retries: 2
+    });
+  }
+
+  async function createSignedAssetUrl(path, bucket = listingPhotosBucket(), expiresIn = signedUrlTtlSeconds()) {
+    if (!path) return "";
+    const supabase = await client();
+    const result = await retryStorageOperation(async () => {
+      const signed = await supabase.storage.from(bucket).createSignedUrl(path, expiresIn);
+      if (signed.error) throw signed.error;
+      return signed.data;
+    }, 2);
+    return result?.signedUrl || "";
+  }
+
+  async function refreshDurableUrl(path, bucket = listingPhotosBucket(), expiresIn = signedUrlTtlSeconds()) {
+    if (!env().SUPABASE_STORAGE_PRIVATE) {
+      const supabase = await client();
+      const publicResult = supabase.storage.from(bucket).getPublicUrl(path);
+      return {
+        durableUrl: publicResult.data.publicUrl,
+        durableUrlExpiresAt: ""
+      };
+    }
+    const signedUrl = await createSignedAssetUrl(path, bucket, expiresIn);
+    return {
+      durableUrl: signedUrl,
+      durableUrlExpiresAt: signedUrlExpiresAt(expiresIn)
+    };
+  }
+
+  function signedUrlTtlSeconds() {
+    return Math.max(3600, Number(env().SUPABASE_SIGNED_URL_TTL_SECONDS || 172800));
+  }
+
+  function signedUrlExpiresAt(expiresIn) {
+    return new Date(Date.now() + Number(expiresIn || signedUrlTtlSeconds()) * 1000).toISOString();
+  }
+
+  async function retryStorageOperation(operation, retries = 2) {
+    let lastError;
+    for (let attempt = 0; attempt <= retries; attempt += 1) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error;
+        if (attempt === retries) break;
+        await new Promise((resolve) => setTimeout(resolve, 350 * (attempt + 1)));
+      }
+    }
+    throw lastError;
   }
 
   async function uploadTextAsset(name, content, contentType = "application/json") {
@@ -288,28 +373,45 @@
   }
 
   function mapPhotoToRow(photo, projectId, index) {
-    const publicUrl = photo.publicUrl || photo.public_url || photo.uri || "";
+    const publicUrl = photo.publicUrl || photo.public_url || "";
+    const durableUrl = photo.durableUrl || photo.durable_url || publicUrl;
     return {
       project_id: projectId,
       client_id: photo.id,
-      storage_path: photo.storagePath || publicUrl,
+      storage_path: photo.storagePath || durableUrl || publicUrl,
       public_url: publicUrl,
       file_name: photo.fileName,
       category: photo.category,
       sort_order: index + 1,
-      file_size: photo.size || null
+      file_size: photo.size || null,
+      width: photo.width || null,
+      height: photo.height || null,
+      render_metadata: {
+        durableUrl,
+        durableUrlExpiresAt: photo.durableUrlExpiresAt || "",
+        bucket: photo.bucket || listingPhotosBucket(),
+        mimeType: photo.mimeType || ""
+      }
     };
   }
 
   function mapPhotoFromRow(row) {
+    const metadata = row.render_metadata || {};
+    const durableUrl = metadata.durableUrl || row.public_url || "";
     return {
       id: row.client_id || row.id,
-      uri: row.public_url || row.storage_path,
+      uri: durableUrl || row.public_url || row.storage_path,
       publicUrl: row.public_url || "",
       public_url: row.public_url || "",
+      durableUrl,
+      durable_url: durableUrl,
+      durableUrlExpiresAt: metadata.durableUrlExpiresAt || "",
+      bucket: metadata.bucket || listingPhotosBucket(),
       storagePath: row.storage_path,
       fileName: row.file_name,
       size: row.file_size || 0,
+      width: row.width || 0,
+      height: row.height || 0,
       category: row.category,
       order: row.sort_order
     };
@@ -343,7 +445,12 @@
     signOut,
     loadWorkspace,
     saveWorkspace,
+    saveBetaFeedback,
     uploadAsset,
+    uploadListingPhoto,
+    createSignedAssetUrl,
+    refreshDurableUrl,
+    listingPhotosBucket,
     uploadTextAsset
   };
 })();

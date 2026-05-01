@@ -77,8 +77,12 @@ function validateManifest(manifest) {
   }
 
   const photos = manifest.orderedPhotos || [];
+  const missingDurableUrl = photos.some((photo) => !String(photo.durableUrl || photo.durable_url || photo.publicUrl || photo.public_url || ""));
+  if (missingDurableUrl) {
+    throw new Error("Live MP4 rendering requires durable Supabase image URLs on every ordered photo.");
+  }
   const hasUnrenderableLocalUrl = photos.some((photo) => {
-    const url = String(photo.publicUrl || photo.public_url || photo.imageUrl || photo.uri || "");
+    const url = String(photo.durableUrl || photo.durable_url || photo.publicUrl || photo.public_url || photo.imageUrl || photo.uri || "");
     return url.startsWith("blob:") || url.startsWith("data:");
   });
   if (hasUnrenderableLocalUrl) {

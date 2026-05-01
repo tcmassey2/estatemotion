@@ -77,9 +77,14 @@ create table if not exists public.project_photos (
   file_size integer,
   width integer,
   height integer,
+  render_metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   unique(project_id, client_id)
 );
+
+alter table public.project_photos add column if not exists render_metadata jsonb not null default '{}'::jsonb;
+alter table public.project_photos add column if not exists width integer;
+alter table public.project_photos add column if not exists height integer;
 
 create table if not exists public.templates (
   id text primary key,
@@ -133,6 +138,18 @@ create table if not exists public.exports (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.beta_feedback (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid references public.users(id) on delete set null,
+  project_id uuid references public.projects(id) on delete set null,
+  project_title text,
+  rating integer not null check (rating between 1 and 5),
+  usable_enough text not null,
+  feedback_text text,
+  render_metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
 alter table public.users enable row level security;
 alter table public.brand_kits enable row level security;
 alter table public.projects enable row level security;
@@ -140,6 +157,7 @@ alter table public.project_photos enable row level security;
 alter table public.generated_videos enable row level security;
 alter table public.subscriptions enable row level security;
 alter table public.exports enable row level security;
+alter table public.beta_feedback enable row level security;
 
 drop policy if exists "Users can read own profile" on public.users;
 drop policy if exists "Users can upsert own profile" on public.users;
@@ -150,9 +168,13 @@ drop policy if exists "Users manage photos for own projects" on public.project_p
 drop policy if exists "Users manage videos for own projects" on public.generated_videos;
 drop policy if exists "Users read own subscriptions" on public.subscriptions;
 drop policy if exists "Users manage own exports" on public.exports;
+drop policy if exists "Users manage own beta feedback" on public.beta_feedback;
 drop policy if exists "Users upload project photos" on storage.objects;
 drop policy if exists "Users update project photos" on storage.objects;
 drop policy if exists "Users read project photos" on storage.objects;
+drop policy if exists "Users upload listing photos" on storage.objects;
+drop policy if exists "Users update listing photos" on storage.objects;
+drop policy if exists "Users read listing photos" on storage.objects;
 drop policy if exists "Users upload brand assets" on storage.objects;
 drop policy if exists "Users update brand assets" on storage.objects;
 drop policy if exists "Users read brand assets" on storage.objects;
@@ -201,9 +223,11 @@ create policy "Users manage videos for own projects" on public.generated_videos
 
 create policy "Users read own subscriptions" on public.subscriptions for select using (auth.uid() = user_id);
 create policy "Users manage own exports" on public.exports for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "Users manage own beta feedback" on public.beta_feedback for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 insert into storage.buckets (id, name, public)
 values
+  ('listing-photos', 'listing-photos', true),
   ('project-photos', 'project-photos', true),
   ('brand-assets', 'brand-assets', true),
   ('generated-videos', 'generated-videos', true)
@@ -215,6 +239,13 @@ create policy "Users update project photos" on storage.objects
   for update using (bucket_id = 'project-photos' and auth.uid()::text = (storage.foldername(name))[1]);
 create policy "Users read project photos" on storage.objects
   for select using (bucket_id = 'project-photos' and auth.uid()::text = (storage.foldername(name))[1]);
+
+create policy "Users upload listing photos" on storage.objects
+  for insert with check (bucket_id = 'listing-photos' and auth.uid()::text = (storage.foldername(name))[1]);
+create policy "Users update listing photos" on storage.objects
+  for update using (bucket_id = 'listing-photos' and auth.uid()::text = (storage.foldername(name))[1]);
+create policy "Users read listing photos" on storage.objects
+  for select using (bucket_id = 'listing-photos' and auth.uid()::text = (storage.foldername(name))[1]);
 
 create policy "Users upload brand assets" on storage.objects
   for insert with check (bucket_id = 'brand-assets' and auth.uid()::text = (storage.foldername(name))[1]);

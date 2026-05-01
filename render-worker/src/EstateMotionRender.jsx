@@ -57,12 +57,13 @@ export function EstateMotionRender({ manifest = {}, format = "vertical" }) {
 
 function RenderScene({ scene, manifest, index, total, duration, accentColor, dimensions }) {
   const frame = useCurrentFrame();
-  const image = scene.imageUrl || scene.uri || scene.photoUrl || "";
+  const image = scene.durableUrl || scene.durable_url || scene.imageUrl || scene.uri || scene.photoUrl || "";
   const progress = interpolate(frame, [0, duration], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const transform = cameraTransform(scene.motionStyle, progress, dimensions);
   const project = manifest.project || {};
   const showHero = index === 0;
-  const facts = [project.price, project.beds ? `${project.beds} BD` : "", project.baths ? `${project.baths} BA` : "", project.sqft ? `${project.sqft} SQFT` : ""].filter(Boolean).join("  /  ");
+  const sqft = project.sqft || project.squareFeet;
+  const facts = [project.price, project.beds ? `${project.beds} BD` : "", project.baths ? `${project.baths} BA` : "", sqft ? `${sqft} SQFT` : ""].filter(Boolean).join("  /  ");
 
   return (
     <AbsoluteFill>
@@ -164,7 +165,7 @@ function scenesFromManifest(manifest = {}) {
   const photos = manifest.orderedPhotos || [];
   return (manifest.scenes || []).map((scene, index) => ({
     ...scene,
-    imageUrl: photos[index]?.publicUrl || photos[index]?.public_url || photos[index]?.imageUrl || photos[index]?.uri || scene.publicUrl || scene.public_url || scene.imageUrl || scene.uri || "",
+    imageUrl: photos[index]?.durableUrl || photos[index]?.durable_url || photos[index]?.publicUrl || photos[index]?.public_url || photos[index]?.imageUrl || photos[index]?.uri || scene.durableUrl || scene.durable_url || scene.publicUrl || scene.public_url || scene.imageUrl || scene.uri || "",
     duration: Number(scene.duration || 3)
   }));
 }

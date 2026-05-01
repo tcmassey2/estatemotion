@@ -75,6 +75,18 @@ const templates = [
     ctaWording: "Follow for more local homes",
     accentColor: "#2D7D78",
     visualCue: "Personal brand lift"
+  },
+  {
+    id: "investor-wholesale",
+    name: "Investor/Wholesale Deal",
+    description: "Direct, numbers-aware pacing for deal flow and buyer-demand angles.",
+    fontStyle: "Direct Sans",
+    textPlacement: "left rail",
+    motionSpeed: "medium",
+    transitionStyle: "clean cut",
+    ctaWording: "Ask for details",
+    accentColor: "#4C7A45",
+    visualCue: "Deal-focused proof"
   }
 ];
 
@@ -132,6 +144,66 @@ const sampleProjects = [
     thumbnail: demoPhotos[2].uri
   }
 ];
+
+const betaSampleListing = {
+  title: "Scottsdale Beta Sample Listing",
+  address: "9828 E Pinnacle Peak Road",
+  price: "$2,850,000",
+  beds: "5",
+  baths: "5.5",
+  squareFeet: "5,640",
+  neighborhood: "Silverleaf",
+  city: "Scottsdale",
+  listingType: "Just Listed",
+  hookText: "Inside a Scottsdale luxury listing built for desert living",
+  caption: "A polished sample listing reel using real property-style photos, factual captions, and editable scene sequencing.",
+  cta: "Schedule a private tour",
+  hookPreset: "Luxury",
+  captionTone: "Luxury",
+  reelTheme: "scottsdale-desert-luxury",
+  textAnimation: "Luxury minimal",
+  musicMood: "Luxury",
+  outroVariation: "Headshot + CTA",
+  thumbnailPreset: "Inside This Home",
+  reelVariations: [],
+  brandingVisible: true,
+  authenticityMode: true,
+  localAgentMode: true,
+  introText: "",
+  outroText: "",
+  reelPlanEdits: null,
+  photos: [
+    ["beta-1", "https://images.unsplash.com/photo-1600607687644-c7171b42498f?auto=format&fit=crop&w=1200&q=80", "scottsdale-exterior-hero.jpg", "Exterior hero"],
+    ["beta-2", "https://images.unsplash.com/photo-1600566753376-12c8ab7fb75b?auto=format&fit=crop&w=1200&q=80", "scottsdale-entry.jpg", "Entry / front door"],
+    ["beta-3", "https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=1200&q=80", "scottsdale-kitchen-island.jpg", "Kitchen"],
+    ["beta-4", "https://images.unsplash.com/photo-1600566753086-00f18fb6b3ea?auto=format&fit=crop&w=1200&q=80", "scottsdale-living-room.jpg", "Living room"],
+    ["beta-5", "https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=1200&q=80", "scottsdale-primary-bedroom.jpg", "Primary bedroom"],
+    ["beta-6", "https://images.unsplash.com/photo-1600566752355-35792bedcfea?auto=format&fit=crop&w=1200&q=80", "scottsdale-bathroom.jpg", "Bathroom"],
+    ["beta-7", "https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?auto=format&fit=crop&w=1200&q=80", "scottsdale-backyard-pool.jpg", "Backyard / pool"],
+    ["beta-8", "https://images.unsplash.com/photo-1615873968403-89e068629265?auto=format&fit=crop&w=1200&q=80", "scottsdale-detail-shot.jpg", "Detail shots"]
+  ].map(([id, uri, fileName, category], index) => ({
+    id,
+    uri,
+    publicUrl: uri,
+    public_url: uri,
+    durableUrl: uri,
+    durable_url: uri,
+    fileName,
+    category,
+    pipelineCategory: sceneToPipelineCategorySafe(category),
+    confidence: 92,
+    classificationSource: "sample fixture",
+    tags: [],
+    visibleFeatures: [],
+    description: `Sample ${category.toLowerCase()} scene for beta testing.`,
+    order: index + 1,
+    size: 0,
+    width: 1200,
+    height: 800,
+    bucket: "sample-fixtures",
+    storagePath: ""
+  }))
+};
 
 const sceneTypes = [
   "Exterior hero",
@@ -492,7 +564,13 @@ const defaultState = {
   error: "",
   toasts: [],
   leads: [],
+  betaFeedback: [],
   analyticsEvents: [],
+  betaFeedbackForm: {
+    rating: "5",
+    usableEnough: "yes",
+    feedback: ""
+  },
   earlyAccessForm: {
     name: "",
     email: "",
@@ -553,6 +631,9 @@ const defaultState = {
     brandingVisible: true,
     authenticityMode: true,
     localAgentMode: true,
+    introText: "",
+    outroText: "",
+    reelPlanEdits: null,
     photos: demoPhotos
   }
 };
@@ -579,8 +660,10 @@ function mergeState(base, saved) {
     renderQueue: saved.renderQueue ?? base.renderQueue,
     selectedShowcaseId: saved.selectedShowcaseId ?? base.selectedShowcaseId,
     leads: saved.leads ?? base.leads,
+    betaFeedback: saved.betaFeedback ?? base.betaFeedback,
     analyticsEvents: saved.analyticsEvents ?? base.analyticsEvents,
     earlyAccessForm: { ...base.earlyAccessForm, ...saved.earlyAccessForm },
+    betaFeedbackForm: { ...base.betaFeedbackForm, ...saved.betaFeedbackForm },
     user: { ...base.user, ...saved.user },
     brandKit: { ...base.brandKit, ...saved.brandKit },
     project: { ...base.project, ...saved.project, photos: saved.project?.photos ?? base.project.photos }
@@ -598,7 +681,11 @@ function readFeatureFlags() {
     SUPABASE_URL: params.get("SUPABASE_URL") || env.SUPABASE_URL || env.EXPO_PUBLIC_SUPABASE_URL || "",
     SUPABASE_ANON_KEY: params.get("SUPABASE_ANON_KEY") || env.SUPABASE_ANON_KEY || env.EXPO_PUBLIC_SUPABASE_ANON_KEY || "",
     SUPABASE_JS_URL: params.get("SUPABASE_JS_URL") || env.SUPABASE_JS_URL || "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm",
+    LISTING_PHOTOS_BUCKET: params.get("LISTING_PHOTOS_BUCKET") || env.LISTING_PHOTOS_BUCKET || "listing-photos",
+    SUPABASE_STORAGE_PRIVATE: readFlag("SUPABASE_STORAGE_PRIVATE", env, params, false),
+    SUPABASE_SIGNED_URL_TTL_SECONDS: Number(params.get("SUPABASE_SIGNED_URL_TTL_SECONDS") || env.SUPABASE_SIGNED_URL_TTL_SECONDS || 172800),
     OPENAI_ENDPOINT: params.get("OPENAI_ENDPOINT") || env.OPENAI_ENDPOINT || "",
+    VISION_CLASSIFICATION_ENDPOINT: params.get("VISION_CLASSIFICATION_ENDPOINT") || env.VISION_CLASSIFICATION_ENDPOINT || "/api/classify-image",
     STRIPE_PUBLISHABLE_KEY: params.get("STRIPE_PUBLISHABLE_KEY") || env.STRIPE_PUBLISHABLE_KEY || env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || "",
     STRIPE_CHECKOUT_ENDPOINT: params.get("STRIPE_CHECKOUT_ENDPOINT") || env.STRIPE_CHECKOUT_ENDPOINT || "",
     RENDER_ENDPOINT: params.get("RENDER_ENDPOINT") || env.RENDER_ENDPOINT || ""
@@ -888,6 +975,10 @@ function categorizePhoto(fileName) {
 }
 
 function classifyPhoto(fileName, index = 0) {
+  if (window.EstateMotionReel?.imageClassifier) {
+    const result = window.EstateMotionReel.imageClassifier.classifyPhoto({ fileName, uploadOrder: index });
+    return normalizeClassification(result);
+  }
   const name = String(fileName || "").toLowerCase().replaceAll("_", "-");
   const scores = Object.entries(sceneIntelligence).map(([category, config]) => {
     const keywordHits = config.keywords.filter((keyword) => name.includes(keyword)).length;
@@ -901,9 +992,58 @@ function classifyPhoto(fileName, index = 0) {
   return {
     category: winner.category,
     confidence: Math.round(winner.score * 100),
+    pipelineCategory: sceneToPipelineCategory(winner.category),
+    tags: [],
     suggestedCorrections: alternatives,
     intelligence: sceneIntelligence[winner.category]
   };
+}
+
+function normalizeClassification(result) {
+  const category = pipelineToSceneCategory(result.category);
+  return {
+    category,
+    pipelineCategory: result.category,
+    confidence: Math.max(0, Math.min(100, Math.round(Number(result.confidence || 0)))),
+    tags: result.tags || [],
+    visibleFeatures: result.visibleFeatures || result.tags || [],
+    description: result.description || "",
+    classificationSource: result.source || "fallback",
+    fallbackReason: result.fallbackReason || "",
+    suggestedCorrections: (result.suggestedCorrections || []).map(pipelineToSceneCategory),
+    intelligence: sceneIntelligence[category] || sceneIntelligence["Detail shots"]
+  };
+}
+
+function pipelineToSceneCategory(category) {
+  const map = {
+    "exterior hero": "Exterior hero",
+    kitchen: "Kitchen",
+    "living room": "Living room",
+    bedroom: "Primary bedroom",
+    bathroom: "Bathroom",
+    "backyard/outdoor": "Backyard / pool",
+    amenity: "Neighborhood / amenities",
+    "detail/other": "Detail shots"
+  };
+  return map[category] || category || "Detail shots";
+}
+
+function sceneToPipelineCategory(category) {
+  const normalized = sceneLabel(category);
+  const map = {
+    "Exterior hero": "exterior hero",
+    Kitchen: "kitchen",
+    "Living room": "living room",
+    Dining: "living room",
+    "Primary bedroom": "bedroom",
+    Bathroom: "bathroom",
+    "Backyard / pool": "backyard/outdoor",
+    "Neighborhood / amenities": "amenity",
+    "Entry / front door": "exterior hero",
+    "Detail shots": "detail/other"
+  };
+  return map[normalized] || "detail/other";
 }
 
 function sceneOrderBoost(category, index) {
@@ -946,6 +1086,32 @@ function hydratePreset(template) {
     .replace("{price}", state.project.price || "$X");
 }
 
+const unsupportedClaimPatterns = [
+  /\bbest deal\b/gi,
+  /\bguaranteed\b/gi,
+  /\bperfect investment\b/gi,
+  /\bcan'?t lose\b/gi,
+  /\brisk[- ]free\b/gi,
+  /\bhighest roi\b/gi
+];
+
+function enforceMlsSafeCaption(value, claimConfirmed = false) {
+  let text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!claimConfirmed) {
+    unsupportedClaimPatterns.forEach((pattern) => {
+      text = text.replace(pattern, "featured opportunity");
+    });
+  }
+  return text.slice(0, 140);
+}
+
+function captionNeedsManualClaimConfirmation(value) {
+  return unsupportedClaimPatterns.some((pattern) => {
+    pattern.lastIndex = 0;
+    return pattern.test(String(value || ""));
+  });
+}
+
 function createReelVariations() {
   return Object.entries(reelVariationPresets).map(([name, settings]) => ({
     name,
@@ -967,6 +1133,38 @@ function cloneShowcaseProject(showcase) {
     ...structuredClone(showcase.project),
     photos: showcase.project.photos.map((photo, index) => ({ ...photo, order: index + 1 }))
   };
+}
+
+function sceneToPipelineCategorySafe(category) {
+  const map = {
+    "Exterior hero": "exterior hero",
+    Exterior: "exterior hero",
+    Kitchen: "kitchen",
+    "Living room": "living room",
+    "Primary bedroom": "bedroom",
+    Bedroom: "bedroom",
+    Bathroom: "bathroom",
+    "Backyard / pool": "backyard/outdoor",
+    Backyard: "backyard/outdoor",
+    "Entry / front door": "exterior hero",
+    "Neighborhood / amenities": "amenity",
+    "Detail shots": "detail/other"
+  };
+  return map[category] || "detail/other";
+}
+
+function loadBetaSampleListing() {
+  setState((current) => ({
+    ...current,
+    selectedTemplateId: "desert-luxury",
+    selectedScene: 0,
+    renderQueue: [],
+    exportResult: null,
+    error: "",
+    project: structuredClone(betaSampleListing),
+    screen: "processing"
+  }));
+  showToast("Sample listing loaded");
 }
 
 function loadShowcaseProject(id) {
@@ -1084,12 +1282,20 @@ function updateProject(key, value) {
   setState((current) => ({ ...current, error: "", project: { ...current.project, [key]: value } }));
 }
 
+function updateProjectAndResetPlan(key, value) {
+  setState((current) => ({ ...current, error: "", project: { ...current.project, [key]: value, reelPlanEdits: null } }));
+}
+
 function updateBrand(key, value) {
   setState((current) => ({ ...current, error: "", brandKit: { ...current.brandKit, [key]: value } }));
 }
 
 function updateEarlyAccess(key, value) {
   setState((current) => ({ ...current, error: "", earlyAccessForm: { ...current.earlyAccessForm, [key]: value } }));
+}
+
+function updateBetaFeedback(key, value) {
+  setState((current) => ({ ...current, error: "", betaFeedbackForm: { ...current.betaFeedbackForm, [key]: value } }));
 }
 
 function resetProject() {
@@ -1116,11 +1322,18 @@ function validateProjectBasics() {
   const brandError = validateBrandKit();
   if (brandError) return brandError;
   if (!state.project.address.trim()) return "Property address is required.";
+  if (!state.project.price.trim()) return "Price is required before rendering.";
+  if (!String(state.project.beds || "").trim()) return "Beds are required before rendering.";
+  if (!String(state.project.baths || "").trim()) return "Baths are required before rendering.";
+  if (!String(state.project.squareFeet || "").trim()) return "Square footage is required before rendering.";
+  if (!String(state.project.city || state.project.neighborhood || "").trim()) return "City or neighborhood is required before rendering.";
   return "";
 }
 
 function validatePhotos() {
   if (orderedPhotos().length < 3) return "Upload or add at least 3 listing photos.";
+  const missingUrl = orderedPhotos().find((photo) => !photoRenderUrl(photo));
+  if (missingUrl) return `${missingUrl.fileName || "A listing photo"} is missing a usable preview URL. Remove it and upload again.`;
   return "";
 }
 
@@ -1249,6 +1462,10 @@ function bindInputs() {
   document.querySelectorAll("[data-lead]").forEach((input) => {
     input.addEventListener("input", () => updateEarlyAccess(input.dataset.lead, input.value));
   });
+  document.querySelectorAll("[data-beta-feedback]").forEach((input) => {
+    input.addEventListener("input", () => updateBetaFeedback(input.dataset.betaFeedback, input.type === "checkbox" ? input.checked : input.value));
+    input.addEventListener("change", () => updateBetaFeedback(input.dataset.betaFeedback, input.type === "checkbox" ? input.checked : input.value));
+  });
   document.querySelectorAll("[data-auth]").forEach((input) => {
     input.addEventListener("input", () => setState({ authEmail: input.value, error: "" }));
   });
@@ -1264,6 +1481,7 @@ function renderDashboard() {
         <p>The default flow is simple: upload photos, choose a style, let AI build the reel, preview, then export.</p>
         <div class="actions">
           <button class="primary" data-action="continue">Upload Photos</button>
+          <button class="secondary" data-action="sample">Try with sample listing</button>
           <button class="secondary" data-action="one-click">One-Click Reel</button>
           <button class="ghost" data-action="pro">Pro Mode</button>
         </div>
@@ -1273,20 +1491,30 @@ function renderDashboard() {
       </div>
     </section>
     <section class="quick-flow panel elevated">
-      ${quickStep("1", "Upload Photos", `${orderedPhotos().length} selected`)}
-      ${quickStep("2", "Choose Style", selectedTemplate().name)}
-      ${quickStep("3", "AI Processing", "Auto-build")}
-      ${quickStep("4", "Preview", "Vertical reel")}
-      ${quickStep("5", "Export", "MP4 + assets")}
+      ${quickStep("1", "Upload 8-15 listing photos", `${orderedPhotos().length} selected`)}
+      ${quickStep("2", "Enter basic listing details", state.project.address ? "Saved" : "Needed")}
+      ${quickStep("3", "Choose a reel style", selectedTemplate().name)}
+      ${quickStep("4", "Review and edit your reel plan", state.project.reelPlanEdits ? "Edited" : "AI draft")}
+      ${quickStep("5", "Export vertical MP4", featureFlags.MOCK_RENDERING ? "Mock/demo" : "Live render")}
     </section>
+    ${trustCopyPanel()}
   `);
   document.querySelector('[data-action="one-click"]').addEventListener("click", oneClickReel);
+  document.querySelector('[data-action="sample"]').addEventListener("click", loadBetaSampleListing);
   document.querySelector('[data-action="continue"]').addEventListener("click", () => navigate("upload"));
   document.querySelector('[data-action="pro"]').addEventListener("click", () => navigate("details"));
 }
 
 function quickStep(number, title, value) {
   return `<article><span>${number}</span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(value)}</small></article>`;
+}
+
+function trustCopyPanel() {
+  return `
+    <section class="trust-copy-panel panel">
+      ${["Uses your uploaded photos", "No fake property features", "MLS-safe captions", "Editable before export"].map((item) => `<article><span></span><strong>${escapeHtml(item)}</strong></article>`).join("")}
+    </section>
+  `;
 }
 
 function miniReelPreview(photo, variant = "") {
@@ -1478,7 +1706,7 @@ function renderDemoLandingPremium() {
     <section class="landing-section template-landing">
       <div class="section-title centered"><p>Template previews</p><h3>Choose the reel style that fits the listing.</h3></div>
       <div class="template-showcase landing-template-showcase">
-        ${templates.filter((template) => ["modern-luxury", "viral-fast-cut", "open-house", "mls-clean"].includes(template.id)).map((template) => templateChoiceCard(template, simpleStyleName(template))).join("")}
+        ${templates.filter((template) => ["modern-luxury", "viral-fast-cut", "open-house", "mls-clean", "investor-wholesale"].includes(template.id)).map((template) => templateChoiceCard(template, simpleStyleName(template))).join("")}
       </div>
     </section>
     <section class="landing-section trust-section">
@@ -1631,6 +1859,8 @@ function renderUpload() {
       <span>Feature proof</span>
       <span>Brand end card</span>
     </section>
+    ${trustCopyPanel()}
+    ${classificationModeBanner()}
     <label class="upload-zone" data-upload-zone>
       <input id="photoInput" type="file" accept="image/*" multiple>
       <span class="upload-plus">+</span>
@@ -1638,8 +1868,17 @@ function renderUpload() {
       <span class="muted">Drag and drop images here, or use Add More Photos. Select All from Folder works in the file picker.</span>
       <b class="upload-count">${photos.length} photo${photos.length === 1 ? "" : "s"} uploaded.</b>
     </label>
+    <section class="panel listing-basics-panel">
+      <div class="section-title"><p>Listing basics</p><h3>Only what the reel needs</h3></div>
+      <div class="grid-2">${field("Property address", "address")}${field("Price", "price")}</div>
+      <div class="grid-2">${field("Beds", "beds")}${field("Baths", "baths")}</div>
+      <div class="grid-2">${field("Square footage", "squareFeet")}${field("City / neighborhood", "city")}</div>
+      <div class="grid-2">${brandField("Agent name", "name")}${brandField("Brokerage/team", "brokerage")}</div>
+      <div class="grid-2">${brandField("Phone", "phone")}${brandField("Email", "email")}</div>
+    </section>
     <div class="actions">
       <button class="primary" data-add-more type="button">Add More Photos</button>
+      <button class="secondary" data-sample-listing type="button">Try with sample listing</button>
       <button class="primary" data-one-click>One-Click Reel</button>
       <button class="ghost" data-demo>Add demo photos</button>
       <button class="secondary" data-next="template">Choose style</button>
@@ -1669,6 +1908,7 @@ function renderUpload() {
   input.addEventListener("change", handlePhotoFiles);
   document.querySelector("[data-add-more]").addEventListener("click", () => input.click());
   bindUploadDropZone();
+  document.querySelector("[data-sample-listing]").addEventListener("click", loadBetaSampleListing);
   document.querySelector("[data-one-click]").addEventListener("click", oneClickReel);
   document.querySelector("[data-sort]")?.addEventListener("click", sortPhotos);
   document.querySelector("[data-featured-flow]")?.addEventListener("click", applyFeaturedPropertyFlow);
@@ -1678,6 +1918,13 @@ function renderUpload() {
   });
   document.querySelector("[data-next]").addEventListener("click", () => guard(validatePhotos(), () => navigate("template")));
   bindPhotoControls();
+}
+
+function classificationModeBanner() {
+  if (featureFlags.MOCK_AI) {
+    return `<div class="state-banner warning-state"><strong>Fallback classification active</strong><span>MOCK_AI=true, so EstateMotion will not call /api/classify-image. Filename/order heuristics are used until OpenAI Vision is enabled server-side.</span></div>`;
+  }
+  return `<div class="state-banner loading-state"><strong>AI Vision enabled</strong><span>EstateMotion will try /api/classify-image after upload and fall back safely if OPENAI_API_KEY or the Vision API is unavailable.</span></div>`;
 }
 
 function averageConfidence(photos) {
@@ -1692,11 +1939,16 @@ function engineMetric(label, value) {
 function photoCard(photo, index) {
   const confidence = sceneConfidence(photo);
   const suggestions = sceneSuggestions(photo).filter((item) => item !== sceneLabel(photo.category)).slice(0, 2);
+  const features = (photo.visibleFeatures || photo.tags || []).slice(0, 3);
+  const source = photo.classificationSource === "openai-vision" ? "AI Vision" : photo.classificationSource === "manual" ? "Manual" : "Fallback";
   return `
     <article class="photo-card" draggable="true" data-photo-id="${photo.id}">
       <div class="photo-thumb"><img src="${photo.uri}" alt=""></div>
       <div class="photo-meta"><span>${index + 1}. ${escapeHtml(sceneLabel(photo.category))}</span><span>${escapeHtml(photo.fileName)}</span></div>
-      <div class="confidence-row"><span>${confidence}% confidence</span><b>${confidence >= 78 ? "Strong match" : "Review suggested"}</b></div>
+      <div class="confidence-row"><span>${confidence}% confidence</span><b class="source-badge ${escapeAttr(photo.classificationSource || "fallback")}">${escapeHtml(source)}</b></div>
+      ${photo.description ? `<p class="vision-description">${escapeHtml(photo.description)}</p>` : ""}
+      ${features.length ? `<div class="feature-pills">${features.map((feature) => `<span>${escapeHtml(feature)}</span>`).join("")}</div>` : ""}
+      ${photo.fallbackReason ? `<p class="vision-fallback">${escapeHtml(photo.fallbackReason)}</p>` : ""}
       ${suggestions.length ? `<div class="suggestion-row"><span>Suggested:</span>${suggestions.map((suggestion) => `<button data-suggest-photo="${photo.id}" data-suggest-category="${escapeAttr(suggestion)}">${escapeHtml(suggestion)}</button>`).join("")}</div>` : ""}
       <label class="photo-type-select">
         <span>Scene type</span>
@@ -1719,10 +1971,16 @@ async function handlePhotoFiles(event) {
 }
 
 async function processSelectedFiles(selectedFiles) {
-  const imageFiles = selectedFiles.filter((file) => file.type.startsWith("image/"));
-  const rejectedCount = selectedFiles.length - imageFiles.length;
+  const ingestion = window.EstateMotionReel?.photoIngestion;
+  const validated = ingestion?.validateImageFiles ? ingestion.validateImageFiles(selectedFiles) : {
+    imageFiles: selectedFiles.filter((file) => file.type.startsWith("image/")),
+    rejectedFiles: selectedFiles.filter((file) => !file.type.startsWith("image/"))
+  };
+  const imageFiles = validated.imageFiles;
+  const rejectedCount = validated.rejectedFiles.length;
   if (rejectedCount) {
-    showToast(`${rejectedCount} non-image file${rejectedCount === 1 ? "" : "s"} skipped`, "error");
+    const firstReason = validated.rejectedFiles[0]?.reason || "Unsupported image format.";
+    showToast(`${rejectedCount} file${rejectedCount === 1 ? "" : "s"} skipped: ${firstReason}`, "error");
   }
   if (!imageFiles.length) {
     setError("No image files were selected. Upload JPG, PNG, or WebP photos.");
@@ -1751,24 +2009,51 @@ async function processSelectedFiles(selectedFiles) {
   setState({ loading: featureFlags.MOCK_SUPABASE ? "Preparing uploaded photos..." : "Uploading photos to Supabase Storage...", error: "" });
   try {
     const remoteProjectId = shouldUseLocalPersistence() ? "" : await ensureRemoteProjectForUploads();
-    const uploadedAssets = await Promise.all(uniqueFiles.map((file, index) => prepareProjectPhoto(file, index, remoteProjectId)));
-    const uploadedPhotos = uniqueFiles.map((file, index) => {
+    const uploadedAssets = await Promise.all(uniqueFiles.map(async (file, index) => {
+      const asset = await prepareProjectPhoto(file, index, remoteProjectId);
+      if (!featureFlags.MOCK_SUPABASE && !asset?.durableUrl) {
+        throw new Error(`${file.name} uploaded but did not return a durable render URL. Check the ${featureFlags.LISTING_PHOTOS_BUCKET} Supabase bucket permissions or signed URL policy.`);
+      }
+      return asset;
+    }));
+    const uploadedPhotos = await Promise.all(uniqueFiles.map(async (file, index) => {
       const classification = classifyPhoto(file.name, currentPhotos.length + index);
-      const publicUrl = uploadedAssets[index].publicUrl;
+      const publicUrl = uploadedAssets[index].publicUrl || uploadedAssets[index].durableUrl || uploadedAssets[index].previewUrl;
+      const basePhoto = ingestion?.normalizeUploadedPhoto
+        ? await ingestion.normalizeUploadedPhoto({ file, asset: uploadedAssets[index], id: `local-${Date.now()}-${index}`, uploadOrder: currentPhotos.length + index })
+        : {
+          id: `local-${Date.now()}-${index}`,
+          uri: publicUrl,
+          publicUrl,
+          public_url: publicUrl,
+          durableUrl: uploadedAssets[index].durableUrl || "",
+          durable_url: uploadedAssets[index].durableUrl || "",
+          durableUrlExpiresAt: uploadedAssets[index].durableUrlExpiresAt || "",
+          bucket: uploadedAssets[index].bucket || "",
+          storagePath: uploadedAssets[index].path,
+          fileName: file.name,
+          size: file.size,
+          uploadOrder: currentPhotos.length + index
+        };
       return {
-        id: `local-${Date.now()}-${index}`,
-        uri: publicUrl,
-        publicUrl,
-        public_url: publicUrl,
-        storagePath: uploadedAssets[index].path,
-        fileName: file.name,
-        size: file.size,
+        ...basePhoto,
         category: classification.category,
+        pipelineCategory: classification.pipelineCategory,
         confidence: classification.confidence,
+        tags: classification.tags || [],
+        visibleFeatures: classification.visibleFeatures || classification.tags || [],
+        description: classification.description || "",
+        classificationSource: classification.classificationSource || "fallback",
+        fallbackReason: classification.fallbackReason || "",
+        durableUrl: basePhoto.durableUrl || uploadedAssets[index].durableUrl || "",
+        durable_url: basePhoto.durable_url || uploadedAssets[index].durableUrl || "",
+        durableUrlExpiresAt: basePhoto.durableUrlExpiresAt || uploadedAssets[index].durableUrlExpiresAt || "",
+        bucket: basePhoto.bucket || uploadedAssets[index].bucket || featureFlags.LISTING_PHOTOS_BUCKET,
         suggestedCorrections: classification.suggestedCorrections,
+        reelScore: window.EstateMotionReel?.photoRanker?.scorePhoto ? window.EstateMotionReel.photoRanker.scorePhoto({ ...basePhoto, classification }) : 0,
         order: currentPhotos.length + index + 1
       };
-    });
+    }));
     setState((current) => {
       const existing = [...current.project.photos].sort((a, b) => a.order - b.order);
       const photos = [...existing, ...uploadedPhotos].map((photo, index) => ({ ...photo, order: index + 1 }));
@@ -1776,8 +2061,56 @@ async function processSelectedFiles(selectedFiles) {
     });
     const total = currentPhotos.length + uploadedPhotos.length;
     showToast(`${total} photo${total === 1 ? "" : "s"} uploaded`);
+    await enhanceUploadedPhotosWithVision(uploadedPhotos);
   } catch (error) {
     setError(error.message || "Photo upload failed. Try smaller image files.");
+  }
+}
+
+async function enhanceUploadedPhotosWithVision(uploadedPhotos) {
+  if (featureFlags.MOCK_AI || !uploadedPhotos.length || !window.EstateMotionReel?.imageClassifier?.classifyPhotoWithVision) return;
+  try {
+    setState({ loading: "Analyzing photos with OpenAI Vision...", error: "" });
+    const enhanced = [];
+    for (const photo of uploadedPhotos) {
+      const result = await window.EstateMotionReel.imageClassifier.classifyPhotoWithVision(photo, {
+        endpoint: featureFlags.VISION_CLASSIFICATION_ENDPOINT,
+        lowConfidenceThreshold: 62
+      });
+      enhanced.push({ id: photo.id, classification: normalizeClassification(result) });
+    }
+    const enhancedById = new Map(enhanced.map((item) => [item.id, item.classification]));
+    const usedVision = enhanced.some((item) => item.classification.classificationSource === "openai-vision");
+    setState((current) => ({
+      ...current,
+      loading: "",
+      project: {
+        ...current.project,
+        photos: current.project.photos.map((photo) => {
+          const classification = enhancedById.get(photo.id);
+          if (!classification || classification.classificationSource !== "openai-vision") {
+            return classification ? { ...photo, fallbackReason: classification.fallbackReason || photo.fallbackReason } : photo;
+          }
+          return {
+            ...photo,
+            category: classification.category,
+            pipelineCategory: classification.pipelineCategory,
+            confidence: classification.confidence,
+            tags: classification.tags || [],
+            visibleFeatures: classification.visibleFeatures || [],
+            description: classification.description || "",
+            classificationSource: classification.classificationSource,
+            fallbackReason: "",
+            suggestedCorrections: classification.suggestedCorrections || []
+          };
+        })
+      }
+    }));
+    const fallbackReason = enhanced.find((item) => item.classification.fallbackReason)?.classification.fallbackReason || "OPENAI_API_KEY may be missing or the Vision endpoint is unavailable.";
+    showToast(usedVision ? "OpenAI Vision classification applied" : `Vision unavailable; fallback used. ${fallbackReason}`, usedVision ? "success" : "error");
+  } catch (error) {
+    setState({ loading: "" });
+    showToast(`Vision unavailable; fallback classification used. ${error.message || "Check OPENAI_API_KEY and /api/classify-image."}`, "error");
   }
 }
 
@@ -1795,13 +2128,29 @@ async function ensureRemoteProjectForUploads() {
 
 async function prepareProjectPhoto(file, index, remoteProjectId = "") {
   if (shouldUseLocalPersistence()) {
-    const publicUrl = await readFileAsDataUrl(file);
-    return { publicUrl, path: "" };
+    const objectUrl = URL.createObjectURL(file);
+    return { previewUrl: objectUrl, objectUrl, publicUrl: "", durableUrl: "", path: "", bucket: "" };
   }
   if (!authUser) throw new Error("Sign in before uploading photos to Supabase Storage.");
   const projectId = remoteProjectId || state.project.id || "draft";
   const path = `${authUser.id}/projects/${projectId}/${Date.now()}-${index}-${file.name}`;
-  return window.EstateMotionSupabase.uploadAsset(file, window.EstateMotionSupabase.buckets.projectPhotos, path);
+  if (!window.EstateMotionSupabase?.uploadListingPhoto) throw new Error("Supabase upload helper is unavailable. Set MOCK_SUPABASE=true for local demo mode.");
+  return uploadWithRetry(() => window.EstateMotionSupabase.uploadListingPhoto(file, path), file.name);
+}
+
+async function uploadWithRetry(operation, fileName, retries = 2) {
+  let lastError;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (attempt === retries) break;
+      showToast(`Upload retry ${attempt + 1} for ${fileName}`, "error");
+      await new Promise((resolve) => setTimeout(resolve, 450 * (attempt + 1)));
+    }
+  }
+  throw new Error(`${fileName} failed to upload to Supabase Storage. ${lastError?.message || "Try again or switch to mock mode for local demos."}`);
 }
 
 function fileDuplicateKey(file) {
@@ -1893,7 +2242,15 @@ function bindPhotoControls() {
 }
 
 function updatePhotoType(id, category) {
-  const photos = orderedPhotos().map((photo) => photo.id === id ? { ...photo, category, confidence: 100, suggestedCorrections: [] } : photo);
+  const photos = orderedPhotos().map((photo) => photo.id === id ? {
+    ...photo,
+    category,
+    pipelineCategory: sceneToPipelineCategory(category),
+    confidence: 100,
+    classificationSource: "manual",
+    fallbackReason: "",
+    suggestedCorrections: []
+  } : photo);
   setState((current) => ({ ...current, project: { ...current.project, photos } }));
   showToast("Photo scene type updated");
 }
@@ -1941,26 +2298,18 @@ function movePhoto(id, direction) {
 }
 
 function sortPhotos() {
-  const photos = [...state.project.photos].sort((a, b) => flowRank(sceneLabel(a.category)) - flowRank(sceneLabel(b.category)) || sceneConfidence(b) - sceneConfidence(a) || a.order - b.order).map((photo, index) => ({ ...photo, order: index + 1 }));
+  const planned = createPipelineSequence().scenes.map((scene) => scene.photo);
+  const fallback = [...state.project.photos].sort((a, b) => flowRank(sceneLabel(a.category)) - flowRank(sceneLabel(b.category)) || sceneConfidence(b) - sceneConfidence(a) || a.order - b.order);
+  const source = planned.length ? planned : fallback;
+  const photos = source.map((photo, index) => ({ ...photo, order: index + 1 }));
   setState((current) => ({ ...current, project: { ...current.project, photos } }));
   showToast("Photos sorted for a real estate reel");
 }
 
 function applyFeaturedPropertyFlow() {
-  const used = new Set();
-  const photos = orderedPhotos();
-  const ordered = [];
-  featuredPropertyFlow.forEach((type) => {
-    const match = photos.find((photo) => !used.has(photo.id) && sceneLabel(photo.category) === type);
-    if (match) {
-      used.add(match.id);
-      ordered.push(match);
-    }
-  });
-  photos.forEach((photo) => {
-    if (!used.has(photo.id)) ordered.push(photo);
-  });
-  setState((current) => ({ ...current, project: { ...current.project, photos: ordered.map((photo, order) => ({ ...photo, order: order + 1 })) } }));
+  const ordered = createPipelineSequence().scenes.map((scene) => scene.photo);
+  const photos = ordered.length ? ordered : orderedPhotos();
+  setState((current) => ({ ...current, project: { ...current.project, photos: photos.map((photo, order) => ({ ...photo, order: order + 1 })) } }));
   showToast("Best Listing Flow applied");
 }
 
@@ -1985,7 +2334,12 @@ function oneClickReel() {
         : "modern-luxury";
   const template = templates.find((item) => item.id === templateId) ?? templates[0];
   const preset = state.project.listingType === "Open House" ? "Open House" : templateId === "viral-fast-cut" ? "Just Listed" : templateId === "desert-luxury" ? "Scottsdale Luxury" : "Luxury";
-  const hook = hydratePreset(hookPresets[preset] || hookPresets.Luxury);
+  const hook = window.EstateMotionReel?.copyGenerator?.generateHook
+    ? window.EstateMotionReel.copyGenerator.generateHook(pipelineListingDetails(), templatePipelineId())
+    : hydratePreset(hookPresets[preset] || hookPresets.Luxury);
+  const cta = window.EstateMotionReel?.copyGenerator?.generateCTA
+    ? window.EstateMotionReel.copyGenerator.generateCTA(pipelineListingDetails())
+    : currentProjectCta(template);
 
   setState((current) => ({
     ...current,
@@ -1998,7 +2352,7 @@ function oneClickReel() {
       photos: ordered,
       hookPreset: preset,
       hookText: hook,
-      cta: current.project.cta || template.ctaWording,
+      cta,
       thumbnailPreset: templateId === "viral-fast-cut" ? "Inside This Home" : current.project.thumbnailPreset,
       reelTheme: templateId === "desert-luxury" ? "scottsdale-desert-luxury" : templateId === "open-house" ? "open-house-fast-cut" : current.project.reelTheme,
       reelVariations: createReelVariations()
@@ -2008,10 +2362,155 @@ function oneClickReel() {
   showToast("AI reel build started");
 }
 
+function currentProjectCta(template) {
+  return state.project.cta || template?.ctaWording || state.brandKit.ctaText || "Schedule your private tour";
+}
+
 function flowRank(category) {
   const normalized = sceneLabel(category);
   const index = featuredPropertyFlow.findIndex((item) => sceneLabel(item) === normalized || item === normalized);
   return index === -1 ? 999 : index;
+}
+
+function pipelineListingDetails() {
+  return {
+    address: state.project.address,
+    price: state.project.price,
+    beds: state.project.beds,
+    baths: state.project.baths,
+    squareFeet: state.project.squareFeet,
+    city: state.project.city,
+    neighborhood: state.project.neighborhood,
+    cta: state.project.cta || state.brandKit.ctaText,
+    agentName: state.brandKit.name,
+    brokerage: state.brandKit.brokerage,
+    phone: state.brandKit.phone,
+    email: state.brandKit.email
+  };
+}
+
+function templatePipelineId() {
+  const map = {
+    "modern-luxury": "luxury",
+    "desert-luxury": "luxury",
+    "viral-fast-cut": "viral",
+    "open-house": "openHouse",
+    "mls-clean": "mlsClean",
+    "agent-brand-builder": "luxury",
+    "investor-cash-flow": "investor",
+    "investor-wholesale": "investor"
+  };
+  return map[normalizeTemplateId(state.selectedTemplateId)] || "luxury";
+}
+
+function pipelineTemplateConfig() {
+  return window.EstateMotionReel?.templates?.[templatePipelineId()] || {
+    id: templatePipelineId(),
+    sceneDuration: 2,
+    motionStyle: "Depth zoom",
+    transitionStyle: "soft dissolve",
+    captionPlacement: "lower third",
+    textStyle: "premium"
+  };
+}
+
+function pipelinePhotos() {
+  return orderedPhotos().map((photo, index) => ({
+    ...photo,
+    uploadOrder: photo.uploadOrder ?? index,
+    pipelineCategory: photo.pipelineCategory || sceneToPipelineCategory(photo.category),
+    classification: {
+      category: photo.pipelineCategory || sceneToPipelineCategory(photo.category),
+      confidence: sceneConfidence(photo),
+      tags: photo.tags || []
+    }
+  }));
+}
+
+function createPipelineSequence() {
+  if (state.project.reelPlanEdits?.scenes?.length) return sequenceFromEditedPlan(state.project.reelPlanEdits);
+  return createAISequence();
+}
+
+function createAISequence() {
+  const planner = window.EstateMotionReel?.sequencePlanner;
+  if (planner?.createReelSequence) {
+    return planner.createReelSequence(pipelinePhotos(), pipelineListingDetails(), templatePipelineId());
+  }
+  return {
+    scenes: orderedPhotos().map((photo, index) => ({
+      id: `scene-${index + 1}`,
+      photo,
+      category: sceneToPipelineCategory(photo.category),
+      duration: Number(motionPlanForPhoto(photo, index).duration)
+    }))
+  };
+}
+
+function pipelineCaptions(sequence = createPipelineSequence()) {
+  if (sequence.scenes?.some((scene) => scene.caption)) {
+    return sequence.scenes.map((scene) => ({ sceneId: scene.id, caption: scene.caption || sceneLabel(scene.photo?.category) }));
+  }
+  const generator = window.EstateMotionReel?.copyGenerator;
+  if (generator?.generateSceneCaptions) return generator.generateSceneCaptions(sequence, pipelineListingDetails());
+  return sequence.scenes.map((scene) => ({ sceneId: scene.id, caption: sceneLabel(scene.photo.category) }));
+}
+
+function createEditableReelPlan() {
+  const sequence = createAISequence();
+  const captionByScene = new Map(pipelineCaptions(sequence).map((item) => [item.sceneId, item.caption]));
+  return {
+    id: `plan-${Date.now()}`,
+    source: "ai",
+    claimConfirmed: false,
+    introText: state.project.introText || aiCopy().hook,
+    outroText: state.project.outroText || state.project.cta || state.brandKit.ctaText,
+    scenes: sequence.scenes.map((scene, index) => ({
+      id: scene.id || `scene-${index + 1}`,
+      photoId: scene.photo.id,
+      category: scene.category || sceneToPipelineCategory(scene.photo.category),
+      caption: enforceMlsSafeCaption(captionByScene.get(scene.id) || sceneLabel(scene.photo.category)),
+      duration: Number(scene.duration || motionPlanForPhoto(scene.photo, index).duration || 2),
+      order: index + 1
+    }))
+  };
+}
+
+function activeEditableReelPlan() {
+  return state.project.reelPlanEdits?.scenes?.length ? state.project.reelPlanEdits : createEditableReelPlan();
+}
+
+function sequenceFromEditedPlan(plan) {
+  const photosById = new Map(orderedPhotos().map((photo) => [photo.id, photo]));
+  const scenes = [...(plan.scenes || [])]
+    .sort((a, b) => Number(a.order || 0) - Number(b.order || 0))
+    .map((item, index) => {
+      const photo = photosById.get(item.photoId);
+      if (!photo) return null;
+      return {
+        id: item.id || `edited-scene-${index + 1}`,
+        type: "photo",
+        order: index + 1,
+        photo: {
+          ...photo,
+          category: pipelineToSceneCategory(item.category),
+          pipelineCategory: item.category,
+          durableUrl: photo.durableUrl || photo.durable_url || "",
+          durable_url: photo.durable_url || photo.durableUrl || ""
+        },
+        category: item.category || sceneToPipelineCategory(photo.category),
+        caption: enforceMlsSafeCaption(item.caption || sceneLabel(photo.category), item.claimConfirmed),
+        duration: Number(item.duration || 2),
+        role: "edited property tour"
+      };
+    })
+    .filter(Boolean);
+  return {
+    intro: { id: "intro", type: "intro", caption: enforceMlsSafeCaption(plan.introText || aiCopy().hook, plan.claimConfirmed), duration: 2.2 },
+    scenes,
+    outro: { id: "outro", type: "outro", caption: enforceMlsSafeCaption(plan.outroText || state.project.cta || state.brandKit.ctaText, plan.claimConfirmed), duration: 3 },
+    totalDuration: Number((scenes.reduce((sum, scene) => sum + Number(scene.duration || 0), 5.2)).toFixed(1))
+  };
 }
 
 function renderDetails() {
@@ -2057,7 +2556,7 @@ function renderDetails() {
 }
 
 function renderTemplate() {
-  const simpleTemplates = templates.filter((template) => ["modern-luxury", "viral-fast-cut", "open-house", "mls-clean"].includes(template.id));
+  const simpleTemplates = templates.filter((template) => ["modern-luxury", "viral-fast-cut", "open-house", "mls-clean", "investor-wholesale"].includes(template.id));
   renderLayout(`
     <div class="screen-title cinematic-title"><p class="eyebrow">Choose video style</p><h2>Pick the feel of the reel.</h2><p>Each style changes the pacing, overlays, motion system, CTA, and export manifest while keeping the listing photography real.</p></div>
     <section class="panel">
@@ -2095,7 +2594,7 @@ function renderTemplate() {
   document.querySelector("[data-generate-variations]")?.addEventListener("click", generateReelVariations);
   document.querySelectorAll("[data-template]").forEach((button) => button.addEventListener("click", () => {
     trackEvent("template_select", { templateId: button.dataset.template });
-    setState({ selectedTemplateId: button.dataset.template });
+    setState((current) => ({ ...current, selectedTemplateId: button.dataset.template, project: { ...current.project, reelPlanEdits: null } }));
   }));
   document.querySelector("[data-one-click]").addEventListener("click", oneClickReel);
   document.querySelector("[data-next]").addEventListener("click", () => guard(validateProjectBasics() || validatePhotos() || validateTemplate(), () => navigate("processing")));
@@ -2106,7 +2605,8 @@ function simpleStyleName(template) {
     "modern-luxury": "Luxury",
     "viral-fast-cut": "Viral",
     "open-house": "Open House",
-    "mls-clean": "MLS Clean"
+    "mls-clean": "MLS Clean",
+    "investor-wholesale": "Investor/Wholesale"
   };
   return names[template.id] || template.name;
 }
@@ -2128,6 +2628,12 @@ function templateChoiceCard(template, displayName = template.name) {
 }
 
 function renderProcessing() {
+  const plan = activeEditableReelPlan();
+  const sequence = sequenceFromEditedPlan(plan);
+  const captions = pipelineCaptions(sequence);
+  const captionByScene = new Map(captions.map((item) => [item.sceneId, item.caption]));
+  const preflightManifest = buildExportPayload();
+  const preflightError = validatePreRenderManifest(preflightManifest, { live: !featureFlags.MOCK_RENDERING });
   const steps = [
     ["Sorting photos", "Best Listing Flow", "complete"],
     ["Identifying rooms", `${new Set(orderedPhotos().map((photo) => sceneLabel(photo.category))).size || 0} scene types`, "complete"],
@@ -2147,6 +2653,23 @@ function renderProcessing() {
     <section class="processing-steps">
       ${steps.map(([title, detail, status]) => processingStep(title, detail, status)).join("")}
     </section>
+    <section class="panel reel-plan-panel">
+      <div class="section-title"><p>Lightweight reel editor</p><h3>${sequence.scenes.length} photo scenes / ${sequence.totalDuration || beatSyncPlan(renderManifestScenes(sequence)).totalDuration}s</h3></div>
+      <p class="muted">Correct the AI plan before rendering. Captions are kept MLS-safe and factual by default.</p>
+      ${preflightError ? `<div class="state-banner error-state"><strong>Preflight needs attention</strong><span>${escapeHtml(preflightError)}</span></div>` : `<div class="state-banner loading-state"><strong>Plan ready</strong><span>Every edited scene is linked to an uploaded photo. Durable render URLs stay preserved.</span></div>`}
+      <div class="grid-2 reel-copy-editor">
+        <label class="field"><span>Intro text</span><input data-plan-intro value="${escapeAttr(plan.introText || "")}"></label>
+        <label class="field"><span>Outro text</span><input data-plan-outro value="${escapeAttr(plan.outroText || "")}"></label>
+      </div>
+      <label class="toggle-row claim-confirm"><span>Manually confirm promotional claim language</span><input type="checkbox" data-plan-claim-confirmed ${plan.claimConfirmed ? "checked" : ""}></label>
+      <div class="reel-plan-grid">
+        ${sequence.scenes.map((scene, index) => reelPlanRow(scene, index, captionByScene.get(scene.id))).join("")}
+      </div>
+      <div class="actions">
+        <button class="secondary" data-reset-ai-plan>Reset to AI Plan</button>
+        <button class="primary" data-preview-updated>Preview Updated Reel</button>
+      </div>
+    </section>
     <section class="panel processing-confidence">
       <div class="section-title"><p>Ready next</p><h3>Preview the reel before exporting.</h3></div>
       <p class="muted">The preview keeps the render manifest, Supabase photo URLs, motion plan, brand end card, captions, and mock/live render fallback intact.</p>
@@ -2157,7 +2680,152 @@ function renderProcessing() {
     </section>
   `);
   document.querySelector("[data-back-style]").addEventListener("click", () => navigate("template"));
-  document.querySelector("[data-next-preview]").addEventListener("click", () => navigate("preview"));
+  document.querySelector("[data-next-preview]").addEventListener("click", () => guard(validateReelPlanBeforePreview(), () => navigate("preview")));
+  bindReelPlanEditor(plan);
+}
+
+function reelPlanRow(scene, index, caption) {
+  const photo = scene.photo || {};
+  const source = photo.classificationSource === "openai-vision" ? "AI Vision" : photo.classificationSource === "manual" ? "Manual" : "Fallback";
+  const features = (photo.visibleFeatures || photo.tags || []).slice(0, 3);
+  const sceneId = scene.id;
+  return `
+    <article class="reel-plan-row editor-row" data-editor-scene="${escapeAttr(sceneId)}">
+      <img src="${photo.uri}" alt="">
+      <span>${String(index + 1).padStart(2, "0")}</span>
+      <div>
+        <label class="mini-field"><small>Category</small><select data-plan-category="${escapeAttr(sceneId)}">${reelCategoryOptions().map((category) => `<option value="${category}" ${scene.category === category ? "selected" : ""}>${escapeHtml(pipelineToSceneCategory(category))}</option>`).join("")}</select></label>
+        <label class="mini-field"><small>Caption</small><input data-plan-caption="${escapeAttr(sceneId)}" value="${escapeAttr(caption || scene.role || "Property tour scene")}"></label>
+        <small>${escapeHtml(source)} · ${sceneConfidence(photo)}% confidence${features.length ? ` · ${features.map(escapeHtml).join(", ")}` : ""}</small>
+        ${photo.description ? `<small>${escapeHtml(photo.description)}</small>` : ""}
+      </div>
+      <div class="scene-edit-controls">
+        <label class="mini-field"><small>Seconds</small><input type="number" min="1" max="6" step="0.1" data-plan-duration="${escapeAttr(sceneId)}" value="${Number(scene.duration || 2).toFixed(1)}"></label>
+        <button class="ghost" data-plan-move="${escapeAttr(sceneId)}" data-dir="-1">Up</button>
+        <button class="ghost" data-plan-move="${escapeAttr(sceneId)}" data-dir="1">Down</button>
+        <button class="secondary" data-plan-remove="${escapeAttr(sceneId)}">Remove</button>
+      </div>
+    </article>
+  `;
+}
+
+function reelCategoryOptions() {
+  return window.EstateMotionReel?.imageClassifier?.allowedCategories || ["exterior hero", "kitchen", "living room", "bedroom", "bathroom", "backyard/outdoor", "amenity", "detail/other"];
+}
+
+function bindReelPlanEditor(plan) {
+  ensureReelPlanPersisted(plan);
+  document.querySelector("[data-plan-intro]")?.addEventListener("input", (event) => updateReelPlanField("introText", event.target.value));
+  document.querySelector("[data-plan-outro]")?.addEventListener("input", (event) => updateReelPlanField("outroText", event.target.value));
+  document.querySelector("[data-plan-claim-confirmed]")?.addEventListener("change", (event) => updateReelPlanField("claimConfirmed", event.target.checked));
+  document.querySelectorAll("[data-plan-category]").forEach((input) => {
+    input.addEventListener("input", () => updateReelPlanScene(input.dataset.planCategory, { category: input.value }));
+  });
+  document.querySelectorAll("[data-plan-caption]").forEach((input) => {
+    input.addEventListener("input", () => updateReelPlanScene(input.dataset.planCaption, { caption: input.value }));
+  });
+  document.querySelectorAll("[data-plan-duration]").forEach((input) => {
+    input.addEventListener("input", () => updateReelPlanScene(input.dataset.planDuration, { duration: Number(input.value || 2) }));
+  });
+  document.querySelectorAll("[data-plan-move]").forEach((button) => {
+    button.addEventListener("click", () => moveReelPlanScene(button.dataset.planMove, Number(button.dataset.dir)));
+  });
+  document.querySelectorAll("[data-plan-remove]").forEach((button) => {
+    button.addEventListener("click", () => removeReelPlanScene(button.dataset.planRemove));
+  });
+  document.querySelector("[data-reset-ai-plan]")?.addEventListener("click", resetReelPlanToAi);
+  document.querySelector("[data-preview-updated]")?.addEventListener("click", () => guard(validateReelPlanBeforePreview(), () => navigate("preview")));
+}
+
+function ensureReelPlanPersisted(plan) {
+  if (state.project.reelPlanEdits?.scenes?.length) return;
+  state = { ...state, project: { ...state.project, reelPlanEdits: plan } };
+  saveState();
+}
+
+function updateReelPlanField(key, value) {
+  if (key === "claimConfirmed") {
+    const plan = activeEditableReelPlan();
+    saveEditedReelPlan({ ...plan, claimConfirmed: Boolean(value) });
+    showToast(value ? "Manual claim confirmation enabled" : "MLS-safe claim filtering enabled");
+    return;
+  }
+  const safeValue = enforceMlsSafeCaption(value, activeEditableReelPlan().claimConfirmed);
+  setState((current) => ({
+    ...current,
+    project: {
+      ...current.project,
+      [key]: safeValue,
+      reelPlanEdits: { ...activeEditableReelPlan(), [key]: safeValue }
+    }
+  }));
+}
+
+function updateReelPlanScene(sceneId, patch) {
+  const plan = activeEditableReelPlan();
+  const normalizedPatch = { ...patch };
+  if (Object.prototype.hasOwnProperty.call(normalizedPatch, "caption")) {
+    const needsConfirmation = captionNeedsManualClaimConfirmation(normalizedPatch.caption);
+    normalizedPatch.caption = enforceMlsSafeCaption(normalizedPatch.caption, plan.claimConfirmed);
+    if (needsConfirmation && !plan.claimConfirmed) showToast("Unsupported claim removed for MLS-safe copy. Use factual listing details only.", "error");
+  }
+  if (Object.prototype.hasOwnProperty.call(normalizedPatch, "duration")) {
+    normalizedPatch.duration = Math.max(1, Math.min(6, Number(normalizedPatch.duration || 2)));
+  }
+  const scenes = plan.scenes.map((scene) => scene.id === sceneId ? { ...scene, ...normalizedPatch } : scene);
+  saveEditedReelPlan({ ...plan, scenes });
+}
+
+function moveReelPlanScene(sceneId, direction) {
+  const plan = activeEditableReelPlan();
+  const scenes = [...plan.scenes].sort((a, b) => a.order - b.order);
+  const index = scenes.findIndex((scene) => scene.id === sceneId);
+  const target = index + direction;
+  if (index < 0 || target < 0 || target >= scenes.length) return;
+  [scenes[index], scenes[target]] = [scenes[target], scenes[index]];
+  saveEditedReelPlan({ ...plan, scenes: scenes.map((scene, order) => ({ ...scene, order: order + 1 })) });
+  showToast("Scene order updated");
+}
+
+function removeReelPlanScene(sceneId) {
+  const plan = activeEditableReelPlan();
+  const scenes = plan.scenes.filter((scene) => scene.id !== sceneId).map((scene, order) => ({ ...scene, order: order + 1 }));
+  if (scenes.length < 3) {
+    setError("Keep at least 3 photo scenes in the final reel.");
+    return;
+  }
+  saveEditedReelPlan({ ...plan, scenes });
+  showToast("Scene removed from final reel");
+}
+
+function resetReelPlanToAi() {
+  const plan = createEditableReelPlan();
+  saveEditedReelPlan(plan);
+  showToast("AI reel plan restored");
+}
+
+function saveEditedReelPlan(plan) {
+  const normalized = {
+    ...plan,
+    claimConfirmed: Boolean(plan.claimConfirmed),
+    introText: enforceMlsSafeCaption(plan.introText || aiCopy().hook, plan.claimConfirmed),
+    outroText: enforceMlsSafeCaption(plan.outroText || state.project.cta || state.brandKit.ctaText, plan.claimConfirmed),
+    scenes: [...(plan.scenes || [])].sort((a, b) => a.order - b.order).map((scene, index) => ({
+      ...scene,
+      caption: enforceMlsSafeCaption(scene.caption || "", plan.claimConfirmed),
+      duration: Math.max(1, Math.min(6, Number(scene.duration || 2))),
+      order: index + 1
+    }))
+  };
+  setState((current) => ({ ...current, project: { ...current.project, reelPlanEdits: normalized, introText: normalized.introText, outroText: normalized.outroText } }));
+}
+
+function validateReelPlanBeforePreview() {
+  const plan = activeEditableReelPlan();
+  if (!plan.scenes?.length) return "Create a reel plan before previewing.";
+  if (plan.scenes.length < 3) return "Keep at least 3 scenes in the final reel.";
+  const manifest = buildExportPayload();
+  return validatePreRenderManifest(manifest, { live: !featureFlags.MOCK_RENDERING });
 }
 
 function processingStep(title, detail, status) {
@@ -2171,7 +2839,8 @@ function processingStep(title, detail, status) {
 }
 
 function renderPreview() {
-  const photos = orderedPhotos();
+  const sequence = createPipelineSequence();
+  const photos = sequence.scenes.length ? sequence.scenes.map((scene) => scene.photo) : orderedPhotos();
   const photo = photos[state.selectedScene] ?? photos[0] ?? demoPhotos[0];
   const copy = aiCopy();
   const template = selectedTemplate();
@@ -2423,19 +3092,21 @@ function renderExport() {
   const template = selectedTemplate();
   const pack = contentPack();
   const result = buildExportPayload();
+  const preflightError = validatePreRenderManifest(result, { live: !featureFlags.MOCK_RENDERING });
   const mp4Ready = !featureFlags.MOCK_RENDERING;
   const renderUrl = state.exportResult?.mp4Url || state.exportResult?.output || "";
   const exportOptions = [
-    ["MP4", "Branded video file", "Video"],
-    ["Reel", "9:16 social cut", "Social"],
-    ["MLS", "Clean unbranded version", "MLS"],
-    ["Caption", "Copy + hashtags", "Text"],
-    ["Thumbnail", state.project.thumbnailPreset, "PNG"]
+    ["Instagram Reels", "Vertical 9:16 branded MP4", "1080x1920"],
+    ["TikTok", "Fast mobile-first social cut", "9:16"],
+    ["YouTube Shorts", "Shorts-ready vertical export", "9:16"],
+    ["MLS Clean", "Compliance-safe clean version", "Unbranded"],
+    ["Caption + Thumbnail", "Post copy, hashtags, and cover asset", "Handoff"]
   ];
   renderLayout(`
     <div class="screen-title cinematic-title"><p class="eyebrow">Export</p><h2>Leave with social-ready assets.</h2><p>${featureFlags.MOCK_RENDERING ? "Mock rendering is enabled. Queue states are real locally; MP4 output falls back to JSON and preview HTML." : "Live rendering is enabled. EstateMotion will call the render worker for MP4 jobs."}</p></div>
     <section class="panel elevated export-command">
       <div class="section-title"><p>Final output</p><h3>${state.exportResult ? "Render ready" : "Ready to create"}</h3></div>
+      ${preflightError ? `<div class="state-banner error-state"><strong>Render preflight issue</strong><span>${escapeHtml(preflightError)}</span></div>` : `<div class="state-banner loading-state"><strong>Render preflight passed</strong><span>Every photo scene is linked to an uploaded image. ${featureFlags.MOCK_RENDERING ? "Mock exports can use local preview URLs." : "Live MP4 export will require durable public Supabase URLs."}</span></div>`}
       <div class="export-option-grid">${exportOptions.map(([title, body, format]) => exportOptionCard(title, body, format)).join("")}</div>
       <div class="actions">
         <button class="primary" data-queue-pack>${mp4Ready ? "Create MP4 exports" : "Create mock export pack"}</button>
@@ -2469,6 +3140,7 @@ function renderExport() {
         <div><strong>MP4 status</strong><br>${state.exportResult ? `Ready: ${state.exportResult.createdAt}${renderUrl ? `<br><a href="${escapeHtml(renderUrl)}" target="_blank" rel="noreferrer">Open rendered MP4</a>` : ""}` : "Ready to export"}</div>
       </div>
     </section>
+    ${betaFeedbackPanel()}
   `);
   document.querySelector("[data-queue-pack]").addEventListener("click", queueContentPack);
   document.querySelectorAll("[data-download-json]").forEach((button) => button.addEventListener("click", () => {
@@ -2496,16 +3168,80 @@ function renderExport() {
   if (!state.exportResult && shouldUseLocalPersistence()) {
     setTimeout(() => setState({ exportResult: { createdAt: new Date().toLocaleString(), output: `${slug(state.project.title)}-mock-render` } }), 0);
   }
+  document.querySelector("[data-submit-beta-feedback]")?.addEventListener("click", submitBetaFeedback);
 }
 
 function exportOptionCard(title, body, format) {
   return `<article class="export-option"><span>${escapeHtml(format)}</span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(body)}</small></article>`;
 }
 
-function queueContentPack() {
+function betaFeedbackPanel() {
+  return `
+    <section class="panel beta-feedback-panel">
+      <div class="section-title"><p>Beta feedback</p><h3>Help us tune EstateMotion for working agents.</h3></div>
+      <div class="grid-2">
+        <label class="field"><span>Rating</span><select data-beta-feedback="rating">${["5", "4", "3", "2", "1"].map((rating) => `<option value="${rating}" ${state.betaFeedbackForm.rating === rating ? "selected" : ""}>${rating} / 5</option>`).join("")}</select></label>
+        <label class="field"><span>Was this usable enough to post?</span><select data-beta-feedback="usableEnough"><option value="yes" ${state.betaFeedbackForm.usableEnough === "yes" ? "selected" : ""}>Yes</option><option value="almost" ${state.betaFeedbackForm.usableEnough === "almost" ? "selected" : ""}>Almost</option><option value="no" ${state.betaFeedbackForm.usableEnough === "no" ? "selected" : ""}>No</option></select></label>
+      </div>
+      <label class="field"><span>Optional feedback</span><textarea data-beta-feedback="feedback" placeholder="What would make this easier to post?">${escapeHtml(state.betaFeedbackForm.feedback)}</textarea></label>
+      <div class="actions">
+        <button class="primary" data-submit-beta-feedback>Submit beta feedback</button>
+        <span class="muted">${state.betaFeedback.length} response${state.betaFeedback.length === 1 ? "" : "s"} captured</span>
+      </div>
+    </section>
+  `;
+}
+
+async function submitBetaFeedback() {
+  const feedback = {
+    id: `feedback-${Date.now()}`,
+    projectId: state.project.id || "",
+    projectTitle: state.project.title,
+    rating: Number(state.betaFeedbackForm.rating || 0),
+    usableEnough: state.betaFeedbackForm.usableEnough,
+    feedback: state.betaFeedbackForm.feedback.trim(),
+    createdAt: new Date().toISOString(),
+    storageMode: shouldUseLocalPersistence() ? "local" : "supabase"
+  };
+  if (!feedback.rating) {
+    setError("Choose a 1-5 rating before submitting feedback.");
+    return;
+  }
+  let savedToSupabase = false;
+  if (!shouldUseLocalPersistence() && window.EstateMotionSupabase?.saveBetaFeedback && authUser) {
+    try {
+      await window.EstateMotionSupabase.saveBetaFeedback(feedback, authUser);
+      savedToSupabase = true;
+    } catch (error) {
+      showToast(`Feedback saved locally; Supabase save failed: ${error.message}`, "error");
+    }
+  }
+  setState((current) => ({
+    ...current,
+    betaFeedback: [...current.betaFeedback, { ...feedback, storageMode: savedToSupabase ? "supabase" : "local" }],
+    betaFeedbackForm: structuredClone(defaultState.betaFeedbackForm)
+  }));
+  trackEvent("beta_feedback_submit", { rating: feedback.rating, usableEnough: feedback.usableEnough, storageMode: savedToSupabase ? "supabase" : "local" });
+  showToast(savedToSupabase ? "Beta feedback saved to Supabase" : "Beta feedback saved locally");
+}
+
+async function queueContentPack() {
   const validationError = validateProjectBasics() || validatePhotos() || validateTemplate();
   if (validationError) {
     setError(validationError);
+    return;
+  }
+  if (!featureFlags.MOCK_RENDERING) {
+    const durableError = await ensureDurableUrlsForLiveRender();
+    if (durableError) {
+      setError(durableError);
+      return;
+    }
+  }
+  const previewManifest = buildExportPayload();
+  const manifestError = validatePreRenderManifest(previewManifest, { live: !featureFlags.MOCK_RENDERING });
+  if (manifestError) {
+    setError(manifestError);
     return;
   }
   const now = new Date().toISOString();
@@ -2522,6 +3258,7 @@ function queueContentPack() {
     error: ""
   }));
   setState((current) => ({ ...current, loading: "Queueing content pack...", error: "", renderQueue: jobs }));
+  logRenderManifest(previewManifest);
   showToast("Content pack queued");
 
   if (!featureFlags.MOCK_RENDERING) {
@@ -2541,11 +3278,23 @@ function queueContentPack() {
 }
 
 async function startRealRender(jobs) {
+  const durableError = await ensureDurableUrlsForLiveRender();
+  if (durableError) {
+    const message = durableError;
+    setState((current) => ({
+      ...current,
+      loading: "",
+      error: message,
+      renderQueue: current.renderQueue.map((job) => job.status === "queued" ? { ...job, status: "failed", error: message, updatedAt: new Date().toISOString() } : job)
+    }));
+    showToast("Render blocked: durable image URLs required", "error");
+    return;
+  }
   const manifest = {
     ...buildExportPayload(),
     renderQueue: jobs
   };
-  const liveRenderError = validateLiveRenderPhotoUrls(manifest.orderedPhotos || []);
+  const liveRenderError = validatePreRenderManifest(manifest, { live: true });
 
   if (liveRenderError) {
     const message = liveRenderError;
@@ -2560,6 +3309,7 @@ async function startRealRender(jobs) {
   }
 
   try {
+    logRenderManifest(manifest);
     setState((current) => ({
       ...current,
       loading: "Rendering MP4 with EstateMotion render worker...",
@@ -2574,7 +3324,7 @@ async function startRealRender(jobs) {
     const payload = await response.json().catch(() => ({}));
 
     if (!response.ok || payload.status === "failed") {
-      throw new Error(payload.error || "EstateMotion render worker failed.");
+      throw new Error(actionableRenderError(payload.error || payload.message || `Render worker returned ${response.status}.`));
     }
 
     const mp4Url = payload.mp4Url || payload.localMp4Path || "";
@@ -2676,10 +3426,76 @@ function renderApiEndpoint() {
   return featureFlags.RENDER_ENDPOINT || "/api/render";
 }
 
+async function ensureDurableUrlsForLiveRender() {
+  if (featureFlags.MOCK_RENDERING) return "";
+  if (featureFlags.MOCK_SUPABASE || !window.EstateMotionSupabase?.enabled?.()) {
+    return "Live MP4 rendering requires Supabase Storage. Supabase is unavailable, so this project can only use mock/demo exports. Set MOCK_SUPABASE=false, sign in, and re-upload photos to create durable render URLs.";
+  }
+  const photos = orderedPhotos();
+  const missing = photos.filter((photo) => !photo.durableUrl && !photo.durable_url && !photo.storagePath);
+  if (missing.length) {
+    const names = missing.slice(0, 3).map((photo) => photo.fileName || photo.id).join(", ");
+    return `Live MP4 rendering requires durable Supabase URLs. Re-upload ${missing.length} photo${missing.length === 1 ? "" : "s"}${names ? ` (${names})` : ""} in production mode.`;
+  }
+  const refreshable = photos.filter((photo) => photo.storagePath && durableUrlNeedsRefresh(photo));
+  if (!refreshable.length) return "";
+  setState({ loading: "Refreshing signed image URLs for rendering...", error: "" });
+  try {
+    const refreshed = [];
+    for (const photo of refreshable) {
+      const bucket = photo.bucket || featureFlags.LISTING_PHOTOS_BUCKET || window.EstateMotionSupabase.listingPhotosBucket?.();
+      const asset = await window.EstateMotionSupabase.refreshDurableUrl(photo.storagePath, bucket, signedUrlTtlSecondsForRender());
+      refreshed.push({ id: photo.id, ...asset, bucket });
+    }
+    const refreshedById = new Map(refreshed.map((item) => [item.id, item]));
+    setState((current) => ({
+      ...current,
+      loading: "",
+      project: {
+        ...current.project,
+        photos: current.project.photos.map((photo) => {
+          const asset = refreshedById.get(photo.id);
+          if (!asset) return photo;
+          return {
+            ...photo,
+            durableUrl: asset.durableUrl,
+            durable_url: asset.durableUrl,
+            durableUrlExpiresAt: asset.durableUrlExpiresAt || "",
+            publicUrl: featureFlags.SUPABASE_STORAGE_PRIVATE ? photo.publicUrl || "" : asset.durableUrl,
+            public_url: featureFlags.SUPABASE_STORAGE_PRIVATE ? photo.public_url || "" : asset.durableUrl,
+            bucket: asset.bucket || photo.bucket
+          };
+        })
+      }
+    }));
+    showToast("Signed image URLs refreshed for rendering");
+    return "";
+  } catch (error) {
+    setState({ loading: "" });
+    return `Could not refresh Supabase signed image URLs. ${error.message || "Check Storage bucket RLS/select policy and try again."}`;
+  }
+}
+
+function durableUrlNeedsRefresh(photo) {
+  const url = photo.durableUrl || photo.durable_url || "";
+  if (!url) return true;
+  if (!featureFlags.SUPABASE_STORAGE_PRIVATE && !isLocalOnlyPhotoUrl(url)) return false;
+  if (isLocalOnlyPhotoUrl(url)) return true;
+  if (isLikelyExpiredImageUrl(url)) return true;
+  const expiresAt = Date.parse(photo.durableUrlExpiresAt || "");
+  if (!Number.isFinite(expiresAt)) return Boolean(featureFlags.SUPABASE_STORAGE_PRIVATE);
+  return expiresAt - Date.now() < 60 * 60 * 1000;
+}
+
+function signedUrlTtlSecondsForRender() {
+  return Math.max(3600, Number(featureFlags.SUPABASE_SIGNED_URL_TTL_SECONDS || 172800));
+}
+
 function buildExportPayload() {
   const copy = aiCopy();
-  const scenes = renderManifestScenes();
-  const orderedManifestPhotos = orderedPhotos().map(renderPhotoForManifest);
+  const sequence = createPipelineSequence();
+  const scenes = renderManifestScenes(sequence);
+  const orderedManifestPhotos = sequence.scenes.map((scene) => renderPhotoForManifest(scene.photo));
   return {
     app: "EstateMotion",
     createdAt: new Date().toISOString(),
@@ -2714,7 +3530,16 @@ function buildExportPayload() {
     },
     topFeatures: topFeatures(),
     orderedPhotos: orderedManifestPhotos,
+    uploadedPhotoIntegrity: orderedManifestPhotos.map((photo) => ({
+      photoId: photo.id,
+      fileName: photo.fileName,
+      imageUrl: photo.imageUrl,
+      storagePath: photo.storagePath || "",
+      size: photo.size || 0
+    })),
     scenes,
+    propertyTourSequence: sequence,
+    exportOptimization: window.EstateMotionReel?.exportOptimization?.verticalReelExport ? window.EstateMotionReel.exportOptimization.verticalReelExport() : null,
     copy,
     contentPack: contentPack(),
     renderPlan: [
@@ -2729,33 +3554,43 @@ function buildExportPayload() {
   };
 }
 
-function renderManifestScenes() {
-  const photos = orderedPhotos();
+function renderManifestScenes(sequence = createPipelineSequence()) {
+  const scenes = sequence.scenes || [];
   const copy = aiCopy();
-  return photos.map((photo, index) => {
+  const captionByScene = new Map(pipelineCaptions(sequence).map((item) => [item.sceneId, item.caption]));
+  return scenes.map((scene, index) => {
+    const photo = scene.photo;
     const motion = motionPlanForPhoto(photo, index);
     const imageUrl = photoRenderUrl(photo);
-    const publicUrl = isLocalOnlyPhotoUrl(imageUrl) ? (photo.publicUrl || photo.public_url || "") : imageUrl;
+    const durableUrl = photoDurableUrl(photo);
+    const publicUrl = photo.publicUrl || photo.public_url || (!featureFlags.SUPABASE_STORAGE_PRIVATE ? durableUrl : "");
     return {
       order: index + 1,
+      type: "photo",
       photoId: photo.id,
       fileName: photo.fileName,
       imageUrl,
+      durableUrl,
+      durable_url: durableUrl,
       publicUrl,
       public_url: publicUrl,
+      sourceImageUrl: photoRenderUrl(photo),
+      objectUrl: photo.objectUrl || "",
+      durableUrlExpiresAt: photo.durableUrlExpiresAt || "",
+      bucket: photo.bucket || featureFlags.LISTING_PHOTOS_BUCKET || "",
       storagePath: photo.storagePath || "",
       sceneType: motion.sceneType,
       confidence: motion.confidence,
       suggestedCorrections: sceneSuggestions(photo),
-      duration: Number(motion.duration),
-      motionStyle: motion.motionStyle,
+      duration: Number(scene.duration || motion.duration),
+      motionStyle: pipelineTemplateConfig().motionStyle || motion.motionStyle,
       depthModel: motion.depthModel,
-      transition: motion.transition,
+      transition: pipelineTemplateConfig().transitionStyle || motion.transition,
       beatMarker: motion.beatMarker,
-      overlayText: index === 0 ? copy.hook : motion.overlayText,
+      overlayText: index === 0 ? (sequence.intro?.caption || copy.hook) : (index === scenes.length - 1 ? (sequence.outro?.caption || captionByScene.get(scene.id) || motion.overlayText) : (captionByScene.get(scene.id) || motion.overlayText)),
       featureCard: topFeatures()[index % Math.max(1, topFeatures().length)] || "",
-      branding: index === photos.length - 1 ? "Personal brand end card" : "Subtle lower-third safe area",
-      cta: index === photos.length - 1 ? state.project.cta : "",
+      branding: index === scenes.length - 1 ? "Personal brand end card" : "Subtle lower-third safe area",
+      cta: index === scenes.length - 1 ? (sequence.outro?.caption || state.project.cta) : "",
       complianceFooter: state.brandKit.complianceEnabled ? state.brandKit.listingCourtesyOf : "",
       realismGuardrail: motion.realismGuardrail
     };
@@ -2763,22 +3598,30 @@ function renderManifestScenes() {
 }
 
 function renderPhotoForManifest(photo) {
-  const sourceUrl = photo.publicUrl || photo.public_url || photo.uri || "";
-  const publicUrl = isLocalOnlyPhotoUrl(sourceUrl) ? (photo.publicUrl || photo.public_url || "") : sourceUrl;
-  const renderUrl = publicUrl || sourceUrl;
+  const durableUrl = photoDurableUrl(photo);
+  const previewUrl = photo.uri || photo.objectUrl || durableUrl || "";
+  const publicUrl = photo.publicUrl || photo.public_url || (!featureFlags.SUPABASE_STORAGE_PRIVATE ? durableUrl : "");
+  const renderUrl = durableUrl || previewUrl;
   return {
     ...photo,
-    uri: renderUrl,
+    uri: previewUrl,
     publicUrl,
     public_url: publicUrl,
+    durableUrl,
+    durable_url: durableUrl,
+    durableUrlExpiresAt: photo.durableUrlExpiresAt || "",
     imageUrl: renderUrl
   };
 }
 
 function photoRenderUrl(photo) {
-  const sourceUrl = photo.publicUrl || photo.public_url || photo.uri || "";
-  if (isLocalOnlyPhotoUrl(sourceUrl)) return sourceUrl;
-  return sourceUrl;
+  const durableUrl = photoDurableUrl(photo);
+  if (!featureFlags.MOCK_RENDERING && durableUrl) return durableUrl;
+  return photo.uri || photo.objectUrl || durableUrl || photo.publicUrl || photo.public_url || "";
+}
+
+function photoDurableUrl(photo) {
+  return photo.durableUrl || photo.durable_url || photo.publicUrl || photo.public_url || "";
 }
 
 function isLocalOnlyPhotoUrl(url) {
@@ -2792,6 +3635,104 @@ function validateLiveRenderPhotoUrls(photos) {
   if (!localOnly.length) return "";
   const names = localOnly.slice(0, 3).map((photo) => photo.fileName || photo.id || "unnamed photo").join(", ");
   return `Live MP4 rendering requires Supabase/public image URLs. ${localOnly.length} photo${localOnly.length === 1 ? "" : "s"} still use blob/data URLs${names ? ` (${names})` : ""}. Switch to Supabase mode and re-upload photos, or set MOCK_RENDERING=true for local demo exports.`;
+}
+
+function validatePreRenderManifest(manifest, options = {}) {
+  if (!manifest || !Array.isArray(manifest.scenes) || !manifest.scenes.length) {
+    return "Render manifest is missing photo scenes. Upload listing photos and build the reel again.";
+  }
+  const uploadedPhotos = new Map(orderedPhotos().map((photo) => [photo.id, photo]));
+  const problems = [];
+  manifest.scenes.forEach((scene, index) => {
+    if (isIntentionalCardScene(scene)) return;
+    const label = scene.fileName || `scene ${index + 1}`;
+    if (!scene.photoId || !uploadedPhotos.has(scene.photoId)) {
+      problems.push(`${label} is not linked to an uploaded project photo.`);
+      return;
+    }
+    const originalPhoto = uploadedPhotos.get(scene.photoId);
+    const originalUrl = photoRenderUrl(originalPhoto);
+    const sceneUrl = scene.durableUrl || scene.durable_url || scene.publicUrl || scene.public_url || scene.imageUrl || "";
+    if (!sceneUrl) {
+      problems.push(`${label} is missing an image URL.`);
+      return;
+    }
+    if (options.live && !(scene.durableUrl || scene.durable_url)) {
+      problems.push(`${label} is missing durableUrl. Re-upload the photo to Supabase Storage before live rendering.`);
+      return;
+    }
+    if (options.live && isLocalOnlyPhotoUrl(sceneUrl)) {
+      problems.push(`${label} still uses a browser-only preview URL. Re-upload in Supabase mode before live MP4 rendering.`);
+    }
+    if (isUnsupportedRenderImageUrl(sceneUrl)) {
+      problems.push(`${label} uses an unsupported image format. Use JPG, PNG, or WebP.`);
+    }
+    if (isLikelyExpiredImageUrl(sceneUrl)) {
+      problems.push(`${label} appears to use an expired signed image URL. Re-upload or refresh the Supabase public URL.`);
+    }
+    if (originalUrl && normalizeUrlForCompare(sceneUrl) !== normalizeUrlForCompare(originalUrl) && normalizeUrlForCompare(sceneUrl) !== normalizeUrlForCompare(originalPhoto.publicUrl || originalPhoto.public_url || "")) {
+      problems.push(`${label} does not match the uploaded image stored in this project.`);
+    }
+  });
+  if (!problems.length) return "";
+  return `Render preflight failed: ${problems.slice(0, 3).join(" ")}${problems.length > 3 ? ` ${problems.length - 3} more issue${problems.length - 3 === 1 ? "" : "s"} found.` : ""}`;
+}
+
+function isIntentionalCardScene(scene) {
+  return ["title", "intro", "outro", "card"].includes(String(scene.type || "").toLowerCase());
+}
+
+function isUnsupportedRenderImageUrl(url) {
+  const value = String(url || "").toLowerCase();
+  if (value.startsWith("data:")) {
+    return !value.startsWith("data:image/jpeg") && !value.startsWith("data:image/jpg") && !value.startsWith("data:image/png") && !value.startsWith("data:image/webp");
+  }
+  const path = value.split("?")[0];
+  return /\.(heic|heif|tif|tiff|bmp|svg|gif)$/i.test(path);
+}
+
+function isLikelyExpiredImageUrl(url) {
+  try {
+    const parsed = new URL(String(url), window.location.href);
+    const rawExpiry = parsed.searchParams.get("expires") || parsed.searchParams.get("expires_at") || parsed.searchParams.get("expiry") || parsed.searchParams.get("exp");
+    if (!rawExpiry) return false;
+    const numeric = Number(rawExpiry);
+    const expiresAt = Number.isFinite(numeric)
+      ? new Date(numeric < 10000000000 ? numeric * 1000 : numeric)
+      : new Date(rawExpiry);
+    return Number.isFinite(expiresAt.getTime()) && expiresAt.getTime() <= Date.now();
+  } catch {
+    return false;
+  }
+}
+
+function normalizeUrlForCompare(url) {
+  return String(url || "").trim();
+}
+
+function logRenderManifest(manifest) {
+  if (!devRenderLoggingEnabled()) return;
+  window.ESTATEMOTION_LAST_RENDER_MANIFEST = manifest;
+  console.info("[EstateMotion] Render manifest preflight passed. Inspect window.ESTATEMOTION_LAST_RENDER_MANIFEST for the exact uploaded images sent to rendering.", manifest);
+}
+
+function devRenderLoggingEnabled() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("DEBUG_RENDER") === "true" || ["localhost", "127.0.0.1"].includes(window.location.hostname);
+}
+
+function actionableRenderError(message) {
+  const text = String(message || "");
+  if (/expired|403|forbidden|not authorized|signature/i.test(text)) {
+    return `${text} The render worker could not access one or more image URLs. Re-upload photos to Supabase Storage and render again.`;
+  }
+  if (/fetch|network|ENOTFOUND|timeout|timed out/i.test(text)) {
+    return `${text} Check RENDER_ENDPOINT/RENDER_WORKER_URL and confirm the render worker is online.`;
+  }
+  if (/image|url|404|not found/i.test(text)) {
+    return `${text} Confirm every scene image URL is public and still available.`;
+  }
+  return `${text} Check the render worker logs and retry after confirming Supabase image URLs are accessible.`;
 }
 
 function beatSyncPlan(scenes) {

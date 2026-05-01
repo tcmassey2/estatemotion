@@ -7,6 +7,8 @@ const requiredFiles = [
   "app/index.html",
   "demo/index.html",
   "api/env.js",
+  "api/classify-image.js",
+  "lib/reel/demoFixtures.js",
   "vercel.json",
   "supabase/schema.sql",
   "supabase/seed.sql",
