@@ -1,6 +1,32 @@
 # EstateMotion
 
-EstateMotion is a mobile-first AI real estate video creation MVP for agents who need fast, premium, branded listing content from real property photos.
+EstateMotion is a mobile-first Real Estate Marketing Operating System for agents, brokerages, wholesalers, and investor-focused professionals who need fast, premium, branded listing content from real property photos.
+
+## Product Direction
+
+EstateMotion is moving beyond a single listing reel generator toward a real estate marketing OS: Canva + CapCut + listing launch system for agents. The current browser MVP now supports the foundation for:
+
+- Listing Reels
+- Open House Promos
+- Agent Personal Brand Reels
+- Neighborhood Spotlights
+- Price Drop / Under Contract content
+- Seller Lead Magnets
+- Investor Deal Breakdowns
+- Wholesale Opportunities
+
+The product is intentionally real-estate-specific. It preserves uploaded-photo authenticity, keeps MLS-safe copy available, adds agent and brokerage branding, and structures every export around a business outcome such as showings, seller consultations, investor leads, or local authority.
+
+## Marketing OS Foundation
+
+The app includes content modes, conversion CTAs, analytics signals, and render manifest fields that prepare EstateMotion for a broader platform:
+
+- `contentMode`: chooses the business workflow before the video style.
+- `conversionGoal`: drives CTA language such as `Schedule showing`, `Seller consultation`, or `Investor details`.
+- Seller tools: before/after marketing comparison, listing presentation preview, and future PDF/video combo hooks.
+- Investor tools: ARV, rehab estimate, cap rate, cash flow, deal structure, and assignment-focused cards.
+- Recommendation engine: a local first-pass suggestion based on content mode, market, and tone.
+- Render style packs: listing, luxury, viral, MLS clean, investor, neighborhood authority, and personal brand.
 
 This repo currently includes three surfaces:
 
@@ -293,6 +319,7 @@ Never expose a production OpenAI API key in the browser.
 - In local/dev mode, the final render manifest is logged to the console and assigned to `window.ESTATEMOTION_LAST_RENDER_MANIFEST` for inspection.
 - `MOCK_AI=true` never calls `/api/classify-image`; the app shows that fallback classification is active.
 - Demo fixture metadata lives in `lib/reel/demoFixtures.js`.
+- Optional music URLs can be configured with `MUSIC_LUXURY_URL`, `MUSIC_VIRAL_URL`, `MUSIC_MLS_CLEAN_URL`, and `MUSIC_INVESTOR_URL`. If no file is configured, Remotion renders silently with beat-timed scene cuts.
 
 ## Final Beta QA Checklist
 

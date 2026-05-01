@@ -327,6 +327,52 @@ button:disabled {
   gap: 8px;
 }
 
+.premium-mode-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.mode-card,
+.recommendation-card {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid rgba(199, 167, 108, 0.22);
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(255,255,255,.9), rgba(248,245,239,.86));
+  color: var(--ink);
+  text-align: left;
+}
+
+.mode-card.selected {
+  border-color: var(--gold);
+  box-shadow: 0 18px 44px rgba(199, 167, 108, .16);
+}
+
+.mode-card small,
+.recommendation-card span {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.recommend-badge {
+  width: fit-content;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: rgba(199, 167, 108, .14);
+  color: #7a5b22;
+  border: 1px solid rgba(199, 167, 108, .28);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.nested-panel {
+  margin-top: 14px;
+  box-shadow: none;
+}
+
 .toggle-row {
   display: flex;
   align-items: center;
@@ -1015,6 +1061,167 @@ button:disabled {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: white;
+}
+
+.seller-preview-package {
+  overflow: hidden;
+}
+
+.seller-preview-layout {
+  display: grid;
+  grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.seller-preview-photos {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.seller-preview-photos img {
+  width: 100%;
+  aspect-ratio: 1 / .82;
+  object-fit: cover;
+  border-radius: 12px;
+}
+
+.seller-preview-copy {
+  display: grid;
+  gap: 12px;
+  align-content: center;
+  padding: 22px;
+  border-radius: 18px;
+  background: linear-gradient(145deg, #0D0D0D, #1C1C1C);
+  color: var(--ivory);
+}
+
+.seller-preview-copy h3 {
+  margin: 0;
+  font-size: clamp(28px, 5vw, 46px);
+  line-height: .95;
+}
+
+.seller-preview-copy p,
+.seller-preview-copy small {
+  margin: 0;
+  color: rgba(248, 245, 239, .76);
+}
+
+.mode-overlay-card {
+  position: absolute;
+  top: 118px;
+  left: 26px;
+  right: 26px;
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(13, 13, 13, .66);
+  border: 1px solid rgba(199, 167, 108, .44);
+  backdrop-filter: blur(12px);
+  color: white;
+  z-index: 2;
+}
+
+.mode-overlay-card strong {
+  color: var(--gold);
+  text-transform: uppercase;
+  font-size: 11px;
+}
+
+.mode-overlay-card span {
+  font-size: 17px;
+  font-weight: 850;
+  line-height: 1.05;
+}
+
+.mode-overlay-card small {
+  color: rgba(255,255,255,.74);
+  line-height: 1.25;
+}
+
+.mode-investor,
+.mode-wholesale {
+  border-color: rgba(215, 230, 184, .55);
+}
+
+.beta-hero .landing-hero-copy h2 {
+  max-width: 820px;
+}
+
+.beta-audience article,
+.beta-output-card,
+.beta-checklist article,
+.referral-panel {
+  position: relative;
+}
+
+.beta-steps {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.beta-output-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(199, 167, 108, .22);
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(255,255,255,.92), rgba(248,245,239,.9));
+}
+
+.beta-output-card > span {
+  color: #7a5b22;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.beta-output-card .mini-reel {
+  min-height: 420px;
+}
+
+.beta-checklist {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.beta-checklist article {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: white;
+}
+
+.beta-checklist span {
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  border: 2px solid var(--gold);
+  flex: 0 0 auto;
+}
+
+.compact-checklist {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 14px;
+}
+
+.referral-link {
+  padding: 12px 14px;
+  border: 1px solid rgba(199, 167, 108, .3);
+  border-radius: 12px;
+  background: rgba(248, 245, 239, .82);
+  overflow-x: auto;
+}
+
+.button-link {
+  text-decoration: none;
+  text-align: center;
 }
 
 .export-card {
@@ -3231,6 +3438,7 @@ button:hover {
   .comparison-grid,
   .why-grid,
   .preview-suite,
+  .seller-preview-layout,
   .template-showcase,
   .landing-hero,
   .dashboard-command,
@@ -3242,6 +3450,9 @@ button:hover {
 
   .quick-flow,
   .outcome-flow,
+  .premium-mode-grid,
+  .beta-steps,
+  .beta-checklist,
   .export-option-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -3292,8 +3503,13 @@ button:hover {
   .engine-grid,
   .quick-flow,
   .outcome-flow,
+  .premium-mode-grid,
+  .beta-steps,
+  .beta-checklist,
+  .compact-checklist,
   .trust-copy-panel,
   .export-option-grid,
+  .seller-preview-photos,
   .scene-card-grid {
     grid-template-columns: 1fr;
   }

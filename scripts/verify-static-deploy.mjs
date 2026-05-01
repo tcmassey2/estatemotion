@@ -6,6 +6,7 @@ const requiredFiles = [
   "styles.css",
   "app/index.html",
   "demo/index.html",
+  "beta/index.html",
   "api/env.js",
   "api/classify-image.js",
   "lib/reel/demoFixtures.js",

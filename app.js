@@ -87,6 +87,30 @@ const templates = [
     ctaWording: "Ask for details",
     accentColor: "#4C7A45",
     visualCue: "Deal-focused proof"
+  },
+  {
+    id: "neighborhood-authority",
+    name: "Neighborhood Authority",
+    description: "Local expert content for city, neighborhood, and market-positioning reels.",
+    fontStyle: "Editorial Sans",
+    textPlacement: "map card",
+    motionSpeed: "medium",
+    transitionStyle: "location reveal",
+    ctaWording: "Ask me about this area",
+    accentColor: "#3E6E78",
+    visualCue: "Local expert map"
+  },
+  {
+    id: "personal-brand-agent",
+    name: "Personal Brand Agent",
+    description: "Agent-forward reels for credibility, trust, and repeatable authority content.",
+    fontStyle: "Luxury Sans",
+    textPlacement: "agent lower third",
+    motionSpeed: "medium",
+    transitionStyle: "brand reveal",
+    ctaWording: "Follow for local real estate strategy",
+    accentColor: "#C7A76C",
+    visualCue: "Agent authority"
   }
 ];
 
@@ -254,6 +278,35 @@ const captionTonePresets = {
 };
 
 const ctaPresets = ["DM for price", "Book a showing", "Schedule private tour", "Tour this home", "Ask for details", "Schedule showing"];
+const conversionCtas = ["DM for price", "Schedule showing", "Investor details", "Join waitlist", "Seller consultation", "Book valuation call"];
+const contentModes = [
+  { id: "listing-reel", name: "Listing Reel", bestFor: "Social attention", template: "modern-luxury", cta: "Schedule showing" },
+  { id: "open-house-promo", name: "Open House Promo", bestFor: "Event traffic", template: "open-house", cta: "Book a showing" },
+  { id: "agent-brand", name: "Agent Personal Brand Reel", bestFor: "Authority", template: "personal-brand-agent", cta: "Follow for local real estate strategy" },
+  { id: "neighborhood-spotlight", name: "Neighborhood Spotlight", bestFor: "Local trust", template: "neighborhood-authority", cta: "Ask me about this area" },
+  { id: "price-drop", name: "Price Drop / Under Contract", bestFor: "Urgency", template: "viral-fast-cut", cta: "DM for price" },
+  { id: "seller-lead-magnet", name: "Seller Lead Magnet", bestFor: "Listing appointments", template: "personal-brand-agent", cta: "Seller consultation" },
+  { id: "investor-breakdown", name: "Investor Deal Breakdown", bestFor: "Investor leads", template: "investor-wholesale", cta: "Investor details" },
+  { id: "wholesale-opportunity", name: "Wholesale Opportunity", bestFor: "Buyer list", template: "investor-wholesale", cta: "Join waitlist" }
+];
+const sellerTools = [
+  "Seller presentation export mode",
+  "Before/after marketing comparison",
+  "Your home could look like this online",
+  "Listing presentation reel preview",
+  "Branded PDF/video combo ready later"
+];
+const investorDealFields = ["ARV", "Rehab estimate", "Cap rate", "Cash flow", "Deal structure", "Assignment fee"];
+const contentGoalRecommendations = {
+  "listing-reel": { template: "modern-luxury", label: "Recommended for listing promo" },
+  "open-house-promo": { template: "open-house", label: "Recommended for open house traffic" },
+  "agent-brand": { template: "personal-brand-agent", label: "Recommended for personal brand" },
+  "neighborhood-spotlight": { template: "neighborhood-authority", label: "Recommended for neighborhood authority" },
+  "price-drop": { template: "viral-fast-cut", label: "Recommended for urgency" },
+  "seller-lead-magnet": { template: "personal-brand-agent", label: "Recommended for seller leads" },
+  "investor-breakdown": { template: "investor-wholesale", label: "Recommended for investor deals" },
+  "wholesale-opportunity": { template: "investor-wholesale", label: "Recommended for wholesale buyers" }
+};
 
 const sceneIntelligence = {
   "Exterior hero": {
@@ -633,6 +686,19 @@ const defaultState = {
     localAgentMode: true,
     introText: "",
     outroText: "",
+    contentMode: "listing-reel",
+    conversionGoal: "Schedule showing",
+    ctaUrl: "",
+    qrCodeUrl: "",
+    sellerPresentationMode: false,
+    investorMetrics: {
+      arv: "",
+      rehabEstimate: "",
+      capRate: "",
+      cashFlow: "",
+      dealStructure: "",
+      assignmentFee: ""
+    },
     reelPlanEdits: null,
     photos: demoPhotos
   }
@@ -686,6 +752,10 @@ function readFeatureFlags() {
     SUPABASE_SIGNED_URL_TTL_SECONDS: Number(params.get("SUPABASE_SIGNED_URL_TTL_SECONDS") || env.SUPABASE_SIGNED_URL_TTL_SECONDS || 172800),
     OPENAI_ENDPOINT: params.get("OPENAI_ENDPOINT") || env.OPENAI_ENDPOINT || "",
     VISION_CLASSIFICATION_ENDPOINT: params.get("VISION_CLASSIFICATION_ENDPOINT") || env.VISION_CLASSIFICATION_ENDPOINT || "/api/classify-image",
+    MUSIC_LUXURY_URL: params.get("MUSIC_LUXURY_URL") || env.MUSIC_LUXURY_URL || "",
+    MUSIC_VIRAL_URL: params.get("MUSIC_VIRAL_URL") || env.MUSIC_VIRAL_URL || "",
+    MUSIC_MLS_CLEAN_URL: params.get("MUSIC_MLS_CLEAN_URL") || env.MUSIC_MLS_CLEAN_URL || "",
+    MUSIC_INVESTOR_URL: params.get("MUSIC_INVESTOR_URL") || env.MUSIC_INVESTOR_URL || "",
     STRIPE_PUBLISHABLE_KEY: params.get("STRIPE_PUBLISHABLE_KEY") || env.STRIPE_PUBLISHABLE_KEY || env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || "",
     STRIPE_CHECKOUT_ENDPOINT: params.get("STRIPE_CHECKOUT_ENDPOINT") || env.STRIPE_CHECKOUT_ENDPOINT || "",
     RENDER_ENDPOINT: params.get("RENDER_ENDPOINT") || env.RENDER_ENDPOINT || ""
@@ -733,7 +803,7 @@ function localApiEnvWarning() {
 }
 
 function isDemoRoute() {
-  return routePath() === "demo";
+  return ["demo", "beta", "waitlist"].includes(routePath());
 }
 
 function isProtectedAppRoute() {
@@ -814,6 +884,16 @@ function analyticsSummary() {
     return counts;
   }, {});
   const visits = events.filter((event) => event.type === "demo_visit").length;
+  const exportStyles = events.filter((event) => event.type === "queue_content_pack").reduce((counts, event) => {
+    const style = event.metadata.templateId || "unknown";
+    counts[style] = (counts[style] || 0) + 1;
+    return counts;
+  }, {});
+  const contentModeCounts = events.reduce((counts, event) => {
+    const mode = event.metadata.contentMode;
+    if (mode) counts[mode] = (counts[mode] || 0) + 1;
+    return counts;
+  }, {});
   const leads = state.leads.length;
   const leadSubmissions = events.filter((event) => event.type === "early_access_submit").length;
   const exportIntent = events.filter((event) => ["export_manifest_click", "export_preview_click", "export_copy_click", "queue_content_pack"].includes(event.type)).length;
@@ -824,8 +904,30 @@ function analyticsSummary() {
     mostClicked,
     exportIntent,
     mostUsedTemplate: Object.entries(templateCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "None yet",
-    mostUsedHook: Object.entries(hookCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "None yet"
+    mostUsedHook: Object.entries(hookCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "None yet",
+    mostExportedStyle: Object.entries(exportStyles).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "None yet",
+    mostUsedContentMode: Object.entries(contentModeCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "None yet",
+    recommendation: recommendationForCurrentAgent()
   };
+}
+
+function recommendationForCurrentAgent() {
+  if (state.project.contentMode?.includes("investor") || state.project.contentMode?.includes("wholesale")) return "Agents like you should lead with Investor / Wholesale and a direct Investor details CTA.";
+  if (state.project.contentMode === "seller-lead-magnet") return "Use Personal Brand Agent with a Seller consultation CTA to convert listing appointments.";
+  if (state.project.city === "Scottsdale" || state.project.captionTone === "Luxury") return "Luxury Listing with slow cinematic pacing is the strongest fit for this market position.";
+  return "Start with Listing Reel, then repeat with Neighborhood Spotlight for weekly authority.";
+}
+
+function recommendedTemplateForGoal() {
+  return contentGoalRecommendations[state.project.contentMode || "listing-reel"] || contentGoalRecommendations["listing-reel"];
+}
+
+function recommendedContentModeForTemplate(templateId) {
+  return Object.entries(contentGoalRecommendations).find(([, recommendation]) => recommendation.template === templateId)?.[0] || "listing-reel";
+}
+
+function contentModeName(modeId = state.project.contentMode) {
+  return contentModes.find((mode) => mode.id === modeId)?.name || "Listing Reel";
 }
 
 function screenToStep(screen) {
@@ -836,6 +938,7 @@ function screenToStep(screen) {
 function routeFromUrl() {
   const path = routePath();
   if (path === "demo") return "demo";
+  if (path === "beta" || path === "waitlist") return "beta";
   if (path === "app" && state.screen === "demo") return "dashboard";
   return "";
 }
@@ -1199,6 +1302,99 @@ function topFeatures() {
   return featurePool.slice(0, 3);
 }
 
+function investorEstimateSummary() {
+  const metrics = state.project.investorMetrics || {};
+  const arv = numericEstimate(metrics.arv);
+  const rehab = numericEstimate(metrics.rehabEstimate);
+  const assignment = numericEstimate(metrics.assignmentFee);
+  const projectedSpread = Math.max(0, arv - rehab - assignment);
+  return {
+    arv,
+    rehab,
+    assignment,
+    projectedSpread,
+    dealStructure: metrics.dealStructure || "Estimate-only deal structure",
+    capRate: metrics.capRate || "",
+    cashFlow: metrics.cashFlow || ""
+  };
+}
+
+function numericEstimate(value) {
+  const numeric = Number(String(value || "").replace(/[$,\s%]/g, ""));
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function money(value) {
+  if (!Number.isFinite(Number(value)) || Number(value) <= 0) return "Estimate needed";
+  return `$${Number(value).toLocaleString()}`;
+}
+
+function modeSpecificOverlay(scene, index, total) {
+  const mode = state.project.contentMode || "listing-reel";
+  const metrics = investorEstimateSummary();
+  const area = state.project.neighborhood || state.project.city || "local market";
+  const base = {
+    mode,
+    modeName: contentModeName(mode),
+    label: "",
+    headline: "",
+    lines: [],
+    disclaimer: "",
+    variant: "standard"
+  };
+  if (mode === "seller-lead-magnet") {
+    return {
+      ...base,
+      label: "Seller Preview",
+      headline: index === 0 ? "See what your home could look like online" : "Listing marketing that feels premium before buyers arrive",
+      lines: ["Your photos", selectedTemplate().name, state.project.conversionGoal || "Seller consultation"],
+      disclaimer: "Marketing preview only. No sale price or outcome is guaranteed.",
+      variant: "seller"
+    };
+  }
+  if (mode === "investor-breakdown") {
+    return {
+      ...base,
+      label: "Investor Estimate",
+      headline: index === 0 ? "Deal snapshot" : "Estimate-only investor angle",
+      lines: [`ARV est. ${money(metrics.arv)}`, `Rehab est. ${money(metrics.rehab)}`, `Projected spread est. ${money(metrics.projectedSpread)}`],
+      disclaimer: "All figures are estimates and require independent verification.",
+      variant: "investor"
+    };
+  }
+  if (mode === "wholesale-opportunity") {
+    return {
+      ...base,
+      label: "Wholesale Opportunity",
+      headline: index === 0 ? "Assignment-style deal summary" : metrics.dealStructure,
+      lines: [`ARV est. ${money(metrics.arv)}`, `Rehab est. ${money(metrics.rehab)}`, `Assignment est. ${money(metrics.assignment)}`],
+      disclaimer: "Wholesale/investor figures are estimates, not guarantees or financial advice.",
+      variant: "wholesale"
+    };
+  }
+  if (mode === "neighborhood-spotlight") {
+    return {
+      ...base,
+      label: "Neighborhood Spotlight",
+      headline: index === 0 ? `${area} lifestyle` : sceneLabel(scene.photo?.category || scene.category),
+      lines: [`${state.project.city || area} living`, "Local context", state.project.conversionGoal || "Ask me about this area"],
+      disclaimer: "Lifestyle captions are based on listing location and uploaded photos.",
+      variant: "neighborhood"
+    };
+  }
+  if (mode === "agent-brand") {
+    return {
+      ...base,
+      label: "Agent Authority",
+      headline: index === total - 1 ? `${state.brandKit.name || "Your agent"} can help you move next` : "Local real estate strategy",
+      lines: [state.brandKit.brokerage || state.project.brokerage || "Brokerage", state.brandKit.phone || state.project.email || "", state.project.conversionGoal || "Follow for local real estate strategy"].filter(Boolean),
+      disclaimer: "Agent contact CTA card.",
+      variant: "agent"
+    };
+  }
+  return base;
+}
+
 function generateReelVariations() {
   setState((current) => ({ ...current, project: { ...current.project, reelVariations: createReelVariations() } }));
   showToast("3 reel variations generated");
@@ -1327,6 +1523,36 @@ function validateProjectBasics() {
   if (!String(state.project.baths || "").trim()) return "Baths are required before rendering.";
   if (!String(state.project.squareFeet || "").trim()) return "Square footage is required before rendering.";
   if (!String(state.project.city || state.project.neighborhood || "").trim()) return "City or neighborhood is required before rendering.";
+  return "";
+}
+
+function validateMarketingOSFields() {
+  const mode = state.project.contentMode || "listing-reel";
+  const metrics = state.project.investorMetrics || {};
+  const requiresInvestorMath = ["investor-breakdown", "wholesale-opportunity"].includes(mode);
+  if (requiresInvestorMath) {
+    const arvError = validateNumericEstimate("ARV", metrics.arv);
+    if (arvError) return arvError;
+    const rehabError = validateNumericEstimate("Rehab estimate", metrics.rehabEstimate);
+    if (rehabError) return rehabError;
+    if (!state.project.reelPlanEdits?.claimConfirmed) {
+      return "Investor and wholesale overlays must be manually confirmed as estimates before export.";
+    }
+  }
+  if (mode === "seller-lead-magnet") {
+    const unsafeSellerCopy = [state.project.introText, state.project.outroText, state.project.cta, state.project.conversionGoal].join(" ");
+    if (/\b(guarantee|guaranteed|will sell|certain sale|highest price)\b/i.test(unsafeSellerCopy)) {
+      return "Seller lead content cannot imply a guaranteed sale price or guaranteed sale outcome.";
+    }
+  }
+  return "";
+}
+
+function validateNumericEstimate(label, value) {
+  const raw = String(value || "").trim();
+  if (!raw) return `${label} is required for investor/wholesale overlays and must be marked as an estimate.`;
+  const numeric = Number(raw.replace(/[$,\s%]/g, ""));
+  if (!Number.isFinite(numeric) || numeric < 0) return `${label} must be numeric. Use estimate values only.`;
   return "";
 }
 
@@ -1497,12 +1723,20 @@ function renderDashboard() {
       ${quickStep("4", "Review and edit your reel plan", state.project.reelPlanEdits ? "Edited" : "AI draft")}
       ${quickStep("5", "Export vertical MP4", featureFlags.MOCK_RENDERING ? "Mock/demo" : "Live render")}
     </section>
+    <section class="panel os-command-center">
+      <div class="section-title"><p>Marketing OS</p><h3>Choose the business outcome first.</h3></div>
+      <div class="mode-grid premium-mode-grid">
+        ${contentModes.slice(0, 8).map((mode) => `<button class="mode-card ${state.project.contentMode === mode.id ? "selected" : ""}" data-content-mode="${mode.id}">${state.project.contentMode === mode.id ? `<span class="recommend-badge">Recommended</span>` : ""}<strong>${escapeHtml(mode.name)}</strong><small>Best for ${escapeHtml(mode.bestFor)}</small></button>`).join("")}
+      </div>
+      <div class="recommendation-card"><strong>Recommended next move</strong><span>${escapeHtml(recommendationForCurrentAgent())}</span></div>
+    </section>
     ${trustCopyPanel()}
   `);
   document.querySelector('[data-action="one-click"]').addEventListener("click", oneClickReel);
   document.querySelector('[data-action="sample"]').addEventListener("click", loadBetaSampleListing);
   document.querySelector('[data-action="continue"]').addEventListener("click", () => navigate("upload"));
   document.querySelector('[data-action="pro"]').addEventListener("click", () => navigate("details"));
+  bindContentModeButtons();
 }
 
 function quickStep(number, title, value) {
@@ -1515,6 +1749,29 @@ function trustCopyPanel() {
       ${["Uses your uploaded photos", "No fake property features", "MLS-safe captions", "Editable before export"].map((item) => `<article><span></span><strong>${escapeHtml(item)}</strong></article>`).join("")}
     </section>
   `;
+}
+
+function bindContentModeButtons() {
+  document.querySelectorAll("[data-content-mode]").forEach((button) => {
+    button.addEventListener("click", () => applyContentMode(button.dataset.contentMode));
+  });
+}
+
+function applyContentMode(modeId) {
+  const mode = contentModes.find((item) => item.id === modeId) || contentModes[0];
+  setState((current) => ({
+    ...current,
+    selectedTemplateId: mode.template,
+    project: {
+      ...current.project,
+      contentMode: mode.id,
+      conversionGoal: mode.cta,
+      cta: mode.cta,
+      reelPlanEdits: null
+    }
+  }));
+  trackEvent("content_mode_select", { contentMode: mode.id, templateId: mode.template });
+  showToast(`${mode.name} mode selected`);
 }
 
 function miniReelPreview(photo, variant = "") {
@@ -1765,6 +2022,103 @@ function renderDemoLandingPremium() {
   document.querySelector("[data-submit-lead]").addEventListener("click", submitLead);
   document.querySelector("[data-export-leads]").addEventListener("click", exportLeadsCsv);
   bindPricingTracking();
+}
+
+function renderBetaLanding() {
+  trackDemoVisitOnce();
+  renderLayout(`
+    <section class="beta-hero landing-hero">
+      <div class="landing-hero-copy">
+        <p class="eyebrow">EstateMotion beta</p>
+        <h2>Beta test the AI listing media OS built for real estate agents.</h2>
+        <p>Upload listing photos, pick the business goal, review the reel plan, and export branded social assets your clients can actually understand.</p>
+        <div class="actions">
+          <button class="primary" data-beta-sample>Try sample listing</button>
+          <button class="secondary" data-scroll-beta-signup>Join the beta</button>
+        </div>
+        <div class="hero-proof-row">
+          <span>Uses your uploaded photos</span>
+          <span>No fake property features</span>
+          <span>MLS-safe captions</span>
+        </div>
+      </div>
+      <div class="landing-device-stage">
+        <div class="device-frame phone-main">${miniReelPreview(betaSampleListing.photos[0] ?? demoPhotos[0], "beta-hero")}</div>
+        <div class="device-frame phone-secondary">${miniReelPreview(betaSampleListing.photos[2] ?? demoPhotos[2], "beta-alt")}</div>
+        <div class="device-caption"><strong>Beta output</strong><span>Reel / caption / thumbnail / content pack</span></div>
+      </div>
+    </section>
+    <section class="landing-section beta-audience">
+      <div class="section-title centered"><p>Who it is for</p><h3>Agents and teams who need listing content without waiting on an editor.</h3></div>
+      <div class="trust-feature-grid">
+        <article><strong>Listing agents</strong><small>Turn every launch into a polished social campaign.</small></article>
+        <article><strong>Brokerages</strong><small>Keep brand and compliance more consistent across agent content.</small></article>
+        <article><strong>Investor-focused pros</strong><small>Create deal breakdowns, wholesale promos, and authority content.</small></article>
+        <article><strong>Personal brands</strong><small>Look bigger, faster, and more credible online.</small></article>
+      </div>
+    </section>
+    <section class="landing-section">
+      <div class="section-title centered"><p>Beta onboarding</p><h3>Four steps. No production crew.</h3></div>
+      <div class="landing-steps beta-steps">
+        <article><span>01</span><strong>Upload 8-15 listing photos</strong><small>Use the real property photos already available for the listing.</small></article>
+        <article><span>02</span><strong>Pick your goal</strong><small>Listing promo, seller lead, investor deal, neighborhood authority, or agent brand.</small></article>
+        <article><span>03</span><strong>Review/edit reel</strong><small>Confirm scene order, captions, compliance, and branding before export.</small></article>
+        <article><span>04</span><strong>Export and post</strong><small>Download MP4s, captions, hashtags, thumbnails, and content pack assets.</small></article>
+      </div>
+    </section>
+    <section class="landing-section split-showcase">
+      <div class="section-title"><p>Sample outputs</p><h3>One listing can become a full content package.</h3></div>
+      <div class="template-showcase landing-template-showcase">
+        ${[
+          ["Listing Reel", "Full vertical tour from uploaded photos."],
+          ["Seller Lead Magnet", "Your home could look like this online."],
+          ["Investor Deal Breakdown", "Estimate-labeled ARV, rehab, and spread cards."],
+          ["Neighborhood Spotlight", "Local authority content for city and area demand."]
+        ].map(([title, body]) => `<article class="beta-output-card"><span>${escapeHtml(title)}</span><strong>${escapeHtml(body)}</strong>${miniReelPreview(betaSampleListing.photos[0] ?? demoPhotos[0], slug(title))}</article>`).join("")}
+      </div>
+    </section>
+    <section class="landing-section trust-section">
+      <div class="section-title centered"><p>Trust copy</p><h3>Built for real estate, not generic AI video.</h3></div>
+      <div class="trust-feature-grid">
+        <article><strong>Authentic listing visuals</strong><small>EstateMotion preserves uploaded-photo authenticity.</small></article>
+        <article><strong>Editable before export</strong><small>Agents can correct captions, order, categories, and CTA.</small></article>
+        <article><strong>Compliance-aware</strong><small>MLS clean mode, listing courtesy, brokerage disclaimer, and EHO support.</small></article>
+        <article><strong>Outcome-focused</strong><small>Reels are built around showings, seller leads, investor interest, and authority.</small></article>
+      </div>
+    </section>
+    <section class="landing-section beta-checklist-panel elevated">
+      <div class="section-title"><p>Beta tester checklist</p><h3>What we want you to judge.</h3></div>
+      <div class="beta-checklist">
+        ${["Was the reel postable?", "Did the photos appear correctly?", "Were captions accurate?", "What would stop you from paying?"].map((item) => `<article><span></span><strong>${escapeHtml(item)}</strong></article>`).join("")}
+      </div>
+    </section>
+    <section class="landing-section early-access-panel elevated" id="betaSignup">
+      <div class="early-access-copy">
+        <p class="eyebrow">Beta signup</p>
+        <h3>Get early access and test a listing workflow.</h3>
+        <p>Submissions are stored locally for now so founder-led validation stays simple.</p>
+      </div>
+      <div class="early-access-form">
+        <div class="grid-2">${leadField("Name", "name")}${leadField("Email", "email")}</div>
+        <div class="grid-2">${leadField("Brokerage", "brokerage")}${leadField("City", "city")}</div>
+        ${leadField("Monthly listings", "monthlyListings")}
+        ${leadField("Biggest content problem", "biggestProblem", { type: "textarea" })}
+        <div class="actions">
+          <button class="primary" data-submit-lead>Request beta access</button>
+          <button class="secondary" data-beta-sample>Try sample listing</button>
+          <button class="ghost" data-export-leads>Export CSV (${state.leads.length})</button>
+        </div>
+        ${state.leads.length ? `<div class="lead-list">${state.leads.slice(-3).reverse().map((lead) => `<article><strong>${escapeHtml(lead.name)}</strong><span>${escapeHtml(lead.email)} - ${escapeHtml(lead.city)}</span></article>`).join("")}</div>` : emptyState("No beta requests yet", "Beta signups will appear here locally.")}
+      </div>
+    </section>
+  `);
+  document.querySelectorAll("[data-beta-sample]").forEach((button) => button.addEventListener("click", () => {
+    trackEvent("beta_try_sample_click", { path: window.location.pathname });
+    loadBetaSampleListing();
+  }));
+  document.querySelector("[data-scroll-beta-signup]")?.addEventListener("click", () => document.querySelector("#betaSignup").scrollIntoView({ behavior: "smooth" }));
+  document.querySelector("[data-submit-lead]").addEventListener("click", submitLead);
+  document.querySelector("[data-export-leads]").addEventListener("click", exportLeadsCsv);
 }
 
 function faqItem(question, answer) {
@@ -2398,7 +2752,9 @@ function templatePipelineId() {
     "mls-clean": "mlsClean",
     "agent-brand-builder": "luxury",
     "investor-cash-flow": "investor",
-    "investor-wholesale": "investor"
+    "investor-wholesale": "investor",
+    "neighborhood-authority": "neighborhood",
+    "personal-brand-agent": "personalBrand"
   };
   return map[normalizeTemplateId(state.selectedTemplateId)] || "luxury";
 }
@@ -2520,6 +2876,11 @@ function renderDetails() {
     <section class="panel">
       <details class="advanced-panel" open>
         <summary>Advanced copy and listing facts</summary>
+        <div class="grid-2">
+          ${field("Content mode", "contentMode", { choices: contentModes.map((mode) => mode.id) })}
+          ${field("Conversion CTA", "conversionGoal", { choices: conversionCtas })}
+        </div>
+        <div class="grid-2">${field("CTA / Calendly / link-in-bio URL", "ctaUrl")}${field("QR code URL", "qrCodeUrl")}</div>
         <div class="grid-2">${field("Beds", "beds")}${field("Baths", "baths")}</div>
         ${field("Square footage", "squareFeet")}
         <div class="preset-block">
@@ -2543,11 +2904,24 @@ function renderDetails() {
       <div class="feature-cards">
         ${topFeatures().map((item, index) => `<div><strong>Top feature ${index + 1}</strong><br>${escapeHtml(item)}</div>`).join("")}
       </div>
+      <section class="panel nested-panel seller-tool-panel">
+        <div class="section-title"><p>Seller appointment weapon</p><h3>Listing-win assets</h3></div>
+        <div class="feature-cards">${sellerTools.map((item) => `<div>${escapeHtml(item)}</div>`).join("")}</div>
+      </section>
+      <section class="panel nested-panel investor-tool-panel">
+        <div class="section-title"><p>Investor / Wholesale moat</p><h3>Deal cards</h3></div>
+        <div class="grid-2">
+          ${investorDealFields.map((label) => investorField(label)).join("")}
+        </div>
+      </section>
       <button class="primary" data-next="template">Choose Style</button>
     </section>
   `);
   document.querySelectorAll("[data-hook-preset]").forEach((button) => {
     button.addEventListener("click", () => applyHookPreset(button.dataset.hookPreset));
+  });
+  document.querySelectorAll("[data-investor-metric]").forEach((input) => {
+    input.addEventListener("input", () => updateInvestorMetric(input.dataset.investorMetric, input.value));
   });
   document.querySelector("[data-next]").addEventListener("click", () => guard(validateProjectBasics() || validatePhotos(), () => {
     showToast("AI copy refreshed");
@@ -2555,8 +2929,32 @@ function renderDetails() {
   }));
 }
 
+function investorField(label) {
+  const keyMap = {
+    ARV: "arv",
+    "Rehab estimate": "rehabEstimate",
+    "Cap rate": "capRate",
+    "Cash flow": "cashFlow",
+    "Deal structure": "dealStructure",
+    "Assignment fee": "assignmentFee"
+  };
+  const key = keyMap[label] || slug(label).replaceAll("-", "");
+  const value = state.project.investorMetrics?.[key] || "";
+  return `<label class="field"><span>${escapeHtml(label)}</span><input data-investor-metric="${escapeAttr(key)}" value="${escapeAttr(value)}"></label>`;
+}
+
+function updateInvestorMetric(key, value) {
+  setState((current) => ({
+    ...current,
+    project: {
+      ...current.project,
+      investorMetrics: { ...(current.project.investorMetrics || {}), [key]: value }
+    }
+  }));
+}
+
 function renderTemplate() {
-  const simpleTemplates = templates.filter((template) => ["modern-luxury", "viral-fast-cut", "open-house", "mls-clean", "investor-wholesale"].includes(template.id));
+  const simpleTemplates = templates.filter((template) => ["modern-luxury", "viral-fast-cut", "open-house", "mls-clean", "investor-wholesale", "neighborhood-authority", "personal-brand-agent"].includes(template.id));
   renderLayout(`
     <div class="screen-title cinematic-title"><p class="eyebrow">Choose video style</p><h2>Pick the feel of the reel.</h2><p>Each style changes the pacing, overlays, motion system, CTA, and export manifest while keeping the listing photography real.</p></div>
     <section class="panel">
@@ -2597,7 +2995,7 @@ function renderTemplate() {
     setState((current) => ({ ...current, selectedTemplateId: button.dataset.template, project: { ...current.project, reelPlanEdits: null } }));
   }));
   document.querySelector("[data-one-click]").addEventListener("click", oneClickReel);
-  document.querySelector("[data-next]").addEventListener("click", () => guard(validateProjectBasics() || validatePhotos() || validateTemplate(), () => navigate("processing")));
+  document.querySelector("[data-next]").addEventListener("click", () => guard(validateProjectBasics() || validatePhotos() || validateTemplate() || validateMarketingOSFields(), () => navigate("processing")));
 }
 
 function simpleStyleName(template) {
@@ -2606,18 +3004,23 @@ function simpleStyleName(template) {
     "viral-fast-cut": "Viral",
     "open-house": "Open House",
     "mls-clean": "MLS Clean",
-    "investor-wholesale": "Investor/Wholesale"
+    "investor-wholesale": "Investor/Wholesale",
+    "neighborhood-authority": "Neighborhood",
+    "personal-brand-agent": "Personal Brand"
   };
   return names[template.id] || template.name;
 }
 
 function templateChoiceCard(template, displayName = template.name) {
+  const recommendation = recommendedTemplateForGoal();
+  const isRecommended = recommendation.template === template.id;
   return `
     <button class="template-card template-premium-card ${template.id === normalizeTemplateId(state.selectedTemplateId) ? "selected" : ""}" data-template="${template.id}" style="--template-accent:${template.accentColor}">
       <span class="template-preview">
         <span></span><b></b><i></i>
       </span>
       <span class="template-copy">
+        ${isRecommended ? `<span class="recommend-badge">${escapeHtml(recommendation.label)}</span>` : ""}
         <em>${escapeHtml(template.visualCue || "Reel style")}</em>
         <strong>${escapeHtml(displayName)}</strong>
         <small>${escapeHtml(template.description)}</small>
@@ -2824,6 +3227,8 @@ function validateReelPlanBeforePreview() {
   const plan = activeEditableReelPlan();
   if (!plan.scenes?.length) return "Create a reel plan before previewing.";
   if (plan.scenes.length < 3) return "Keep at least 3 scenes in the final reel.";
+  const marketingError = validateMarketingOSFields();
+  if (marketingError) return marketingError;
   const manifest = buildExportPayload();
   return validatePreRenderManifest(manifest, { live: !featureFlags.MOCK_RENDERING });
 }
@@ -2879,6 +3284,7 @@ function renderPreview() {
         ${photos.length ? photos.map((item, index) => sceneCard(item, index, pacing[index])).join("") : emptyState("No sequence yet", "Photos appear here after upload.")}
       </div>
     </section>
+    ${sellerPreviewPackage()}
     <details class="advanced-panel">
       <summary>Advanced Customization: features, property facts, and brand end card</summary>
       <section class="panel">
@@ -2921,7 +3327,7 @@ function renderPreview() {
   });
   document.querySelectorAll("[data-jump]").forEach((button) => button.addEventListener("click", () => setState({ selectedScene: Number(button.dataset.jump) })));
   document.querySelector("[data-edit]").addEventListener("click", () => navigate("edit"));
-  document.querySelector("[data-next]").addEventListener("click", () => guard(validateProjectBasics() || validatePhotos() || validateTemplate(), () => navigate("export")));
+  document.querySelector("[data-next]").addEventListener("click", () => guard(validateProjectBasics() || validatePhotos() || validateTemplate() || validateMarketingOSFields(), () => navigate("export")));
 }
 
 function sceneCard(item, index, pacing) {
@@ -2939,6 +3345,7 @@ function reelStage(photo, copy, template, index = 0, total = 1) {
   const beat = sceneBeatLabel(photo, index, total);
   const pacing = reelPacing(orderedPhotos())[index] ?? { move: "push-in", duration: "2.0" };
   const theme = selectedReelTheme();
+  const overlay = modeSpecificOverlay({ photo, category: sceneToPipelineCategory(photo.category) }, index, total);
   return `
     <section class="reel-stage reel-${slug(pacing.move)} text-${slug(state.project.textAnimation)}" style="border-color:${theme.accent};--reel-accent:${theme.accent};--reel-bg:${theme.background}">
       <img src="${photo.uri}" alt="">
@@ -2948,6 +3355,7 @@ function reelStage(photo, copy, template, index = 0, total = 1) {
           <span>${escapeHtml(state.project.city)} / ${escapeHtml(state.project.neighborhood)}</span>
         </div>
         <div class="thumbnail-card">${escapeHtml(state.project.thumbnailPreset)}</div>
+        ${overlay.headline ? `<div class="mode-overlay-card mode-${escapeAttr(overlay.variant)}"><strong>${escapeHtml(overlay.label)}</strong><span>${escapeHtml(overlay.headline)}</span>${overlay.lines?.length ? `<small>${overlay.lines.map(escapeHtml).join(" / ")}</small>` : ""}</div>` : ""}
         <div class="reel-hook">
           <h3>${escapeHtml(copy.hook)}</h3>
           <p>${state.project.price} - ${state.project.beds} BD - ${state.project.baths} BA - ${state.project.squareFeet} SQ FT</p>
@@ -2955,6 +3363,28 @@ function reelStage(photo, copy, template, index = 0, total = 1) {
         <div class="reel-progress">${Array.from({ length: total }, (_, dotIndex) => `<span class="${dotIndex <= index ? "active" : ""}"></span>`).join("")}</div>
         ${state.project.brandingVisible ? outroBlock() : ""}
         ${state.brandKit.complianceEnabled ? `<small class="reel-disclaimer">${escapeHtml(state.brandKit.listingCourtesyOf)}</small>` : ""}
+      </div>
+    </section>
+  `;
+}
+
+function sellerPreviewPackage() {
+  if (state.project.contentMode !== "seller-lead-magnet") return "";
+  const photos = orderedPhotos().slice(0, 4);
+  return `
+    <section class="panel seller-preview-package">
+      <div class="section-title"><p>Seller preview package</p><h3>Win-the-listing marketing card</h3></div>
+      <div class="seller-preview-layout">
+        <div class="seller-preview-photos">
+          ${photos.map((photo) => `<img src="${photo.uri}" alt="${escapeAttr(photo.fileName || "Listing photo")}">`).join("")}
+        </div>
+        <div class="seller-preview-copy">
+          <span class="recommend-badge">Seller Lead Magnet</span>
+          <h3>See what your home could look like online</h3>
+          <p>Built from uploaded listing photos with ${escapeHtml(selectedTemplate().name)} styling, MLS-safe captions, and a ${escapeHtml(state.project.conversionGoal || state.project.cta)} CTA.</p>
+          ${agentStrip()}
+          <small>No guaranteed sale price or sale outcome. This is a marketing preview for presentation use.</small>
+        </div>
       </div>
     </section>
   `;
@@ -2982,22 +3412,70 @@ function motionPlanForPhoto(photo, index = 0) {
   const category = sceneLabel(photo?.category ?? "Detail shots");
   const system = selectedMotionSystem();
   const intelligence = sceneIntelligence[category] ?? sceneIntelligence["Detail shots"];
-  const motionStyle = index === 0 ? "Depth zoom" : intelligence.suggestedMotion || system.defaultMotion;
-  const duration = Math.max(1.05, system.baseDuration + sceneDurationAdjustment(category, index)).toFixed(2);
+  const motionStyle = sceneSpecificMotion(category, index, intelligence, system);
+  const duration = beatTimedDuration(category, index, system).toFixed(2);
   const beatIndex = index + 1;
   return {
     sceneId: photo?.id,
     sceneType: category,
     confidence: sceneConfidence(photo ?? { fileName: "", order: index + 1 }),
     motionStyle,
+    renderMotion: motionStyle,
     move: motionToClass(motionStyle),
     duration,
-    transition: system.transition,
+    transition: sceneSpecificTransition(category, system),
     beatMarker: `Beat ${beatIndex}${beatIndex % system.beatEvery === 0 ? " / transition accent" : ""}`,
     musicPacing: system.tempo,
     depthModel: ["Exterior hero", "Backyard / pool", "Living room"].includes(category) ? "layered parallax" : "subtle monocular depth",
     realismGuardrail: "Preserve exact property geometry; no hallucinated rooms, windows, furniture, or warped architecture.",
     overlayText: intelligence.overlay
+  };
+}
+
+function sceneSpecificMotion(category, index, intelligence, system) {
+  if (index === 0 || category === "Exterior hero") return "Exterior slow zoom";
+  if (category === "Kitchen") return "Kitchen lateral pan";
+  if (category === "Living room") return "Living depth zoom";
+  if (category === "Primary bedroom") return "Bedroom gentle fade";
+  if (category === "Bathroom") return "Bathroom clean slide";
+  if (category === "Backyard / pool") return "Exterior slow zoom";
+  return intelligence.suggestedMotion || system.defaultMotion;
+}
+
+function sceneSpecificTransition(category, system) {
+  const map = {
+    "Exterior hero": "cinematic dissolve",
+    Kitchen: "lateral wipe",
+    "Living room": "depth dissolve",
+    "Primary bedroom": "gentle fade",
+    Bathroom: "clean slide",
+    "Backyard / pool": "cinematic dissolve"
+  };
+  return map[category] || system.transition || "soft dissolve";
+}
+
+function beatTimedDuration(category, index, system) {
+  const base = Number(system.baseDuration || 2);
+  const pack = templatePipelineId();
+  const packMultiplier = pack === "viral" ? 0.74 : pack === "mlsClean" ? 1.08 : pack === "investor" ? 0.9 : 1;
+  const beat = base + sceneDurationAdjustment(category, index);
+  return Math.max(1.15, Math.min(3.4, beat * packMultiplier));
+}
+
+function selectedMusicTrack() {
+  const pack = templatePipelineId();
+  const tracks = {
+    luxury: { id: "luxury", label: "Luxury: slow cinematic", url: featureFlags.MUSIC_LUXURY_URL, bpm: 72, mood: "slow cinematic" },
+    viral: { id: "viral", label: "Viral: upbeat social", url: featureFlags.MUSIC_VIRAL_URL, bpm: 118, mood: "upbeat social" },
+    openHouse: { id: "viral", label: "Viral: upbeat social", url: featureFlags.MUSIC_VIRAL_URL, bpm: 118, mood: "upbeat social" },
+    mlsClean: { id: "mlsClean", label: "MLS Clean: no music or subtle ambient", url: featureFlags.MUSIC_MLS_CLEAN_URL, bpm: 64, mood: "subtle ambient", optional: true },
+    investor: { id: "investor", label: "Investor: energetic minimal", url: featureFlags.MUSIC_INVESTOR_URL, bpm: 104, mood: "energetic minimal" }
+  };
+  const track = tracks[pack] || tracks.luxury;
+  return {
+    ...track,
+    configured: Boolean(track.url),
+    fallback: track.url ? "" : "No music file configured; render will use silent beat-timed pacing."
   };
 }
 
@@ -3014,6 +3492,11 @@ function motionToClass(motionStyle) {
     "Pull-out": "pull-out",
     "Slow pan": "slow-pan",
     "Depth zoom": "depth-zoom",
+    "Exterior slow zoom": "depth-zoom",
+    "Kitchen lateral pan": "slow-pan",
+    "Living depth zoom": "depth-zoom",
+    "Bedroom gentle fade": "pull-out",
+    "Bathroom clean slide": "vertical-social-framing",
     "Orbit simulation": "orbit-simulation",
     "Vertical social framing": "vertical-social-framing"
   };
@@ -3045,7 +3528,7 @@ function renderEdit() {
   document.querySelectorAll("[data-hook-preset]").forEach((button) => {
     button.addEventListener("click", () => applyHookPreset(button.dataset.hookPreset));
   });
-  document.querySelector("[data-next]").addEventListener("click", () => guard(validateProjectBasics() || validatePhotos() || validateTemplate(), () => navigate("export")));
+  document.querySelector("[data-next]").addEventListener("click", () => guard(validateProjectBasics() || validatePhotos() || validateTemplate() || validateMarketingOSFields(), () => navigate("export")));
   const templateSelect = document.querySelector("[data-template-select]");
   templateSelect.value = selectedTemplate().name;
   templateSelect.addEventListener("input", () => {
@@ -3140,6 +3623,7 @@ function renderExport() {
         <div><strong>MP4 status</strong><br>${state.exportResult ? `Ready: ${state.exportResult.createdAt}${renderUrl ? `<br><a href="${escapeHtml(renderUrl)}" target="_blank" rel="noreferrer">Open rendered MP4</a>` : ""}` : "Ready to export"}</div>
       </div>
     </section>
+    ${postExportReferralPanel()}
     ${betaFeedbackPanel()}
   `);
   document.querySelector("[data-queue-pack]").addEventListener("click", queueContentPack);
@@ -3165,6 +3649,10 @@ function renderExport() {
     trackEvent("copy_hashtags_click", { screen: "export" });
     copyText(copy.hashtags.join(" "), "Hashtags copied");
   });
+  document.querySelector("[data-copy-referral]")?.addEventListener("click", () => {
+    trackEvent("beta_referral_copy", { screen: "export" });
+    copyText(`${window.location.origin}/beta?ref=${encodeURIComponent(state.brandKit.name || "agent")}`, "Beta referral link copied");
+  });
   if (!state.exportResult && shouldUseLocalPersistence()) {
     setTimeout(() => setState({ exportResult: { createdAt: new Date().toLocaleString(), output: `${slug(state.project.title)}-mock-render` } }), 0);
   }
@@ -3179,6 +3667,9 @@ function betaFeedbackPanel() {
   return `
     <section class="panel beta-feedback-panel">
       <div class="section-title"><p>Beta feedback</p><h3>Help us tune EstateMotion for working agents.</h3></div>
+      <div class="beta-checklist compact-checklist">
+        ${["Was the reel postable?", "Did the photos appear correctly?", "Were captions accurate?", "What would stop you from paying?"].map((item) => `<article><span></span><strong>${escapeHtml(item)}</strong></article>`).join("")}
+      </div>
       <div class="grid-2">
         <label class="field"><span>Rating</span><select data-beta-feedback="rating">${["5", "4", "3", "2", "1"].map((rating) => `<option value="${rating}" ${state.betaFeedbackForm.rating === rating ? "selected" : ""}>${rating} / 5</option>`).join("")}</select></label>
         <label class="field"><span>Was this usable enough to post?</span><select data-beta-feedback="usableEnough"><option value="yes" ${state.betaFeedbackForm.usableEnough === "yes" ? "selected" : ""}>Yes</option><option value="almost" ${state.betaFeedbackForm.usableEnough === "almost" ? "selected" : ""}>Almost</option><option value="no" ${state.betaFeedbackForm.usableEnough === "no" ? "selected" : ""}>No</option></select></label>
@@ -3187,6 +3678,21 @@ function betaFeedbackPanel() {
       <div class="actions">
         <button class="primary" data-submit-beta-feedback>Submit beta feedback</button>
         <span class="muted">${state.betaFeedback.length} response${state.betaFeedback.length === 1 ? "" : "s"} captured</span>
+      </div>
+    </section>
+  `;
+}
+
+function postExportReferralPanel() {
+  const referralLink = `${window.location.origin}/beta?ref=${encodeURIComponent(state.brandKit.name || "agent")}`;
+  return `
+    <section class="panel referral-panel elevated">
+      <div class="section-title"><p>Referral CTA</p><h3>Want this for your listings?</h3></div>
+      <p class="muted">Share the beta with another agent, team lead, investor buyer list, or brokerage partner.</p>
+      <div class="referral-link"><code>${escapeHtml(referralLink)}</code></div>
+      <div class="actions">
+        <button class="primary" data-copy-referral>Copy referral link</button>
+        <a class="secondary button-link" href="/beta">Open beta page</a>
       </div>
     </section>
   `;
@@ -3226,7 +3732,7 @@ async function submitBetaFeedback() {
 }
 
 async function queueContentPack() {
-  const validationError = validateProjectBasics() || validatePhotos() || validateTemplate();
+  const validationError = validateProjectBasics() || validatePhotos() || validateTemplate() || validateMarketingOSFields();
   if (validationError) {
     setError(validationError);
     return;
@@ -3245,7 +3751,7 @@ async function queueContentPack() {
     return;
   }
   const now = new Date().toISOString();
-  trackEvent("queue_content_pack", { mockRendering: featureFlags.MOCK_RENDERING, exportTypes: contentPack().map((item) => item.id), templateId: state.selectedTemplateId });
+  trackEvent("queue_content_pack", { mockRendering: featureFlags.MOCK_RENDERING, exportTypes: contentPack().map((item) => item.id), templateId: state.selectedTemplateId, contentMode: state.project.contentMode, nicheType: state.project.contentMode?.includes("investor") || state.project.contentMode?.includes("wholesale") ? "investor-wholesale" : "traditional-agent" });
   const jobs = contentPack().map((item) => ({
     id: `${item.id}-${Date.now()}`,
     packId: item.id,
@@ -3495,6 +4001,7 @@ function buildExportPayload() {
   const copy = aiCopy();
   const sequence = createPipelineSequence();
   const scenes = renderManifestScenes(sequence);
+  const music = selectedMusicTrack();
   const orderedManifestPhotos = sequence.scenes.map((scene) => renderPhotoForManifest(scene.photo));
   return {
     app: "EstateMotion",
@@ -3509,9 +4016,21 @@ function buildExportPayload() {
       equalHousing: state.brandKit.equalHousing,
       mlsDisclaimer: state.brandKit.mlsDisclaimer
     },
+    marketingOS: {
+      contentMode: state.project.contentMode,
+      conversionGoal: state.project.conversionGoal || state.project.cta,
+      ctaUrl: state.project.ctaUrl,
+      qrCodeUrl: state.project.qrCodeUrl,
+      sellerPresentationMode: state.project.sellerPresentationMode,
+      sellerAssets: sellerTools,
+      investorMetrics: state.project.investorMetrics || {},
+      investorEstimateSummary: investorEstimateSummary(),
+      recommendation: recommendationForCurrentAgent()
+    },
     featureFlags,
     renderQueue: state.renderQueue,
     template: selectedTemplate(),
+    stylePack: templatePipelineId(),
     reelTheme: selectedReelTheme(),
     formats: [
       { id: "vertical", label: "9:16 Reels/TikTok/Shorts", width: 1080, height: 1920, branded: true },
@@ -3525,9 +4044,11 @@ function buildExportPayload() {
       outroVariation: state.project.outroVariation,
       thumbnailPreset: state.project.thumbnailPreset,
       reelVariations: state.project.reelVariations,
+      musicTrack: music,
       motionSystem: selectedMotionSystem(),
-      beatSync: beatSyncPlan(scenes)
+      beatSync: beatSyncPlan(scenes, music)
     },
+    music,
     topFeatures: topFeatures(),
     orderedPhotos: orderedManifestPhotos,
     uploadedPhotoIntegrity: orderedManifestPhotos.map((photo) => ({
@@ -3558,13 +4079,17 @@ function renderManifestScenes(sequence = createPipelineSequence()) {
   const scenes = sequence.scenes || [];
   const copy = aiCopy();
   const captionByScene = new Map(pipelineCaptions(sequence).map((item) => [item.sceneId, item.caption]));
+  let beatCursor = 0;
+  const music = selectedMusicTrack();
   return scenes.map((scene, index) => {
     const photo = scene.photo;
     const motion = motionPlanForPhoto(photo, index);
+    const duration = Number(scene.duration || motion.duration);
     const imageUrl = photoRenderUrl(photo);
     const durableUrl = photoDurableUrl(photo);
     const publicUrl = photo.publicUrl || photo.public_url || (!featureFlags.SUPABASE_STORAGE_PRIVATE ? durableUrl : "");
-    return {
+    const marketingOverlay = modeSpecificOverlay(scene, index, scenes.length);
+    const sceneManifest = {
       order: index + 1,
       type: "photo",
       photoId: photo.id,
@@ -3582,18 +4107,25 @@ function renderManifestScenes(sequence = createPipelineSequence()) {
       sceneType: motion.sceneType,
       confidence: motion.confidence,
       suggestedCorrections: sceneSuggestions(photo),
-      duration: Number(scene.duration || motion.duration),
-      motionStyle: pipelineTemplateConfig().motionStyle || motion.motionStyle,
+      duration,
+      motionStyle: motion.motionStyle || pipelineTemplateConfig().motionStyle,
+      renderMotion: motion.renderMotion || motion.motionStyle || pipelineTemplateConfig().motionStyle,
       depthModel: motion.depthModel,
-      transition: pipelineTemplateConfig().transitionStyle || motion.transition,
+      transition: motion.transition || pipelineTemplateConfig().transitionStyle,
       beatMarker: motion.beatMarker,
-      overlayText: index === 0 ? (sequence.intro?.caption || copy.hook) : (index === scenes.length - 1 ? (sequence.outro?.caption || captionByScene.get(scene.id) || motion.overlayText) : (captionByScene.get(scene.id) || motion.overlayText)),
+      beatStart: Number(beatCursor.toFixed(2)),
+      beatCut: Number((beatCursor + duration).toFixed(2)),
+      musicTrackId: music.id,
+      overlayText: marketingOverlay.headline || (index === 0 ? (sequence.intro?.caption || copy.hook) : (index === scenes.length - 1 ? (sequence.outro?.caption || captionByScene.get(scene.id) || motion.overlayText) : (captionByScene.get(scene.id) || motion.overlayText))),
+      marketingOverlay,
       featureCard: topFeatures()[index % Math.max(1, topFeatures().length)] || "",
       branding: index === scenes.length - 1 ? "Personal brand end card" : "Subtle lower-third safe area",
       cta: index === scenes.length - 1 ? (sequence.outro?.caption || state.project.cta) : "",
       complianceFooter: state.brandKit.complianceEnabled ? state.brandKit.listingCourtesyOf : "",
       realismGuardrail: motion.realismGuardrail
     };
+    beatCursor += duration;
+    return sceneManifest;
   });
 }
 
@@ -3735,15 +4267,20 @@ function actionableRenderError(message) {
   return `${text} Check the render worker logs and retry after confirming Supabase image URLs are accessible.`;
 }
 
-function beatSyncPlan(scenes) {
+function beatSyncPlan(scenes, music = selectedMusicTrack()) {
   const totalDuration = scenes.reduce((sum, scene) => sum + Number(scene.duration || 0), 0);
   return {
     musicMood: state.project.musicMood,
+    musicTrack: music,
+    audioConfigured: Boolean(music.url),
+    fallback: music.fallback,
     pacingSystem: selectedMotionSystem().tempo,
     totalDuration: Number(totalDuration.toFixed(2)),
     markers: scenes.map((scene, index) => ({
-      time: Number(scenes.slice(0, index).reduce((sum, item) => sum + Number(item.duration || 0), 0).toFixed(2)),
+      time: Number((scene.beatStart ?? scenes.slice(0, index).reduce((sum, item) => sum + Number(item.duration || 0), 0)).toFixed(2)),
+      cutAt: Number(Number(scene.beatCut ?? (Number(scene.beatStart || 0) + Number(scene.duration || 0))).toFixed(2)),
       label: scene.beatMarker,
+      musicTrackId: scene.musicTrackId || music.id,
       transition: scene.transition
     }))
   };
@@ -3839,7 +4376,10 @@ function renderAnalytics() {
       ${metricCard("Export intent count", summary.exportIntent)}
       ${metricCard("Most used template", summary.mostUsedTemplate)}
       ${metricCard("Most used hook", summary.mostUsedHook)}
+      ${metricCard("Most exported style", summary.mostExportedStyle)}
+      ${metricCard("Top content mode", summary.mostUsedContentMode)}
     </section>
+    <section class="panel recommendation-card"><strong>Recommendation engine</strong><span>${escapeHtml(summary.recommendation)}</span></section>
     <section class="panel">
       <div class="section-title"><p>Pricing clicks</p><h3>${pricingEvents.length} total</h3></div>
       ${pricingEvents.length ? pricingBreakdown() : emptyState("No pricing clicks yet", "Click pricing test cards on the Demo page to collect interest signals.")}
@@ -4002,6 +4542,7 @@ function render() {
   }
   const screens = {
     demo: renderDemoLandingPremium,
+    beta: renderBetaLanding,
     dashboard: renderDashboard,
     onboarding: renderOnboarding,
     create: renderCreate,

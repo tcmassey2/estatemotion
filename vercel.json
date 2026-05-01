@@ -6,7 +6,11 @@
     { "source": "/app", "destination": "/app/index.html" },
     { "source": "/app/:path*", "destination": "/app/index.html" },
     { "source": "/demo", "destination": "/demo/index.html" },
-    { "source": "/demo/:path*", "destination": "/demo/index.html" }
+    { "source": "/demo/:path*", "destination": "/demo/index.html" },
+    { "source": "/beta", "destination": "/beta/index.html" },
+    { "source": "/beta/:path*", "destination": "/beta/index.html" },
+    { "source": "/waitlist", "destination": "/beta/index.html" },
+    { "source": "/waitlist/:path*", "destination": "/beta/index.html" }
   ],
   "headers": [
     {
