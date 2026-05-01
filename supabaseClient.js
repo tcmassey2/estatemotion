@@ -59,6 +59,24 @@
     if (error) throw error;
   }
 
+  async function signInWithPassword(email, password) {
+    const supabase = await client();
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    return data;
+  }
+
+  async function signUpWithPassword(email, password) {
+    const supabase = await client();
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo: `${window.location.origin}/app/` }
+    });
+    if (error) throw error;
+    return data;
+  }
+
   async function signInWithGoogle() {
     const supabase = await client();
     const { error } = await supabase.auth.signInWithOAuth({
@@ -441,6 +459,8 @@
     client,
     getSession,
     signInWithEmail,
+    signInWithPassword,
+    signUpWithPassword,
     signInWithGoogle,
     signOut,
     loadWorkspace,

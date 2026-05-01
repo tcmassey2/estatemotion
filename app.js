@@ -608,6 +608,9 @@ const defaultState = {
   screen: "dashboard",
   authStatus: featureFlags.MOCK_SUPABASE ? "mock" : "checking",
   authEmail: "",
+  authPassword: "",
+  authMode: "sign-in",
+  authReturnScreen: "dashboard",
   selectedTemplateId: "desert-luxury",
   selectedShowcaseId: "showcase-scottsdale-luxury",
   selectedScene: 0,
@@ -723,6 +726,9 @@ function mergeState(base, saved) {
   return {
     ...base,
     ...saved,
+    authPassword: "",
+    authMode: saved.authMode ?? base.authMode,
+    authReturnScreen: saved.authReturnScreen ?? base.authReturnScreen,
     renderQueue: saved.renderQueue ?? base.renderQueue,
     selectedShowcaseId: saved.selectedShowcaseId ?? base.selectedShowcaseId,
     leads: saved.leads ?? base.leads,
@@ -955,6 +961,12 @@ function maybeStartOnboarding() {
     saveState();
     return;
   }
+  if (featureFlags.MOCK_SUPABASE && state.screen === "auth") {
+    state.screen = "dashboard";
+    state.authStatus = "mock";
+    saveState();
+    return;
+  }
   if (!state.hasOnboarded && state.screen === "dashboard") {
     state.screen = "onboarding";
     saveState();
@@ -986,6 +998,7 @@ async function bootstrapSupabase() {
     remoteWorkspaceLoaded = true;
     state = mergeRemoteWorkspace(state, workspace);
     state.authStatus = "signed-in";
+    if (state.screen === "auth" && state.authReturnScreen) state.screen = state.authReturnScreen;
     if (!state.hasOnboarded && state.brandKit.name && state.brandKit.brokerage) state.hasOnboarded = true;
     maybeStartOnboarding();
     render();
@@ -1042,6 +1055,54 @@ async function signInWithGoogle() {
     await window.EstateMotionSupabase.signInWithGoogle();
   } catch (error) {
     setError(error.message || "Google sign-in failed.");
+  }
+}
+
+async function signInWithPassword() {
+  const envError = supabaseEnvError();
+  if (envError) {
+    setError(envError);
+    return;
+  }
+  if (!state.authEmail.trim() || !state.authPassword) {
+    setError("Enter your email and password to sign in.");
+    return;
+  }
+  setState({ loading: "Signing in...", error: "" });
+  try {
+    const result = await window.EstateMotionSupabase.signInWithPassword(state.authEmail.trim(), state.authPassword);
+    authUser = result.user || result.session?.user || null;
+    showToast("Signed in");
+    await bootstrapSupabase();
+    setState({ loading: "", authStatus: "signed-in", authPassword: "", screen: state.authReturnScreen || state.screen });
+  } catch (error) {
+    setError(error.message || "Email/password sign in failed.");
+  }
+}
+
+async function signUpWithPassword() {
+  const envError = supabaseEnvError();
+  if (envError) {
+    setError(envError);
+    return;
+  }
+  if (!state.authEmail.trim() || !state.authPassword) {
+    setError("Enter your email and password to create an account.");
+    return;
+  }
+  if (state.authPassword.length < 6) {
+    setError("Password must be at least 6 characters.");
+    return;
+  }
+  setState({ loading: "Creating account...", error: "" });
+  try {
+    const result = await window.EstateMotionSupabase.signUpWithPassword(state.authEmail.trim(), state.authPassword);
+    authUser = result.user || result.session?.user || null;
+    showToast(result.session ? "Account created" : "Account created. Check your email if confirmation is required.");
+    await bootstrapSupabase();
+    setState({ loading: "", authStatus: authUser ? "signed-in" : "email-sent", authPassword: "", screen: authUser ? (state.authReturnScreen || state.screen) : state.screen });
+  } catch (error) {
+    setError(error.message || "Account creation failed.");
   }
 }
 
@@ -1640,12 +1701,14 @@ function renderLayout(content) {
           <p>EstateMotion</p>
           <h1>${stepLabel}</h1>
         </div>
+        <div class="top-progress" aria-label="Reel creation progress">
+          ${navItems.map((item, index) => `<button class="${state.screen === item.screen ? "active" : ""} ${screenToStep(state.screen) > index + 1 ? "complete" : ""}" data-nav="${item.screen}"><span>${index + 1}</span><b>${item.label}</b></button>`).join("")}
+        </div>
         <div class="top-actions">
           <span class="status-dot ${appModeClass()}">${appModeLabel()}</span>
-          <span class="status-dot ${featureFlags.MOCK_RENDERING ? "mock" : "live"}">${featureFlags.MOCK_RENDERING ? "Mock render" : "Live render"}</span>
-          <span class="status-dot ${featureFlags.MOCK_SUPABASE ? "mock" : "live"}">${featureFlags.MOCK_SUPABASE ? "Mock data" : "Supabase"}</span>
           <span class="credit-pill">${state.user.creditBalance} credits</span>
           ${!featureFlags.MOCK_SUPABASE && authUser ? `<button class="reset-demo" data-sign-out>Sign out</button>` : ""}
+          ${!featureFlags.MOCK_SUPABASE && !authUser ? `<button class="reset-demo auth-entry" data-auth-entry="sign-in">Sign In</button><button class="reset-demo auth-entry primary-lite" data-auth-entry="sign-up">Create Account</button>` : ""}
           <button class="reset-demo" data-reset-demo>Reset demo</button>
         </div>
       </header>
@@ -1664,6 +1727,9 @@ function renderLayout(content) {
   document.querySelectorAll("[data-nav]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.nav)));
   document.querySelector("[data-reset-demo]").addEventListener("click", resetDemoMode);
   document.querySelector("[data-sign-out]")?.addEventListener("click", signOut);
+  document.querySelectorAll("[data-auth-entry]").forEach((button) => button.addEventListener("click", () => {
+    setState({ authMode: button.dataset.authEntry, authReturnScreen: state.screen === "auth" ? state.authReturnScreen : state.screen, screen: "auth", error: "" });
+  }));
   bindInputs();
 }
 
@@ -1693,7 +1759,7 @@ function bindInputs() {
     input.addEventListener("change", () => updateBetaFeedback(input.dataset.betaFeedback, input.type === "checkbox" ? input.checked : input.value));
   });
   document.querySelectorAll("[data-auth]").forEach((input) => {
-    input.addEventListener("input", () => setState({ authEmail: input.value, error: "" }));
+    input.addEventListener("input", () => setState({ [input.dataset.auth]: input.value, error: "" }));
   });
 }
 
@@ -1703,8 +1769,11 @@ function renderDashboard() {
     <section class="dashboard-command">
       <div class="dashboard-copy">
         <p class="eyebrow">EstateMotion AI reel studio</p>
-        <h2>Drop in listing photos. Get polished content.</h2>
-        <p>The default flow is simple: upload photos, choose a style, let AI build the reel, preview, then export.</p>
+        <h2>Your listings, elevated.</h2>
+        <p>Look bigger. Move faster. Upload real listing photos and turn them into premium, MLS-safe marketing without fake property features.</p>
+        <div class="brand-trust-row">
+          ${["Built for modern agents", "Look bigger. Move faster.", "Your listings, elevated.", "No fake features. Real marketing."].map((item) => `<span>${escapeHtml(item)}</span>`).join("")}
+        </div>
         <div class="actions">
           <button class="primary" data-action="continue">Upload Photos</button>
           <button class="secondary" data-action="sample">Try with sample listing</button>
@@ -2127,23 +2196,37 @@ function faqItem(question, answer) {
 
 function renderAuth() {
   const envError = supabaseEnvError();
+  const isSignUp = state.authMode === "sign-up";
   renderLayout(`
     <section class="auth-panel panel elevated">
       <p class="eyebrow">EstateMotion App</p>
-      <h2>Sign in to continue</h2>
-      <p>Supabase Auth protects the production workspace. Demo mode remains public at <a href="/demo">/demo</a>.</p>
+      <h2>${isSignUp ? "Create your account" : "Sign in to continue"}</h2>
+      <p>Supabase Auth unlocks durable listing-photo uploads, project persistence, and live render-ready URLs. Mock mode remains available for local demos.</p>
       ${envError ? `<div class="state-banner error-state"><strong>Supabase setup needed</strong><span>${escapeHtml(envError)}</span></div>` : ""}
+      ${featureFlags.MOCK_SUPABASE ? `<div class="state-banner loading-state"><strong>Mock Mode</strong><span>Authentication is not required while MOCK_SUPABASE=true.</span></div>` : ""}
+      <div class="auth-tabs">
+        <button class="${!isSignUp ? "active" : ""}" data-auth-mode="sign-in">Sign In</button>
+        <button class="${isSignUp ? "active" : ""}" data-auth-mode="sign-up">Create Account</button>
+      </div>
       <div class="field">
         <label>Email</label>
-        <input data-auth="email" type="email" placeholder="agent@example.com" value="${escapeAttr(state.authEmail)}">
+        <input data-auth="authEmail" type="email" placeholder="agent@example.com" value="${escapeAttr(state.authEmail)}">
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input data-auth="authPassword" type="password" placeholder="${isSignUp ? "Create a password" : "Enter your password"}" value="${escapeAttr(state.authPassword)}">
       </div>
       <div class="actions">
-        <button class="primary" data-auth-email ${envError ? "disabled" : ""}>Send magic link</button>
+        <button class="primary" data-auth-password ${envError ? "disabled" : ""}>${isSignUp ? "Create Account" : "Sign In"}</button>
+        <button class="secondary" data-auth-email ${envError ? "disabled" : ""}>Send magic link</button>
         <button class="secondary" data-auth-google ${envError ? "disabled" : ""}>Continue with Google</button>
       </div>
+      <p class="muted">${isSignUp ? "Already have an account?" : "New to EstateMotion?"} <button class="text-button" data-auth-mode="${isSignUp ? "sign-in" : "sign-up"}">${isSignUp ? "Sign in" : "Create account"}</button></p>
       ${state.authStatus === "email-sent" ? `<div class="state-banner loading-state"><strong>Magic link sent</strong><span>Open the link from your email to finish signing in.</span></div>` : ""}
     </section>
   `);
+  document.querySelectorAll("[data-auth-mode]").forEach((button) => button.addEventListener("click", () => setState({ authMode: button.dataset.authMode, error: "" })));
+  document.querySelector("[data-auth-password]").addEventListener("click", () => state.authMode === "sign-up" ? signUpWithPassword() : signInWithPassword());
   document.querySelector("[data-auth-email]").addEventListener("click", signInWithEmail);
   document.querySelector("[data-auth-google]").addEventListener("click", signInWithGoogle);
 }
@@ -2205,23 +2288,26 @@ function renderCreate() {
 
 function renderUpload() {
   const photos = orderedPhotos();
+  const needsLiveAuth = !featureFlags.MOCK_SUPABASE && !authUser && !isDemoRoute();
   renderLayout(`
     <div class="screen-title cinematic-title"><p class="eyebrow">Upload photos</p><h2>Drop in the listing gallery.</h2><p>EstateMotion handles the scene order, pacing, hook, Top 3 Features, and CTA. Pro controls are still here when you want them.</p></div>
-    <section class="studio-strip">
-      <span>Exterior hero</span>
-      <span>Interior rhythm</span>
-      <span>Feature proof</span>
-      <span>Brand end card</span>
-    </section>
     ${trustCopyPanel()}
+    ${needsLiveAuth ? `<section class="panel sign-in-required-card"><div><p class="eyebrow">Sign in required</p><h3>Sign in to upload and persist listing photos.</h3><p class="muted">Live Supabase mode stores photos in durable Storage URLs for Remotion rendering.</p></div><button class="primary" data-auth-entry-upload>Sign In</button></section>` : ""}
     ${classificationModeBanner()}
-    <label class="upload-zone" data-upload-zone>
-      <input id="photoInput" type="file" accept="image/*" multiple>
-      <span class="upload-plus">+</span>
-      <strong>Select 5-25 property photos</strong>
-      <span class="muted">Drag and drop images here, or use Add More Photos. Select All from Folder works in the file picker.</span>
-      <b class="upload-count">${photos.length} photo${photos.length === 1 ? "" : "s"} uploaded.</b>
-    </label>
+    <section class="upload-studio-card">
+      <label class="upload-zone" data-upload-zone>
+        <input id="photoInput" type="file" accept="image/*" multiple>
+        <span class="upload-plus">+</span>
+        <strong>Upload 8-15 listing photos</strong>
+        <span class="muted">Drag and drop JPG, PNG, or WebP images here. Use Select All from Folder in the file picker.</span>
+        <b class="upload-count">${photos.length} photo${photos.length === 1 ? "" : "s"} uploaded</b>
+      </label>
+      <aside class="upload-status-card">
+        <span>Upload status</span>
+        <strong>${photos.length >= 3 ? "Ready for style selection" : "Need at least 3 photos"}</strong>
+        <small>${featureFlags.MOCK_SUPABASE ? "Mock Mode uses local previews." : authUser ? "Supabase durable upload enabled." : "Sign in to persist photos."}</small>
+      </aside>
+    </section>
     <section class="panel listing-basics-panel">
       <div class="section-title"><p>Listing basics</p><h3>Only what the reel needs</h3></div>
       <div class="grid-2">${field("Property address", "address")}${field("Price", "price")}</div>
@@ -2231,11 +2317,10 @@ function renderUpload() {
       <div class="grid-2">${brandField("Phone", "phone")}${brandField("Email", "email")}</div>
     </section>
     <div class="actions">
-      <button class="primary" data-add-more type="button">Add More Photos</button>
+      <button class="secondary" data-add-more type="button">Add More Photos</button>
       <button class="secondary" data-sample-listing type="button">Try with sample listing</button>
-      <button class="primary" data-one-click>One-Click Reel</button>
       <button class="ghost" data-demo>Add demo photos</button>
-      <button class="secondary" data-next="template">Choose style</button>
+      <button class="primary" data-next="template">Choose Style</button>
     </div>
     <details class="advanced-panel">
       <summary>Pro Controls: scene intelligence and manual order</summary>
@@ -2261,9 +2346,9 @@ function renderUpload() {
   const input = document.querySelector("#photoInput");
   input.addEventListener("change", handlePhotoFiles);
   document.querySelector("[data-add-more]").addEventListener("click", () => input.click());
+  document.querySelector("[data-auth-entry-upload]")?.addEventListener("click", () => setState({ authMode: "sign-in", authReturnScreen: "upload", screen: "auth", error: "" }));
   bindUploadDropZone();
   document.querySelector("[data-sample-listing]").addEventListener("click", loadBetaSampleListing);
-  document.querySelector("[data-one-click]").addEventListener("click", oneClickReel);
   document.querySelector("[data-sort]")?.addEventListener("click", sortPhotos);
   document.querySelector("[data-featured-flow]")?.addEventListener("click", applyFeaturedPropertyFlow);
   document.querySelector("[data-demo]").addEventListener("click", () => {
@@ -2325,6 +2410,11 @@ async function handlePhotoFiles(event) {
 }
 
 async function processSelectedFiles(selectedFiles) {
+  if (!featureFlags.MOCK_SUPABASE && !authUser && !isDemoRoute()) {
+    setError("Sign in to upload and persist listing photos.");
+    setState({ authMode: "sign-in", authReturnScreen: state.screen, screen: "auth" });
+    return;
+  }
   const ingestion = window.EstateMotionReel?.photoIngestion;
   const validated = ingestion?.validateImageFiles ? ingestion.validateImageFiles(selectedFiles) : {
     imageFiles: selectedFiles.filter((file) => file.type.startsWith("image/")),
@@ -2873,16 +2963,22 @@ function renderDetails() {
   const copy = aiCopy();
   renderLayout(`
     <div class="screen-title"><p class="eyebrow">Pro Controls</p><h2>Fine-tune the story.</h2><p>Optional controls for agents who want to tune copy, facts, and feature cards before preview.</p></div>
-    <section class="panel">
-      <details class="advanced-panel" open>
-        <summary>Advanced copy and listing facts</summary>
+    <section class="panel form-suite-panel">
+      <section class="form-section-card">
+        <div class="section-title"><p>Business goal</p><h3>Choose the outcome before the cut.</h3></div>
         <div class="grid-2">
           ${field("Content mode", "contentMode", { choices: contentModes.map((mode) => mode.id) })}
           ${field("Conversion CTA", "conversionGoal", { choices: conversionCtas })}
         </div>
         <div class="grid-2">${field("CTA / Calendly / link-in-bio URL", "ctaUrl")}${field("QR code URL", "qrCodeUrl")}</div>
+      </section>
+      <section class="form-section-card">
+        <div class="section-title"><p>Listing facts</p><h3>Keep captions factual and MLS-safe.</h3></div>
         <div class="grid-2">${field("Beds", "beds")}${field("Baths", "baths")}</div>
         ${field("Square footage", "squareFeet")}
+      </section>
+      <details class="advanced-panel">
+        <summary>Advanced copy controls</summary>
         <div class="preset-block">
           <strong>Hook presets</strong>
           <div class="preset-row">${Object.keys(hookPresets).map((preset) => `<button class="ghost" data-hook-preset="${preset}">${preset}</button>`).join("")}</div>
@@ -3095,7 +3191,7 @@ function reelPlanRow(scene, index, caption) {
   return `
     <article class="reel-plan-row editor-row" data-editor-scene="${escapeAttr(sceneId)}">
       <img src="${photo.uri}" alt="">
-      <span>${String(index + 1).padStart(2, "0")}</span>
+      <span class="scene-order-pill">${String(index + 1).padStart(2, "0")}</span>
       <div>
         <label class="mini-field"><small>Category</small><select data-plan-category="${escapeAttr(sceneId)}">${reelCategoryOptions().map((category) => `<option value="${category}" ${scene.category === category ? "selected" : ""}>${escapeHtml(pipelineToSceneCategory(category))}</option>`).join("")}</select></label>
         <label class="mini-field"><small>Caption</small><input data-plan-caption="${escapeAttr(sceneId)}" value="${escapeAttr(caption || scene.role || "Property tour scene")}"></label>
@@ -3104,8 +3200,8 @@ function reelPlanRow(scene, index, caption) {
       </div>
       <div class="scene-edit-controls">
         <label class="mini-field"><small>Seconds</small><input type="number" min="1" max="6" step="0.1" data-plan-duration="${escapeAttr(sceneId)}" value="${Number(scene.duration || 2).toFixed(1)}"></label>
-        <button class="ghost" data-plan-move="${escapeAttr(sceneId)}" data-dir="-1">Up</button>
-        <button class="ghost" data-plan-move="${escapeAttr(sceneId)}" data-dir="1">Down</button>
+        <button class="ghost icon-button" title="Move scene up" data-plan-move="${escapeAttr(sceneId)}" data-dir="-1">↑</button>
+        <button class="ghost icon-button" title="Move scene down" data-plan-move="${escapeAttr(sceneId)}" data-dir="1">↓</button>
         <button class="secondary" data-plan-remove="${escapeAttr(sceneId)}">Remove</button>
       </div>
     </article>
@@ -3284,6 +3380,7 @@ function renderPreview() {
         ${photos.length ? photos.map((item, index) => sceneCard(item, index, pacing[index])).join("") : emptyState("No sequence yet", "Photos appear here after upload.")}
       </div>
     </section>
+    ${photos.length ? beforeAfterPreview(photos[0], photo, template) : ""}
     ${sellerPreviewPackage()}
     <details class="advanced-panel">
       <summary>Advanced Customization: features, property facts, and brand end card</summary>
@@ -3338,6 +3435,31 @@ function sceneCard(item, index, pacing) {
       <strong>${escapeHtml(sceneLabel(item.category))}</strong>
       <small>${escapeHtml(pacing?.motionStyle || "Push-in")} / ${pacing?.duration || "2.0"}s</small>
     </button>
+  `;
+}
+
+function beforeAfterPreview(firstPhoto, activePhoto, template) {
+  return `
+    <section class="panel before-after-panel">
+      <div class="section-title"><p>Before / After</p><h3>From listing photos to brand-grade reel.</h3></div>
+      <div class="before-after-grid">
+        <article>
+          <span>Before</span>
+          <img src="${firstPhoto.uri}" alt="">
+          <strong>Raw listing photo</strong>
+          <small>Original uploaded image stays intact.</small>
+        </article>
+        <article class="after-card">
+          <span>After</span>
+          <div class="after-reel-frame">
+            <img src="${activePhoto.uri}" alt="">
+            <b>${escapeHtml(template.name)}</b>
+            <strong>${escapeHtml(aiCopy().hook)}</strong>
+          </div>
+          <small>Camera motion, overlays, captions, CTA, and brand end card.</small>
+        </article>
+      </div>
+    </section>
   `;
 }
 
@@ -3587,16 +3709,22 @@ function renderExport() {
   ];
   renderLayout(`
     <div class="screen-title cinematic-title"><p class="eyebrow">Export</p><h2>Leave with social-ready assets.</h2><p>${featureFlags.MOCK_RENDERING ? "Mock rendering is enabled. Queue states are real locally; MP4 output falls back to JSON and preview HTML." : "Live rendering is enabled. EstateMotion will call the render worker for MP4 jobs."}</p></div>
-    <section class="panel elevated export-command">
-      <div class="section-title"><p>Final output</p><h3>${state.exportResult ? "Render ready" : "Ready to create"}</h3></div>
-      ${preflightError ? `<div class="state-banner error-state"><strong>Render preflight issue</strong><span>${escapeHtml(preflightError)}</span></div>` : `<div class="state-banner loading-state"><strong>Render preflight passed</strong><span>Every photo scene is linked to an uploaded image. ${featureFlags.MOCK_RENDERING ? "Mock exports can use local preview URLs." : "Live MP4 export will require durable public Supabase URLs."}</span></div>`}
-      <div class="export-option-grid">${exportOptions.map(([title, body, format]) => exportOptionCard(title, body, format)).join("")}</div>
-      <div class="actions">
-        <button class="primary" data-queue-pack>${mp4Ready ? "Create MP4 exports" : "Create mock export pack"}</button>
-        <button class="secondary" data-download-json>Download JSON manifest</button>
-        <button class="secondary" data-download-html>Download preview HTML</button>
-        <button class="ghost" data-download-copy>Download caption + hashtags</button>
+    <section class="export-delivery-grid">
+      <div class="video-player-shell export-preview-shell">
+        <div class="player-chrome"><span>Delivery preview</span><b>${escapeHtml(template.name)}</b></div>
+        ${reelStage(orderedPhotos()[0] ?? demoPhotos[0], copy, template, 0, Math.max(1, orderedPhotos().length))}
       </div>
+      <section class="panel elevated export-command">
+        <div class="section-title"><p>Final output</p><h3>${state.exportResult ? "Render ready" : "Ready to create"}</h3></div>
+        ${preflightError ? `<div class="state-banner error-state"><strong>Render failed or blocked</strong><span>${escapeHtml(preflightError)} Re-upload photos in Supabase mode or switch back to mock rendering for a local demo.</span></div>` : `<div class="state-banner loading-state"><strong>${featureFlags.MOCK_RENDERING ? "Mock export ready" : "MP4 render ready"}</strong><span>Every photo scene is linked to an uploaded image. ${featureFlags.MOCK_RENDERING ? "Mock exports can use local preview URLs." : "Live MP4 export will require durable public Supabase URLs."}</span></div>`}
+        <div class="export-option-grid">${exportOptions.map(([title, body, format]) => exportOptionCard(title, body, format)).join("")}</div>
+        <div class="actions">
+          <button class="primary" data-queue-pack>${mp4Ready ? "Create MP4 exports" : "Create mock export pack"}</button>
+          <button class="secondary" data-download-json>Download JSON manifest</button>
+          <button class="secondary" data-download-html>Download preview HTML</button>
+          <button class="ghost" data-download-copy>Download caption + hashtags</button>
+        </div>
+      </section>
     </section>
     ${renderQueuePanel()}
     <details class="advanced-panel">
@@ -4543,6 +4671,7 @@ function render() {
   const screens = {
     demo: renderDemoLandingPremium,
     beta: renderBetaLanding,
+    auth: renderAuth,
     dashboard: renderDashboard,
     onboarding: renderOnboarding,
     create: renderCreate,
