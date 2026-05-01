@@ -1426,22 +1426,22 @@ function renderDemoLandingPremium() {
     <section class="landing-hero">
       <div class="landing-hero-copy">
         <p class="eyebrow">AI real estate media studio</p>
-        <h2>Finished listing reels from photos in minutes.</h2>
-        <p>EstateMotion turns real listing photography into premium Reels, Shorts, captions, thumbnails, and content packs without hiring a videographer.</p>
+        <h2>Turn listing photos into finished real estate reels in minutes.</h2>
+        <p>EstateMotion sorts rooms, adds cinematic camera motion, branding, music, captions, and exports every format.</p>
         <div class="actions">
-          <button class="primary" data-nav="dashboard">Try the product demo</button>
-          <button class="secondary" data-scroll-leads>Request early access</button>
+          <button class="primary" data-nav="dashboard">Create My First Reel</button>
+          <button class="secondary" data-scroll-proof>Watch Demo</button>
         </div>
         <div class="hero-proof-row">
-          <span>Real property photos</span>
-          <span>Brand end cards</span>
-          <span>Social-ready exports</span>
+          <span>No video footage needed</span>
+          <span>Brand kit included</span>
+          <span>MLS-ready exports</span>
         </div>
       </div>
       <div class="landing-device-stage">
         <div class="device-frame phone-main">${miniReelPreview(orderedPhotos()[0] ?? demoPhotos[0], "hero")}</div>
         <div class="device-frame phone-secondary">${miniReelPreview(orderedPhotos()[2] ?? demoPhotos[2], "hero-alt")}</div>
-        <div class="device-caption"><strong>AI-built listing reel</strong><span>Hook / motion / CTA / brand card</span></div>
+        <div class="device-caption"><strong>AI-built listing reel</strong><span>Motion / captions / brand / export</span></div>
       </div>
     </section>
     <section class="luxury-metrics">
@@ -1450,74 +1450,74 @@ function renderDemoLandingPremium() {
       ${metricCard("Formats", "9:16 / 1:1 / 16:9")}
       ${metricCard("Branding", "Agent + brokerage")}
     </section>
-    <section class="landing-section split-showcase">
-      <div class="section-title"><p>Before / after</p><h3>From photo folder to launch campaign.</h3></div>
+    <section class="landing-section split-showcase" id="proof">
+      <div class="section-title"><p>Visual proof</p><h3>Before: listing photos. After: polished reel.</h3></div>
       <div class="transformation-grid">
         <article class="transform-card before">
           <span>Before</span>
-          <strong>Static listing photos</strong>
-          <small>No hook. No pacing. No CTA. No personal brand lift.</small>
+          <strong>Listing photos</strong>
+          <small>A gallery is useful, but it does not stop the scroll.</small>
           <div class="photo-stack">${demoPhotos.slice(0, 3).map((photo) => `<img src="${photo.uri}" alt="">`).join("")}</div>
         </article>
         <article class="transform-card after">
           <span>After</span>
-          <strong>Finished reel + content pack</strong>
-          <small>Social-ready video assets sellers can feel and buyers can replay.</small>
+          <strong>Polished reel</strong>
+          <small>A finished, branded video built to post everywhere.</small>
           ${miniReelPreview(demoPhotos[0], "after")}
         </article>
       </div>
     </section>
     <section class="landing-section">
-      <div class="section-title centered"><p>How it works</p><h3>Three steps from listing gallery to polished reel.</h3></div>
+      <div class="section-title centered"><p>How it works</p><h3>Drop in photos. EstateMotion does the rest.</h3></div>
       <div class="landing-steps">
-        <article><span>01</span><strong>Upload photos</strong><small>Select the real listing images you already have.</small></article>
-        <article><span>02</span><strong>AI builds the reel</strong><small>EstateMotion sorts scenes, writes the hook, adds motion, and prepares brand cards.</small></article>
-        <article><span>03</span><strong>Export content</strong><small>Download Reels, captions, hashtags, thumbnails, and content-pack assets.</small></article>
+        <article><span>01</span><strong>Upload property photos</strong><small>Select the real listing images you already have.</small></article>
+        <article><span>02</span><strong>EstateMotion creates the reel</strong><small>Rooms, motion, music, captions, and branding are assembled automatically.</small></article>
+        <article><span>03</span><strong>Download MP4s, captions, thumbnails</strong><small>Leave with vertical reels, MLS versions, captions, and thumbnail assets.</small></article>
       </div>
     </section>
     <section class="landing-section template-landing">
-      <div class="section-title centered"><p>Template systems</p><h3>Designed for luxury, social speed, and brokerage trust.</h3></div>
+      <div class="section-title centered"><p>Template previews</p><h3>Choose the reel style that fits the listing.</h3></div>
       <div class="template-showcase landing-template-showcase">
-        ${templates.map((template) => templateChoiceCard(template)).join("")}
+        ${templates.filter((template) => ["modern-luxury", "viral-fast-cut", "open-house", "mls-clean"].includes(template.id)).map((template) => templateChoiceCard(template, simpleStyleName(template))).join("")}
       </div>
     </section>
     <section class="landing-section trust-section">
-      <div class="section-title centered"><p>Trust signal</p><h3>What agents and brokerages should feel immediately.</h3></div>
+      <div class="section-title centered"><p>Built for agents</p><h3>Premium listing content without the production bottleneck.</h3></div>
+      <div class="trust-feature-grid">
+        <article><strong>Built for real estate agents</strong><small>Listing-first workflow, social-first output.</small></article>
+        <article><strong>No videographer required</strong><small>Use the photos you already receive from the property shoot.</small></article>
+        <article><strong>Brand kit included</strong><small>Add your headshot, brokerage, colors, and CTA.</small></article>
+        <article><strong>MLS/compliance-ready exports</strong><small>Create branded and clean versions for different channels.</small></article>
+      </div>
       <div class="testimonial-grid">
-        <article><strong>"This is easier than hiring a videographer for every listing."</strong><small>Agent validation target</small></article>
-        <article><strong>"It makes our listings look faster, more premium, and more consistent."</strong><small>Brokerage validation target</small></article>
-        <article><strong>"The end card turns every property into a personal-brand asset."</strong><small>Team lead validation target</small></article>
+        <article><strong>"This feels like having a listing media team on demand."</strong><small>Agent testimonial placeholder</small></article>
+        <article><strong>"The output is polished enough to show sellers."</strong><small>Brokerage testimonial placeholder</small></article>
+        <article><strong>"I would use this every time a listing goes live."</strong><small>Team lead testimonial placeholder</small></article>
       </div>
     </section>
     <section class="landing-section pricing-landing">
       <div class="section-title centered"><p>Pricing</p><h3>Simple plans for listing launches.</h3></div>
       <div class="pricing-grid">
-        ${pricingCard("Starter", "$19/export", "1 content pack", "For agents with occasional listings.", "Test price")}
-        ${pricingCard("Pro", "$49/month", "Monthly content credits", "For agents posting every week.", "Test price")}
-        ${pricingCard("Brokerage", "Custom", "Team workflow", "For offices that need compliance and brand control.", "Test price")}
+        ${pricingCard("Starter", "Pay per reel", "Single listing export", "For agents who want polished content one listing at a time.", "Start")}
+        ${pricingCard("Pro", "Monthly", "Ongoing listing content", "For agents who launch listings and post every week.", "Most popular")}
+        ${pricingCard("Brokerage", "Custom", "Team workflow", "For offices that need brand consistency and compliance-ready exports.", "Contact")}
       </div>
-    </section>
-    <section class="landing-section founder-panel">
-      <div>
-        <p class="eyebrow">Founder story</p>
-        <h3>Built from the reality of modern real estate marketing.</h3>
-      </div>
-      <p>Listings already come with the raw material: photography, architecture, neighborhood context, and agent trust. EstateMotion turns those ingredients into social-native campaigns without making the property feel fake, overproduced, or generic.</p>
     </section>
     <section class="landing-section faq-section">
-      <div class="section-title centered"><p>FAQ</p><h3>Built for real listing content, not fantasy video.</h3></div>
+      <div class="section-title centered"><p>FAQ</p><h3>Simple answers for busy agents.</h3></div>
       <div class="faq-grid">
-        ${faqItem("Does EstateMotion invent rooms?", "No. EstateMotion is built around real listing photos, realistic motion, clean overlays, and brand/compliance cards.")}
-        ${faqItem("Can I export for Instagram and YouTube?", "Yes. The render manifest supports 9:16 Reels, 1:1 social posts, and 16:9 YouTube or web versions.")}
-        ${faqItem("Can brokerages use compliance language?", "Yes. Brand kits include listing courtesy, brokerage disclaimer, Equal Housing, and MLS disclaimer placeholders.")}
-        ${faqItem("Is rendering live today?", "The static demo supports mock exports. Live MP4 rendering is wired through the separate Remotion render worker and Supabase Storage.")}
+        ${faqItem("Do I need video footage?", "No. EstateMotion is designed to create polished reels from listing photos.")}
+        ${faqItem("Can I use MLS photos?", "Yes, as long as you have the rights and permissions to use those photos in your marketing.")}
+        ${faqItem("Does it export vertical reels?", "Yes. The product is built for Instagram Reels, TikTok, YouTube Shorts, and Stories.")}
+        ${faqItem("Can I add my brokerage branding?", "Yes. Save your agent brand kit, brokerage details, CTA, and compliance language.")}
+        ${faqItem("Is this AI-generated or based on real photos?", "It is based on real property photos with AI-assisted sorting, motion, captions, and formatting.")}
       </div>
     </section>
     <section class="landing-section early-access-panel elevated" id="earlyAccess">
       <div class="early-access-copy">
-        <p class="eyebrow">Request Early Access</p>
-        <h3>Show us your listing workflow. We’ll show you the reel.</h3>
-        <p>Local submissions are saved for founder-led validation and CSV export.</p>
+        <p class="eyebrow">Create your first listing reel</p>
+        <h3>Ready to turn listing photos into finished content?</h3>
+        <p>Request early access and test EstateMotion on your next listing launch.</p>
       </div>
       <div class="early-access-form">
         <div class="grid-2">${leadField("Name", "name")}${leadField("Email", "email")}</div>
@@ -1525,14 +1525,15 @@ function renderDemoLandingPremium() {
         ${leadField("Monthly listings", "monthlyListings")}
         ${leadField("Biggest content problem", "biggestProblem", { type: "textarea" })}
         <div class="actions">
-          <button class="primary" data-submit-lead>Submit request</button>
+          <button class="primary" data-submit-lead>Create your first listing reel</button>
           <button class="secondary" data-export-leads>Export CSV (${state.leads.length})</button>
         </div>
         ${state.leads.length ? `<div class="lead-list">${state.leads.slice(-3).reverse().map((lead) => `<article><strong>${escapeHtml(lead.name)}</strong><span>${escapeHtml(lead.email)} - ${escapeHtml(lead.city)}</span></article>`).join("")}</div>` : emptyState("No early-access requests yet", "Submissions are stored locally for founder validation.")}
       </div>
     </section>
   `);
-  document.querySelector("[data-scroll-leads]").addEventListener("click", () => document.querySelector("#earlyAccess").scrollIntoView({ behavior: "smooth" }));
+  document.querySelector("[data-scroll-leads]")?.addEventListener("click", () => document.querySelector("#earlyAccess").scrollIntoView({ behavior: "smooth" }));
+  document.querySelector("[data-scroll-proof]")?.addEventListener("click", () => document.querySelector("#proof").scrollIntoView({ behavior: "smooth" }));
   document.querySelector("[data-submit-lead]").addEventListener("click", submitLead);
   document.querySelector("[data-export-leads]").addEventListener("click", exportLeadsCsv);
   bindPricingTracking();

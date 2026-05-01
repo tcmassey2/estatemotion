@@ -2551,6 +2551,33 @@ button:hover {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.trust-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.trust-feature-grid article {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border: 1px solid rgba(199, 167, 108, 0.22);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: var(--soft-shadow);
+}
+
+.trust-feature-grid strong {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.trust-feature-grid small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 .transform-card,
 .landing-steps article,
 .testimonial-grid article,
@@ -3076,6 +3103,7 @@ button:hover {
   .transformation-grid,
   .landing-steps,
   .testimonial-grid,
+  .trust-feature-grid,
   .faq-grid {
     grid-template-columns: 1fr;
   }
