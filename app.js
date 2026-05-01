@@ -1263,31 +1263,27 @@ function renderDashboard() {
   const hasPhotos = orderedPhotos().length > 0;
   const showcase = selectedShowcase();
   renderLayout(`
-    <div class="screen-title dashboard-title">
-      <p class="eyebrow">${state.user.subscriptionStatus} workspace / finished social reels</p>
-      <h2>Upload photos. Get the reel.</h2>
-      <p>EstateMotion turns listing photography into a branded, social-ready real estate reel with captions, thumbnails, and content-pack exports in minutes.</p>
-    </div>
-    <section class="quick-flow panel elevated">
-      ${quickStep("1", "Upload photos", `${orderedPhotos().length} ready`)}
-      ${quickStep("2", "Choose style", selectedTemplate().name)}
-      ${quickStep("3", "Review preview", `${reelPacing(orderedPhotos()).length || 0} scenes`)}
-      ${quickStep("4", "Export assets", `${contentPack().length} deliverables`)}
-    </section>
-    <section class="hero-card elevated">
-      <img src="${photo.uri}" alt="">
-      <div class="hero-content">
-        <span class="badge">${state.project.listingType}</span>
-        <h2>${escapeHtml(state.project.hookText)}</h2>
-        <p>${state.project.price} - ${state.project.city} - ${state.project.beds} BD - ${state.project.baths} BA</p>
-        ${agentStrip()}
+    <section class="dashboard-command">
+      <div class="dashboard-copy">
+        <p class="eyebrow">${state.user.subscriptionStatus} workspace / AI reel studio</p>
+        <h2>Upload photos. Get the reel.</h2>
+        <p>EstateMotion turns listing photography into a finished, branded, social-ready reel with captions, thumbnails, and export packs in minutes.</p>
+        <div class="actions">
+          <button class="primary" data-action="one-click">One-Click Reel</button>
+          <button class="secondary" data-action="continue">Upload photos</button>
+          <button class="ghost" data-action="new">Reset demo</button>
+        </div>
+      </div>
+      <div class="dashboard-reel-card">
+        ${miniReelPreview(photo, "dashboard")}
       </div>
     </section>
-    <div class="actions">
-      <button class="primary" data-action="one-click">One-Click Reel</button>
-      <button class="secondary" data-action="continue">Upload photos</button>
-      <button class="ghost" data-action="new">Reset demo</button>
-    </div>
+    <section class="quick-flow panel elevated">
+      ${quickStep("1", "Upload", `${orderedPhotos().length} photos`)}
+      ${quickStep("2", "Style", selectedTemplate().name)}
+      ${quickStep("3", "Preview", `${reelPacing(orderedPhotos()).length || 0} scenes`)}
+      ${quickStep("4", "Export", `${contentPack().length} assets`)}
+    </section>
     <section class="luxury-metrics">
       ${metricCard("Assets in pack", pack.length)}
       ${metricCard("Photos sequenced", orderedPhotos().length)}
@@ -1349,6 +1345,23 @@ function renderDashboard() {
 
 function quickStep(number, title, value) {
   return `<article><span>${number}</span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(value)}</small></article>`;
+}
+
+function miniReelPreview(photo, variant = "") {
+  const copy = aiCopy();
+  const theme = selectedReelTheme();
+  return `
+    <div class="mini-reel ${variant}" style="--reel-accent:${theme.accent}">
+      <img src="${photo.uri}" alt="">
+      <div class="mini-reel-shade"></div>
+      <div class="mini-reel-top"><span>EstateMotion</span><b>9:16</b></div>
+      <div class="mini-reel-copy">
+        <strong>${escapeHtml(copy.hook)}</strong>
+        <small>${escapeHtml(state.project.price)} / ${escapeHtml(state.project.city)} / ${escapeHtml(state.project.beds)} BD</small>
+      </div>
+      <div class="mini-reel-agent">${escapeHtml(state.brandKit.name)} / ${escapeHtml(state.brandKit.brokerage)}</div>
+    </div>
+  `;
 }
 
 function showcaseCard(project) {
@@ -1463,6 +1476,128 @@ function renderDemoLanding() {
   document.querySelector("[data-submit-lead]").addEventListener("click", submitLead);
   document.querySelector("[data-export-leads]").addEventListener("click", exportLeadsCsv);
   bindPricingTracking();
+}
+
+function renderDemoLandingPremium() {
+  trackDemoVisitOnce();
+  renderLayout(`
+    <section class="landing-hero">
+      <div class="landing-hero-copy">
+        <p class="eyebrow">AI real estate media studio</p>
+        <h2>Finished listing reels from photos in minutes.</h2>
+        <p>EstateMotion turns real listing photography into premium Reels, Shorts, captions, thumbnails, and content packs without hiring a videographer.</p>
+        <div class="actions">
+          <button class="primary" data-nav="dashboard">Try the product demo</button>
+          <button class="secondary" data-scroll-leads>Request early access</button>
+        </div>
+        <div class="hero-proof-row">
+          <span>Real property photos</span>
+          <span>Brand end cards</span>
+          <span>Social-ready exports</span>
+        </div>
+      </div>
+      <div class="landing-device-stage">
+        <div class="device-frame phone-main">${miniReelPreview(orderedPhotos()[0] ?? demoPhotos[0], "hero")}</div>
+        <div class="device-frame phone-secondary">${miniReelPreview(orderedPhotos()[2] ?? demoPhotos[2], "hero-alt")}</div>
+        <div class="device-caption"><strong>AI-built listing reel</strong><span>Hook / motion / CTA / brand card</span></div>
+      </div>
+    </section>
+    <section class="luxury-metrics">
+      ${metricCard("Output", "Reel + pack")}
+      ${metricCard("Setup", "Minutes")}
+      ${metricCard("Formats", "9:16 / 1:1 / 16:9")}
+      ${metricCard("Branding", "Agent + brokerage")}
+    </section>
+    <section class="landing-section split-showcase">
+      <div class="section-title"><p>Before / after</p><h3>From photo folder to launch campaign.</h3></div>
+      <div class="transformation-grid">
+        <article class="transform-card before">
+          <span>Before</span>
+          <strong>Static listing photos</strong>
+          <small>No hook. No pacing. No CTA. No personal brand lift.</small>
+          <div class="photo-stack">${demoPhotos.slice(0, 3).map((photo) => `<img src="${photo.uri}" alt="">`).join("")}</div>
+        </article>
+        <article class="transform-card after">
+          <span>After</span>
+          <strong>Finished reel + content pack</strong>
+          <small>Social-ready video assets sellers can feel and buyers can replay.</small>
+          ${miniReelPreview(demoPhotos[0], "after")}
+        </article>
+      </div>
+    </section>
+    <section class="landing-section">
+      <div class="section-title centered"><p>How it works</p><h3>Three steps from listing gallery to polished reel.</h3></div>
+      <div class="landing-steps">
+        <article><span>01</span><strong>Upload photos</strong><small>Select the real listing images you already have.</small></article>
+        <article><span>02</span><strong>AI builds the reel</strong><small>EstateMotion sorts scenes, writes the hook, adds motion, and prepares brand cards.</small></article>
+        <article><span>03</span><strong>Export content</strong><small>Download Reels, captions, hashtags, thumbnails, and content-pack assets.</small></article>
+      </div>
+    </section>
+    <section class="landing-section template-landing">
+      <div class="section-title centered"><p>Template systems</p><h3>Designed for luxury, social speed, and brokerage trust.</h3></div>
+      <div class="template-showcase landing-template-showcase">
+        ${templates.map((template) => templateChoiceCard(template)).join("")}
+      </div>
+    </section>
+    <section class="landing-section trust-section">
+      <div class="section-title centered"><p>Trust signal</p><h3>What agents and brokerages should feel immediately.</h3></div>
+      <div class="testimonial-grid">
+        <article><strong>"This is easier than hiring a videographer for every listing."</strong><small>Agent validation target</small></article>
+        <article><strong>"It makes our listings look faster, more premium, and more consistent."</strong><small>Brokerage validation target</small></article>
+        <article><strong>"The end card turns every property into a personal-brand asset."</strong><small>Team lead validation target</small></article>
+      </div>
+    </section>
+    <section class="landing-section pricing-landing">
+      <div class="section-title centered"><p>Pricing</p><h3>Simple plans for listing launches.</h3></div>
+      <div class="pricing-grid">
+        ${pricingCard("Starter", "$19/export", "1 content pack", "For agents with occasional listings.", "Test price")}
+        ${pricingCard("Pro", "$49/month", "Monthly content credits", "For agents posting every week.", "Test price")}
+        ${pricingCard("Brokerage", "Custom", "Team workflow", "For offices that need compliance and brand control.", "Test price")}
+      </div>
+    </section>
+    <section class="landing-section founder-panel">
+      <div>
+        <p class="eyebrow">Founder story</p>
+        <h3>Built from the reality of modern real estate marketing.</h3>
+      </div>
+      <p>Listings already come with the raw material: photography, architecture, neighborhood context, and agent trust. EstateMotion turns those ingredients into social-native campaigns without making the property feel fake, overproduced, or generic.</p>
+    </section>
+    <section class="landing-section faq-section">
+      <div class="section-title centered"><p>FAQ</p><h3>Built for real listing content, not fantasy video.</h3></div>
+      <div class="faq-grid">
+        ${faqItem("Does EstateMotion invent rooms?", "No. EstateMotion is built around real listing photos, realistic motion, clean overlays, and brand/compliance cards.")}
+        ${faqItem("Can I export for Instagram and YouTube?", "Yes. The render manifest supports 9:16 Reels, 1:1 social posts, and 16:9 YouTube or web versions.")}
+        ${faqItem("Can brokerages use compliance language?", "Yes. Brand kits include listing courtesy, brokerage disclaimer, Equal Housing, and MLS disclaimer placeholders.")}
+        ${faqItem("Is rendering live today?", "The static demo supports mock exports. Live MP4 rendering is wired through the separate Remotion render worker and Supabase Storage.")}
+      </div>
+    </section>
+    <section class="landing-section early-access-panel elevated" id="earlyAccess">
+      <div class="early-access-copy">
+        <p class="eyebrow">Request Early Access</p>
+        <h3>Show us your listing workflow. We’ll show you the reel.</h3>
+        <p>Local submissions are saved for founder-led validation and CSV export.</p>
+      </div>
+      <div class="early-access-form">
+        <div class="grid-2">${leadField("Name", "name")}${leadField("Email", "email")}</div>
+        <div class="grid-2">${leadField("Brokerage", "brokerage")}${leadField("City", "city")}</div>
+        ${leadField("Monthly listings", "monthlyListings")}
+        ${leadField("Biggest content problem", "biggestProblem", { type: "textarea" })}
+        <div class="actions">
+          <button class="primary" data-submit-lead>Submit request</button>
+          <button class="secondary" data-export-leads>Export CSV (${state.leads.length})</button>
+        </div>
+        ${state.leads.length ? `<div class="lead-list">${state.leads.slice(-3).reverse().map((lead) => `<article><strong>${escapeHtml(lead.name)}</strong><span>${escapeHtml(lead.email)} - ${escapeHtml(lead.city)}</span></article>`).join("")}</div>` : emptyState("No early-access requests yet", "Submissions are stored locally for founder validation.")}
+      </div>
+    </section>
+  `);
+  document.querySelector("[data-scroll-leads]").addEventListener("click", () => document.querySelector("#earlyAccess").scrollIntoView({ behavior: "smooth" }));
+  document.querySelector("[data-submit-lead]").addEventListener("click", submitLead);
+  document.querySelector("[data-export-leads]").addEventListener("click", exportLeadsCsv);
+  bindPricingTracking();
+}
+
+function faqItem(question, answer) {
+  return `<article><strong>${escapeHtml(question)}</strong><p>${escapeHtml(answer)}</p></article>`;
 }
 
 function renderAuth() {
@@ -2925,7 +3060,7 @@ function render() {
     }
   }
   const screens = {
-    demo: renderDemoLanding,
+    demo: renderDemoLandingPremium,
     dashboard: renderDashboard,
     onboarding: renderOnboarding,
     create: renderCreate,
