@@ -8,6 +8,38 @@ export default async function handler(request, response) {
     return;
   }
 
+  if (request.method === "GET") {
+    try {
+      const jobId = new URL(request.url || "", "http://localhost").searchParams.get("jobId");
+      if (!jobId) {
+        response.status(400).json({ status: "failed", error: "Render status requires jobId." });
+        return;
+      }
+      const workerUrl = renderWorkerStatusUrl(jobId);
+      if (!workerUrl) {
+        response.status(503).json({
+          status: "failed",
+          phase: "Render worker unavailable",
+          progress: 100,
+          error: "Video rendering is not connected yet."
+        });
+        return;
+      }
+      const workerResponse = await fetchWithTimeout(workerUrl, {
+        method: "GET",
+        headers: {
+          ...(process.env.RENDER_WEBHOOK_SECRET ? { Authorization: `Bearer ${process.env.RENDER_WEBHOOK_SECRET}` } : {})
+        }
+      }, 30000);
+      const text = await workerResponse.text();
+      const payload = parseBody(text);
+      response.status(workerResponse.status).json(payload || { status: workerResponse.ok ? "rendering" : "failed", message: text });
+    } catch (error) {
+      response.status(500).json({ status: "failed", error: error.message || "Could not fetch render status." });
+    }
+    return;
+  }
+
   if (request.method !== "POST") {
     response.status(405).json({ status: "failed", error: "Use POST /api/render with an EstateMotion render manifest." });
     return;
@@ -29,11 +61,12 @@ export default async function handler(request, response) {
     }
 
     if (readFlag("MOCK_RENDERING", true)) {
-      response.status(200).json({
-        status: "complete",
+      response.status(503).json({
+        status: "failed",
         mock: true,
         jobId: createJobId(manifest),
-        message: "MOCK_RENDERING=true. EstateMotion kept the render in mock mode and did not call Remotion.",
+        error: "Video rendering is not connected yet.",
+        message: "Connect the Remotion render worker and set MOCK_RENDERING=false to generate real MP4 downloads.",
         mp4Url: "",
         thumbnailUrl: ""
       });
@@ -66,7 +99,7 @@ export default async function handler(request, response) {
     const payload = parseBody(text);
 
     response.status(workerResponse.status).json(payload || {
-      status: workerResponse.ok ? "complete" : "failed",
+      status: workerResponse.ok ? "queued" : "failed",
       message: text
     });
   } catch (error) {
@@ -105,11 +138,18 @@ function renderWorkerUrl() {
   return configured.endsWith("/render") ? configured : `${configured.replace(/\/$/, "")}/render`;
 }
 
+function renderWorkerStatusUrl(jobId) {
+  const configured = process.env.RENDER_WORKER_URL || process.env.RENDER_ENDPOINT || "";
+  if (!configured) return "";
+  const base = configured.endsWith("/render") ? configured : `${configured.replace(/\/$/, "")}/render`;
+  return `${base}/status/${encodeURIComponent(jobId)}`;
+}
+
 function validateManifestForServerRender(manifest, options = {}) {
   const photos = new Map((manifest.orderedPhotos || []).map((photo) => [photo.id, photo]));
   const problems = [];
   manifest.scenes.forEach((scene, index) => {
-    if (["title", "intro", "outro", "card"].includes(String(scene.type || "").toLowerCase())) return;
+    if (["title", "intro", "outro", "card", "stats"].includes(String(scene.type || "").toLowerCase())) return;
     const label = scene.fileName || `scene ${index + 1}`;
     const imageUrl = scene.durableUrl || scene.durable_url || scene.publicUrl || scene.public_url || scene.imageUrl || "";
     if (!scene.photoId) problems.push(`${label} is missing photoId.`);

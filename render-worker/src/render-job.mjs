@@ -9,10 +9,10 @@ import { createClient } from "@supabase/supabase-js";
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const compositionId = "EstateMotionRender";
 
-export async function renderEstateMotionJob({ manifest, requestedFormat = "vertical" }) {
+export async function renderEstateMotionJob({ manifest, requestedFormat = "vertical" }, options = {}) {
   validateManifest(manifest);
 
-  const jobId = createJobId(manifest);
+  const jobId = options.jobId || createJobId(manifest);
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "estatemotion-"));
   const mp4Path = path.join(tempDir, `${jobId}.mp4`);
   const thumbnailPath = path.join(tempDir, `${jobId}.png`);
@@ -21,18 +21,21 @@ export async function renderEstateMotionJob({ manifest, requestedFormat = "verti
     format: normalizeFormat(requestedFormat)
   };
 
+  options.onProgress?.({ phase: "Preparing video", progress: 12 });
   const entryPoint = path.join(dirname, "remotion-entry.jsx");
   const bundleLocation = await bundle({
     entryPoint,
     webpackOverride: (config) => config
   });
 
+  options.onProgress?.({ phase: "Rendering scenes", progress: 34 });
   const composition = await selectComposition({
     serveUrl: bundleLocation,
     id: compositionId,
     inputProps
   });
 
+  options.onProgress?.({ phase: "Rendering scenes", progress: 48 });
   await renderMedia({
     composition,
     serveUrl: bundleLocation,
@@ -44,6 +47,7 @@ export async function renderEstateMotionJob({ manifest, requestedFormat = "verti
     }
   });
 
+  options.onProgress?.({ phase: "Finalizing MP4", progress: 84 });
   await renderStill({
     composition,
     serveUrl: bundleLocation,
@@ -52,6 +56,7 @@ export async function renderEstateMotionJob({ manifest, requestedFormat = "verti
     inputProps
   });
 
+  options.onProgress?.({ phase: "Uploading final MP4", progress: 92 });
   const upload = await uploadRenderAssets({ manifest, jobId, mp4Path, thumbnailPath });
 
   return {
@@ -87,6 +92,18 @@ function validateManifest(manifest) {
   });
   if (hasUnrenderableLocalUrl) {
     throw new Error("Live MP4 rendering requires Supabase/public image URLs. Browser blob/data URLs only work in MOCK_RENDERING mode.");
+  }
+  const photosById = new Map(photos.map((photo) => [photo.id, photo]));
+  for (const [index, scene] of manifest.scenes.entries()) {
+    if (String(scene.type || "photo").toLowerCase() !== "photo") continue;
+    const label = scene.fileName || `scene ${index + 1}`;
+    const imageUrl = scene.durableUrl || scene.durable_url || scene.publicUrl || scene.public_url || scene.imageUrl || "";
+    if (!scene.photoId) throw new Error(`${label} is missing photoId.`);
+    if (!photosById.has(scene.photoId)) throw new Error(`${label} references a photo that is not in orderedPhotos.`);
+    if (!imageUrl) throw new Error(`${label} is missing a durable image URL.`);
+    if (String(imageUrl).startsWith("blob:") || String(imageUrl).startsWith("data:")) {
+      throw new Error(`${label} uses a browser-only image URL. Re-upload photos before rendering.`);
+    }
   }
 }
 

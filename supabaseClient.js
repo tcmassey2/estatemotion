@@ -492,7 +492,7 @@
     return {
       project_id: projectId,
       client_id: job.id,
-      template_id: templateId,
+      template_id: null,
       format: job.format,
       content_pack_type: job.packId,
       status: job.status,

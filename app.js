@@ -362,10 +362,11 @@ const sceneIntelligence = {
 };
 
 const motionSystems = {
-  Luxury: { defaultMotion: "Depth zoom", tempo: "slow cinematic", baseDuration: 2.4, transition: "soft dissolve", beatEvery: 2 },
-  Viral: { defaultMotion: "Push-in", tempo: "punchy cuts", baseDuration: 1.25, transition: "snap cut", beatEvery: 1 },
+  Luxury: { defaultMotion: "Depth zoom", tempo: "slow cinematic", baseDuration: 2.75, transition: "light leak", beatEvery: 2 },
+  Viral: { defaultMotion: "Push-in", tempo: "punchy cuts", baseDuration: 1.18, transition: "whip pan", beatEvery: 1 },
   "Open House": { defaultMotion: "Pull-out", tempo: "energetic invite", baseDuration: 1.55, transition: "whip reveal", beatEvery: 1 },
-  Investor: { defaultMotion: "Slow pan", tempo: "strategic proof", baseDuration: 1.9, transition: "clean cut", beatEvery: 2 },
+  Investor: { defaultMotion: "Slow pan", tempo: "strategic proof", baseDuration: 1.85, transition: "match cut", beatEvery: 2 },
+  MLS: { defaultMotion: "Push-in", tempo: "clean property tour", baseDuration: 2.35, transition: "crossfade", beatEvery: 2 },
   "First-time buyer": { defaultMotion: "Push-in", tempo: "approachable tour", baseDuration: 1.75, transition: "friendly slide", beatEvery: 2 }
 };
 
@@ -617,6 +618,7 @@ const defaultState = {
   selectedScene: 0,
   exportResult: null,
   renderQueue: [],
+  renderJobStatus: null,
   loading: "",
   error: "",
   toasts: [],
@@ -745,6 +747,7 @@ function mergeState(base, saved) {
     authReturnScreen: saved.authReturnScreen ?? base.authReturnScreen,
     pendingExportAfterAuth: Boolean(saved.pendingExportAfterAuth),
     renderQueue: saved.renderQueue ?? base.renderQueue,
+    renderJobStatus: saved.renderJobStatus ?? base.renderJobStatus,
     selectedShowcaseId: saved.selectedShowcaseId ?? base.selectedShowcaseId,
     leads: saved.leads ?? base.leads,
     betaFeedback: saved.betaFeedback ?? base.betaFeedback,
@@ -3806,6 +3809,11 @@ function reelPacing(photos) {
 }
 
 function selectedMotionSystem() {
+  const pack = templatePipelineId();
+  if (pack === "viral") return motionSystems.Viral;
+  if (pack === "investor") return motionSystems.Investor;
+  if (pack === "mlsClean") return motionSystems.MLS;
+  if (pack === "openHouse") return motionSystems["Open House"];
   if (state.project.captionTone === "Viral") return motionSystems.Viral;
   if (state.project.captionTone === "Investor" || state.project.reelTheme === "investor-cash-flow") return motionSystems.Investor;
   if (state.project.listingType === "Open House" || state.project.reelTheme === "open-house-fast-cut") return motionSystems["Open House"];
@@ -3838,23 +3846,63 @@ function motionPlanForPhoto(photo, index = 0) {
 }
 
 function sceneSpecificMotion(category, index, intelligence, system) {
-  if (index === 0 || category === "Exterior hero") return "Exterior slow zoom";
+  const pack = templatePipelineId();
+  if (pack === "viral") {
+    if (index === 0 || category === "Exterior hero") return "Speed ramp push";
+    if (category === "Kitchen") return "Whip pan";
+    if (category === "Living room") return "Punch zoom";
+    if (category === "Bathroom") return "Vertical snap";
+    return index % 2 ? "Push-in" : "Orbit simulation";
+  }
+  if (pack === "mlsClean") {
+    if (category === "Kitchen" || category === "Living room") return "Slow pan";
+    if (category === "Bathroom") return "Bathroom clean slide";
+    return "Push-in";
+  }
+  if (pack === "investor") {
+    if (index === 0 || category === "Exterior hero") return "Pull-out";
+    if (category === "Kitchen" || category === "Living room") return "Slow pan";
+    return "Detail sweep";
+  }
+  if (index === 0 || category === "Exterior hero") return "Parallax depth";
   if (category === "Kitchen") return "Kitchen lateral pan";
   if (category === "Living room") return "Living depth zoom";
   if (category === "Primary bedroom") return "Bedroom gentle fade";
   if (category === "Bathroom") return "Bathroom clean slide";
-  if (category === "Backyard / pool") return "Exterior slow zoom";
+  if (category === "Backyard / pool") return "Orbit simulation";
   return intelligence.suggestedMotion || system.defaultMotion;
 }
 
 function sceneSpecificTransition(category, system) {
-  const map = {
-    "Exterior hero": "cinematic dissolve",
-    Kitchen: "lateral wipe",
+  const pack = templatePipelineId();
+  const map = pack === "viral" ? {
+    "Exterior hero": "zoom transition",
+    Kitchen: "whip pan",
+    "Living room": "match cut",
+    "Primary bedroom": "blur wipe",
+    Bathroom: "whip pan",
+    "Backyard / pool": "match cut"
+  } : pack === "mlsClean" ? {
+    "Exterior hero": "crossfade",
+    Kitchen: "clean dissolve",
+    "Living room": "clean dissolve",
+    "Primary bedroom": "gentle fade",
+    Bathroom: "clean slide",
+    "Backyard / pool": "crossfade"
+  } : pack === "investor" ? {
+    "Exterior hero": "match cut",
+    Kitchen: "clean cut",
+    "Living room": "match cut",
+    "Primary bedroom": "clean dissolve",
+    Bathroom: "clean slide",
+    "Backyard / pool": "match cut"
+  } : {
+    "Exterior hero": "light leak",
+    Kitchen: "blur wipe",
     "Living room": "depth dissolve",
     "Primary bedroom": "gentle fade",
     Bathroom: "clean slide",
-    "Backyard / pool": "cinematic dissolve"
+    "Backyard / pool": "light leak"
   };
   return map[category] || system.transition || "soft dissolve";
 }
@@ -3897,13 +3945,19 @@ function motionToClass(motionStyle) {
     "Pull-out": "pull-out",
     "Slow pan": "slow-pan",
     "Depth zoom": "depth-zoom",
+    "Parallax depth": "parallax-depth",
     "Exterior slow zoom": "depth-zoom",
     "Kitchen lateral pan": "slow-pan",
     "Living depth zoom": "depth-zoom",
     "Bedroom gentle fade": "pull-out",
     "Bathroom clean slide": "vertical-social-framing",
     "Orbit simulation": "orbit-simulation",
-    "Vertical social framing": "vertical-social-framing"
+    "Vertical social framing": "vertical-social-framing",
+    "Speed ramp push": "speed-ramp",
+    "Whip pan": "whip-pan",
+    "Punch zoom": "punch-zoom",
+    "Vertical snap": "vertical-snap",
+    "Detail sweep": "detail-sweep"
   };
   return map[motionStyle] ?? "push-in";
 }
@@ -4171,36 +4225,38 @@ async function queueContentPack() {
     return;
   }
   const now = new Date().toISOString();
-  trackEvent("queue_content_pack", { mockRendering: featureFlags.MOCK_RENDERING, exportTypes: contentPack().map((item) => item.id), templateId: state.selectedTemplateId, contentMode: state.project.contentMode, nicheType: state.project.contentMode?.includes("investor") || state.project.contentMode?.includes("wholesale") ? "investor-wholesale" : "traditional-agent" });
-  const jobs = contentPack().map((item) => ({
-    id: `${item.id}-${Date.now()}`,
-    packId: item.id,
-    title: item.title,
-    status: item.id === "copy" ? "complete" : "queued",
-    format: item.format,
+  trackEvent("queue_content_pack", { mockRendering: featureFlags.MOCK_RENDERING, exportTypes: ["vertical-mp4"], templateId: state.selectedTemplateId, contentMode: state.project.contentMode, nicheType: state.project.contentMode?.includes("investor") || state.project.contentMode?.includes("wholesale") ? "investor-wholesale" : "traditional-agent" });
+  const jobs = [{
+    id: `vertical-mp4-${Date.now()}`,
+    packId: "vertical-mp4",
+    title: "Professional Listing Video",
+    status: "queued",
+    format: "9:16",
     createdAt: now,
     updatedAt: now,
-    outputName: `${slug(state.project.title)}-${slug(item.title)}.${item.id === "copy" ? "txt" : "mp4"}`,
+    outputName: `${slug(state.project.title)}-professional-listing-video.mp4`,
+    progress: 5,
+    phase: "Preparing video",
     error: ""
-  }));
-  setState((current) => ({ ...current, loading: "Queueing content pack...", error: "", renderQueue: jobs }));
+  }];
+  setState((current) => ({ ...current, loading: "Preparing video render...", error: "", exportResult: null, renderJobStatus: jobs[0], renderQueue: jobs }));
   logRenderManifest(previewManifest);
-  showToast("Content pack queued");
+  showToast("Video render queued");
 
   if (!featureFlags.MOCK_RENDERING) {
     startRealRender(jobs);
     return;
   }
 
-  setTimeout(() => {
-    setState((current) => ({ ...current, loading: "" }));
-    advanceRenderQueue("queued", "rendering");
-  }, 700);
-  setTimeout(() => {
-    advanceRenderQueue("rendering", "complete");
-    uploadGeneratedRenderManifest();
-    showToast("Render complete", "success");
-  }, 1900);
+  const message = "Video rendering is not connected yet.";
+  setState((current) => ({
+    ...current,
+    loading: "",
+    error: message,
+    renderJobStatus: { ...jobs[0], status: "failed", phase: "Render worker unavailable", progress: 100, error: message },
+    renderQueue: jobs.map((job) => ({ ...job, status: "failed", phase: "Render worker unavailable", progress: 100, error: message }))
+  }));
+  showToast("Video rendering is not connected yet", "error");
 }
 
 async function ensurePhotosPersistedForExport() {
@@ -4270,7 +4326,8 @@ async function startRealRender(jobs) {
     logRenderManifest(manifest);
     setState((current) => ({
       ...current,
-      loading: "Rendering MP4 with EstateMotion render worker...",
+      loading: "Preparing video...",
+      renderJobStatus: { ...jobs[0], status: "queued", phase: "Preparing video", progress: 5 },
       renderQueue: current.renderQueue.map((job) => job.status === "queued" ? { ...job, status: "rendering", updatedAt: new Date().toISOString() } : job)
     }));
 
@@ -4285,17 +4342,40 @@ async function startRealRender(jobs) {
       throw new Error(actionableRenderError(payload.error || payload.message || `Render worker returned ${response.status}.`));
     }
 
+    if (["queued", "rendering"].includes(payload.status) && payload.jobId) {
+      const queuedJob = {
+        ...jobs[0],
+        jobId: payload.jobId,
+        status: payload.status,
+        phase: payload.phase || "Rendering scenes",
+        progress: Number(payload.progress || 12),
+        updatedAt: new Date().toISOString()
+      };
+      setState((current) => ({
+        ...current,
+        loading: queuedJob.phase,
+        renderJobStatus: queuedJob,
+        renderQueue: current.renderQueue.map((job) => ({ ...job, ...queuedJob }))
+      }));
+      pollRenderJob(payload.jobId);
+      return;
+    }
+
     const mp4Url = payload.mp4Url || payload.localMp4Path || "";
     const thumbnailUrl = payload.thumbnailUrl || payload.localThumbnailPath || "";
+    if (!mp4Url) {
+      throw new Error("Render completed but did not return a downloadable MP4 URL. Check Supabase generated-videos bucket configuration.");
+    }
     const completedAt = new Date().toLocaleString();
 
     setState((current) => ({
       ...current,
       loading: "",
       error: payload.storageWarning || "",
+      renderJobStatus: { ...jobs[0], status: "completed", phase: "Ready to download", progress: 100, jobId: payload.jobId || "", mp4Url, thumbnailUrl },
       exportResult: {
         createdAt: completedAt,
-        output: mp4Url || "Render complete",
+        output: mp4Url,
         mp4Url,
         thumbnailUrl,
         storagePath: payload.storagePath || "",
@@ -4351,6 +4431,83 @@ async function uploadGeneratedRenderManifest() {
   }
 }
 
+async function pollRenderJob(jobId, attempt = 0) {
+  if (!jobId) return;
+  const maxAttempts = 180;
+  const delay = Math.min(5000, 1800 + attempt * 120);
+  window.setTimeout(async () => {
+    try {
+      const response = await fetch(`${renderApiEndpoint()}?jobId=${encodeURIComponent(jobId)}`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.status === "failed") {
+        throw new Error(actionableRenderError(payload.error || payload.message || "Render failed while checking status."));
+      }
+      const normalizedStatus = payload.status === "complete" ? "completed" : payload.status;
+      const progress = Number(payload.progress || (normalizedStatus === "completed" ? 100 : 45));
+      const mp4Url = payload.mp4Url || payload.localMp4Path || "";
+      const thumbnailUrl = payload.thumbnailUrl || payload.localThumbnailPath || "";
+      const phase = payload.phase || renderPhaseForProgress(progress, normalizedStatus);
+      setState((current) => ({
+        ...current,
+        loading: normalizedStatus === "completed" ? "" : phase,
+        renderJobStatus: {
+          ...(current.renderJobStatus || {}),
+          ...payload,
+          status: normalizedStatus,
+          phase,
+          progress,
+          mp4Url,
+          thumbnailUrl,
+          jobId
+        },
+        renderQueue: current.renderQueue.map((job) => job.jobId === jobId || job.packId === "vertical-mp4" ? {
+          ...job,
+          status: normalizedStatus,
+          phase,
+          progress,
+          updatedAt: new Date().toISOString(),
+          downloadUrl: normalizedStatus === "completed" ? mp4Url : "",
+          error: ""
+        } : job),
+        exportResult: normalizedStatus === "completed" && mp4Url ? {
+          createdAt: new Date().toLocaleString(),
+          output: mp4Url,
+          mp4Url,
+          thumbnailUrl,
+          storagePath: payload.storagePath || "",
+          jobId
+        } : current.exportResult
+      }));
+      if (normalizedStatus === "completed") {
+        if (!mp4Url) throw new Error("Render completed but no MP4 URL was returned.");
+        uploadGeneratedRenderManifest();
+        showToast("MP4 render complete", "success");
+        return;
+      }
+      if (attempt >= maxAttempts) throw new Error("Render is taking longer than expected. Check the render worker status and try again.");
+      pollRenderJob(jobId, attempt + 1);
+    } catch (error) {
+      const message = error.message || "Render failed while checking status.";
+      setState((current) => ({
+        ...current,
+        loading: "",
+        error: message,
+        renderJobStatus: { ...(current.renderJobStatus || {}), status: "failed", phase: "Render failed", progress: 100, error: message, jobId },
+        renderQueue: current.renderQueue.map((job) => job.jobId === jobId || job.packId === "vertical-mp4" ? { ...job, status: "failed", phase: "Render failed", progress: 100, error: message } : job)
+      }));
+      showToast("Render failed", "error");
+    }
+  }, delay);
+}
+
+function renderPhaseForProgress(progress, status) {
+  if (status === "completed") return "Ready to download";
+  if (progress < 20) return "Preparing video";
+  if (progress < 70) return "Rendering scenes";
+  if (progress < 95) return "Finalizing MP4";
+  return "Preparing download";
+}
+
 function advanceRenderQueue(from, to) {
   setState((current) => ({
     ...current,
@@ -4367,17 +4524,52 @@ function advanceRenderQueue(from, to) {
 }
 
 function renderQueuePanel() {
+  const status = state.renderJobStatus;
+  const mp4Url = state.exportResult?.mp4Url || status?.mp4Url || "";
+  const sampleUrl = sampleOutputUrl();
+  const disconnected = featureFlags.MOCK_RENDERING || status?.status === "failed" && /not connected|unavailable/i.test(status.error || state.error || "");
   return `
-    <section class="panel">
-      <div class="section-title"><p>Render queue</p><h3>Queued / rendering / complete / failed</h3></div>
-      ${state.renderQueue.length ? state.renderQueue.map((job) => `
-        <div class="queue-row">
-          <span><strong>${escapeHtml(job.title)}</strong><small>${escapeHtml(job.outputName)}${job.downloadUrl ? ` · <a href="${escapeHtml(job.downloadUrl)}" target="_blank" rel="noreferrer">Download MP4</a>` : ""}${job.error ? ` · ${escapeHtml(job.error)}` : ""}</small></span>
-          <b class="${job.status}">${job.status}</b>
+    <section class="panel render-status-panel">
+      <div class="section-title"><p>Render status</p><h3>${mp4Url ? "Completed MP4" : disconnected ? "Rendering not connected" : status ? escapeHtml(status.phase || status.status) : "Ready to generate"}</h3></div>
+      ${status ? `
+        <div class="render-progress-track"><span style="width:${Math.max(4, Math.min(100, Number(status.progress || 0)))}%"></span></div>
+        <div class="render-step-list">
+          ${["Preparing video", "Uploading assets if needed", "Rendering scenes", "Finalizing MP4", "Ready to download"].map((step) => `<span class="${renderStepActive(step, status)}">${escapeHtml(step)}</span>`).join("")}
         </div>
-      `).join("") : `<p class="muted">No jobs yet. Queue the content pack to start rendering.</p>`}
+        ${status.error ? `<div class="state-banner error-state"><strong>Render failed</strong><span>${escapeHtml(publicFacingError(status.error))}</span></div>` : ""}
+      ` : `<p class="muted">Click Generate Video to render the real MP4. Download appears only after the worker returns a video URL.</p>`}
+      ${mp4Url ? `
+        <video class="completed-mp4-player" src="${escapeAttr(mp4Url)}" controls playsinline poster="${escapeAttr(state.exportResult?.thumbnailUrl || status?.thumbnailUrl || "")}"></video>
+        <div class="actions single-primary-row">
+          <a class="primary button-link" href="${escapeAttr(mp4Url)}" download target="_blank" rel="noreferrer">Download MP4</a>
+          <button class="secondary" data-retry-render>Render Again</button>
+        </div>
+      ` : disconnected ? `
+        <div class="state-banner warning-state"><strong>Video rendering is not connected yet.</strong><span>Connect the Remotion worker and set MOCK_RENDERING=false to create real MP4 downloads.</span></div>
+        ${sampleUrl ? `<div class="actions single-primary-row"><a class="secondary button-link" href="${escapeAttr(sampleUrl)}" target="_blank" rel="noreferrer">Watch sample output</a><button class="primary" data-retry-render>Retry Render</button></div>` : `<div class="actions single-primary-row"><button class="primary" data-retry-render>Retry Render</button></div>`}
+      ` : status?.status === "queued" || status?.status === "rendering" ? `
+        <p class="muted">EstateMotion is rendering the final MP4. This can take a few minutes for a 45-60 second listing video.</p>
+      ` : `<div class="actions single-primary-row"><button class="primary" data-retry-render>Generate Video</button></div>`}
     </section>
   `;
+}
+
+function renderStepActive(step, status = {}) {
+  const progress = Number(status.progress || 0);
+  const thresholds = {
+    "Preparing video": 5,
+    "Uploading assets if needed": 15,
+    "Rendering scenes": 25,
+    "Finalizing MP4": 75,
+    "Ready to download": 100
+  };
+  if (status.status === "failed") return "failed";
+  if (progress >= thresholds[step]) return "active";
+  return "";
+}
+
+function sampleOutputUrl() {
+  return "/render-worker/out/openai-motion-director/openai-motion-director.mp4";
 }
 
 function renderApiEndpoint() {
@@ -4663,7 +4855,7 @@ function validatePreRenderManifest(manifest, options = {}) {
 }
 
 function isIntentionalCardScene(scene) {
-  return ["title", "intro", "outro", "card"].includes(String(scene.type || "").toLowerCase());
+  return ["title", "intro", "outro", "card", "stats"].includes(String(scene.type || "").toLowerCase());
 }
 
 function isUnsupportedRenderImageUrl(url) {
@@ -5069,7 +5261,7 @@ function renderLayout(content) {
           <span>EM</span>
           <b>EstateMotion</b>
         </button>
-        ${publicLanding ? `<nav class="landing-nav"><button data-scroll-sample>Watch Sample</button><button class="primary" data-nav="upload">Create My Free Video</button></nav>` : `<div class="top-progress video-progress" aria-label="Listing video creation progress">
+        ${publicLanding ? `<nav class="landing-nav"><button data-scroll-sample>Watch Sample</button><button class="primary" data-nav="upload">Get My Free Video</button></nav>` : `<div class="top-progress video-progress" aria-label="Listing video creation progress">
           ${navItems.map((item, index) => `<button class="${state.screen === item.screen ? "active" : ""} ${step > index + 1 ? "complete" : ""}" data-nav="${item.screen}"><span>${index + 1}</span><b>${item.label}</b></button>`).join("")}
         </div>`}
         <div class="top-actions ${publicLanding ? "landing-actions-hidden" : ""}">
@@ -5129,7 +5321,7 @@ function renderDashboard() {
         <h2>Build a finished listing video in minutes.</h2>
         <p>Upload the photos you already have. EstateMotion creates the property story, adds cinematic motion, and prepares every social format.</p>
         <div class="actions">
-          <button class="primary" data-start-video>Create My Free Video</button>
+          <button class="primary" data-start-video>Get My Free Video</button>
           <button class="secondary" data-watch-sample>Watch sample</button>
         </div>
         ${trustBadgeRow()}
@@ -5155,7 +5347,7 @@ function renderDemoLandingPremium() {
         <h2>Professional Listing Videos From Your Photos</h2>
         <p>Upload your listing photos and get a cinematic real estate video ready to post in minutes.</p>
         <div class="actions">
-          <button class="primary" data-nav="upload">Create My Free Video</button>
+          <button class="primary" data-nav="upload">Get My Free Video</button>
           <button class="secondary" data-scroll-sample>Watch Sample</button>
         </div>
         ${trustBadgeRow()}
@@ -5229,7 +5421,7 @@ function renderDemoLandingPremium() {
     </section>
     <section class="video-final-cta reveal-on-scroll">
       <h3>Create a professional video from your listing photos.</h3>
-      <button class="primary" data-nav="upload">Create My Free Video</button>
+      <button class="primary" data-nav="upload">Get My Free Video</button>
     </section>
   `);
   document.querySelectorAll("[data-scroll-sample]").forEach((button) => button.addEventListener("click", () => document.querySelector("#sampleOutput")?.scrollIntoView({ behavior: "smooth" })));
@@ -5447,18 +5639,19 @@ function renderPreview() {
   }));
   const currentPlan = pacing[state.selectedScene] ?? reelPacing(photos)[state.selectedScene] ?? motionPlanForPhoto(photo, state.selectedScene);
   renderLayout(`
-    <div class="screen-title cinematic-title"><p class="eyebrow">Preview</p><h2>See the video before export.</h2><p>Review the motion, overlays, stat cards, and branded end card before creating the final files.</p></div>
+    <div class="screen-title cinematic-title"><p class="eyebrow">Real Preview</p><h2>This is your actual video style.</h2><p>EstateMotion previews the same scene order, motion direction, transitions, overlays, and beat timing sent to the renderer.</p></div>
     <section class="preview-suite pro-preview-suite">
       <div class="video-player-shell">
-        <div class="player-chrome"><span>Professional preview</span><b>${escapeHtml(template.name)}</b></div>
-        ${reelStage(photo, copy, template, state.selectedScene, photos.length)}
+        <div class="player-chrome"><span>Mini rendered preview</span><b>${escapeHtml(selectedListingVideoStyleLabel())}</b></div>
+        ${motionSequencePreview(manifestScenes, template)}
       </div>
       <aside class="preview-inspector panel export-status-card">
         <div class="section-title"><p>Video feel</p><h3>${escapeHtml(currentPlan.motionStyle)}</h3></div>
-        <p class="muted">Built from the uploaded listing photos with clean, professional movement.</p>
+        <p class="muted">Scene-aware camera movement, timed transitions, animated text, and safe-area overlays are active in this preview.</p>
         <div class="metric-row"><span>Scene</span><b>${escapeHtml(sceneLabel(photo.category))}</b></div>
         <div class="metric-row"><span>Duration</span><b>${escapeHtml(currentPlan.duration)}s</b></div>
         <div class="metric-row"><span>Beat marker</span><b>${escapeHtml(currentPlan.beatMarker)}</b></div>
+        <div class="metric-row"><span>Music pacing</span><b>${escapeHtml(selectedMusicTrack().mood)}</b></div>
         <div class="metric-row"><span>Exports</span><b>9:16 / 16:9 / 1:1</b></div>
         <div class="metric-row"><span>Variants</span><b>Branded / unbranded</b></div>
       </aside>
@@ -5479,6 +5672,62 @@ function renderPreview() {
   }));
   document.querySelectorAll("[data-jump]").forEach((button) => button.addEventListener("click", () => setState({ selectedScene: Number(button.dataset.jump) })));
   document.querySelector("[data-next]").addEventListener("click", () => guard(validateProjectBasics() || validatePhotos() || validateTemplate(), () => navigate("export")));
+}
+
+function motionSequencePreview(scenes = renderManifestScenes(), template = selectedTemplate()) {
+  const safeScenes = scenes.length ? scenes : renderManifestScenes(createPipelineSequence());
+  const total = Math.max(1, beatSyncPlan(safeScenes).totalDuration);
+  const previewId = `motion-preview-${slug(templatePipelineId())}-${safeScenes.length}-${Math.round(total * 10)}`;
+  const sceneKeyframes = safeScenes.map((scene, index) => {
+    const duration = Math.max(1, Number(scene.duration || 2));
+    const start = Math.max(0, Number(scene.beatStart || 0));
+    const startPct = Math.max(0, Math.min(99, (start / total) * 100));
+    const endPct = Math.max(startPct + 2, Math.min(99.6, ((start + duration) / total) * 100));
+    const fadePct = Math.min(3, Math.max(1, (duration / total) * 10));
+    const before = Math.max(0, startPct - fadePct);
+    const visibleIn = Math.min(99, startPct + Math.min(1.6, fadePct));
+    const visibleOut = Math.max(visibleIn + 0.2, endPct - Math.min(1.6, fadePct));
+    const after = Math.min(100, endPct + fadePct);
+    const name = `${previewId}-scene-${index}`;
+    if (startPct <= 0.2) {
+      return `@keyframes ${name}{0%,${visibleOut.toFixed(2)}%{opacity:1;filter:blur(0)}${after.toFixed(2)}%,100%{opacity:0;filter:blur(7px)}}`;
+    }
+    return `@keyframes ${name}{0%,${before.toFixed(2)}%{opacity:0;filter:blur(7px)}${visibleIn.toFixed(2)}%,${visibleOut.toFixed(2)}%{opacity:1;filter:blur(0)}${after.toFixed(2)}%,100%{opacity:0;filter:blur(7px)}}`;
+  }).join("");
+  return `
+    <section class="motion-preview-reel style-${templatePipelineId()}" style="--preview-duration:${total}s; --reel-accent:${template.accentColor || "#C7A76C"}">
+      <style>${sceneKeyframes}</style>
+      ${safeScenes.map((scene, index) => {
+        const duration = Math.max(1, Number(scene.duration || 2));
+        const start = Math.max(0, Number(scene.beatStart || 0));
+        const motionClass = motionToClass(scene.renderMotion || scene.motionStyle);
+        const transitionClass = transitionToClass(scene.transition || scene.directorTransition);
+        const visibleFor = Math.min(total, duration + 0.55);
+        return `<article class="motion-preview-scene reel-${slug(motionClass)} transition-${transitionClass}" style="--scene-start:${start}s; --scene-duration:${visibleFor}s; --scene-index:${index}; animation-name:${previewId}-scene-${index}; animation-duration:${total}s;">
+          <img src="${escapeAttr(scene.imageUrl || scene.publicUrl || scene.durableUrl || "")}" alt="">
+          <div class="motion-preview-gradient"></div>
+          <div class="motion-preview-address">${escapeHtml(index === 0 ? (state.project.address || "Featured Listing") : scene.sceneType)}</div>
+          <div class="motion-preview-copy"><span>${escapeHtml(scene.motionStyle || "Cinematic motion")}</span><strong>${escapeHtml(scene.overlayText || aiCopy().hook)}</strong>${scene.overlaySubline ? `<small>${escapeHtml(scene.overlaySubline)}</small>` : ""}</div>
+          <div class="motion-preview-transition"></div>
+        </article>`;
+      }).join("")}
+      <div class="motion-preview-safe"></div>
+      <div class="motion-preview-stats">${escapeHtml(state.project.price || "Price available")} · ${escapeHtml(state.project.beds || "-")} BD · ${escapeHtml(state.project.baths || "-")} BA · ${escapeHtml(state.project.squareFeet || "-")} SQ FT</div>
+      ${state.project.brandingVisible ? `<div class="motion-preview-brand"><strong>${escapeHtml(state.brandKit.name || "EstateMotion Agent")}</strong><span>${escapeHtml(state.brandKit.brokerage || "Real Estate Advisor")}</span></div>` : ""}
+      <div class="motion-preview-progress">${safeScenes.map((_, index) => `<span style="--dot-index:${index}"></span>`).join("")}</div>
+    </section>
+  `;
+}
+
+function transitionToClass(transition = "") {
+  const value = String(transition || "").toLowerCase();
+  if (value.includes("whip")) return "whip";
+  if (value.includes("light")) return "light";
+  if (value.includes("blur")) return "blur";
+  if (value.includes("match")) return "match";
+  if (value.includes("zoom")) return "zoom";
+  if (value.includes("slide")) return "slide";
+  return "fade";
 }
 
 function reelStage(photo, copy, template, index = 0, total = 1) {
@@ -5511,6 +5760,8 @@ function renderExport() {
   const result = buildExportPayload();
   const accountGate = exportRequiresAccount();
   const preflightError = accountGate ? "" : validatePreRenderManifest(result, { live: !featureFlags.MOCK_RENDERING });
+  const mp4Url = state.exportResult?.mp4Url || state.renderJobStatus?.mp4Url || "";
+  const isRendering = ["queued", "rendering"].includes(state.renderJobStatus?.status);
   const exportOptions = [
     ["Vertical Reel", "9:16 branded MP4", "Instagram / TikTok / Shorts"],
     ["Horizontal Tour", "16:9 branded MP4", "YouTube / website"],
@@ -5522,25 +5773,28 @@ function renderExport() {
     <div class="screen-title cinematic-title"><p class="eyebrow">Export</p><h2>Your listing video is ready.</h2><p>Create polished versions for Reels, TikTok, YouTube, your website, and MLS-safe sharing.</p></div>
     <section class="export-delivery-grid">
       <div class="video-player-shell export-preview-shell">
-        <div class="player-chrome"><span>Final video preview</span><b>${escapeHtml(selectedTemplate().name)}</b></div>
-        ${reelStage(orderedPhotos()[0] ?? demoPhotos[0], aiCopy(), selectedTemplate(), 0, Math.max(1, orderedPhotos().length))}
+        <div class="player-chrome"><span>Final video preview</span><b>${escapeHtml(selectedListingVideoStyleLabel())}</b></div>
+        ${motionSequencePreview(result.scenes, selectedTemplate())}
       </div>
       <section class="panel elevated export-command">
         <div class="section-title"><p>Delivery</p><h3>${accountGate ? "Create account to export" : preflightError ? "One more step" : "Ready to create files"}</h3></div>
-        ${accountGate ? `<div class="state-banner loading-state"><strong>Your preview is ready</strong><span>Create your free account to save the project and export the finished video.</span></div>` : preflightError ? `<div class="state-banner error-state"><strong>Export needs attention</strong><span>${escapeHtml(publicFacingError(preflightError))}</span></div>` : `<div class="state-banner loading-state"><strong>Ready to export</strong><span>Your video package is prepared for download.</span></div>`}
+        ${accountGate ? `<div class="state-banner loading-state"><strong>Your preview is ready</strong><span>Create your free account to save the project and export the finished video.</span></div>` : preflightError ? `<div class="state-banner error-state"><strong>Export needs attention</strong><span>${escapeHtml(publicFacingError(preflightError))}</span></div>` : mp4Url ? `<div class="state-banner loading-state"><strong>Real MP4 complete</strong><span>Your final listing video is ready to watch and download below.</span></div>` : isRendering ? `<div class="state-banner loading-state"><span class="spinner"></span><strong>${escapeHtml(state.renderJobStatus.phase || "Rendering scenes")}</strong></div>` : `<div class="state-banner loading-state"><strong>Ready for real MP4 rendering</strong><span>EstateMotion will send this validated manifest to Remotion and create a 45-60 second listing video.</span></div>`}
+        <div class="render-quality-strip">
+          <span>Camera motion: ${escapeHtml([...new Set(result.scenes.map((scene) => scene.cameraMotion || scene.renderMotion).filter(Boolean))].slice(0, 3).join(" / "))}</span>
+          <span>Transitions: ${escapeHtml([...new Set(result.scenes.map((scene) => scene.transition).filter(Boolean))].slice(0, 3).join(" / "))}</span>
+          <span>Music: ${escapeHtml(result.musicTiming?.track?.label || selectedMusicTrack().label)}</span>
+        </div>
         <div class="export-option-grid">${exportOptions.map(([title, body, format]) => exportOptionCard(title, body, format)).join("")}</div>
         <div class="actions single-primary-row">
-          <button class="primary" data-queue-pack>Create Video Exports</button>
-          <button class="secondary" data-download-json>Download Caption Pack</button>
-          <button class="secondary" data-download-html>Download Preview</button>
+          <button class="primary" data-queue-pack ${isRendering ? "disabled" : ""}>${mp4Url ? "Render Again" : "Generate Video"}</button>
+          ${mp4Url ? `<a class="secondary button-link" href="${escapeAttr(mp4Url)}" download target="_blank" rel="noreferrer">Download MP4</a>` : ""}
         </div>
       </section>
     </section>
     ${renderQueuePanel()}
   `);
   document.querySelector("[data-queue-pack]").addEventListener("click", queueContentPack);
-  document.querySelector("[data-download-json]").addEventListener("click", () => exportRequiresAccount() ? requestExportAuthGate() : downloadFile(`${slug(state.project.title)}-render-manifest.json`, "application/json", JSON.stringify(result, null, 2)));
-  document.querySelector("[data-download-html]").addEventListener("click", () => exportRequiresAccount() ? requestExportAuthGate() : downloadFile(`${slug(state.project.title)}-preview.html`, "text/html", buildPreviewHtml(result)));
+  document.querySelector("[data-retry-render]")?.addEventListener("click", queueContentPack);
 }
 
 function contentPack() {
@@ -5953,7 +6207,7 @@ function renderManifestScenes(sequence = createPipelineSequence()) {
   const captionByScene = new Map(pipelineCaptions(sequence).map((item) => [item.sceneId, item.caption]));
   let beatCursor = 0;
   const music = selectedMusicTrack();
-  return scenes.map((scene, index) => {
+  const photoScenes = scenes.map((scene, index) => {
     const photo = scene.photo;
     const motion = motionPlanForPhoto(photo, index);
     const directorScene = scene.directorScene || state.project.motionDirectorPlan?.scenes?.find((item) => item.photoId === photo.id);
@@ -6005,6 +6259,84 @@ function renderManifestScenes(sequence = createPipelineSequence()) {
     beatCursor += duration;
     return sceneManifest;
   });
+  return professionalRenderTimeline(photoScenes, sequence);
+}
+
+function professionalRenderTimeline(photoScenes = [], sequence = createPipelineSequence()) {
+  const usablePhotos = photoScenes.slice(0, 25);
+  const desiredPhotoSceneCount = Math.min(25, Math.max(15, usablePhotos.length || 0));
+  const expandedPhotos = [];
+  if (usablePhotos.length) {
+    for (let index = 0; index < desiredPhotoSceneCount; index += 1) {
+      const source = usablePhotos[index % usablePhotos.length];
+      expandedPhotos.push({
+        ...source,
+        order: index + 3,
+        repeatIndex: index,
+        overlayText: index >= usablePhotos.length ? alternateSceneOverlay(source, index) : source.overlayText
+      });
+    }
+  }
+  const introDuration = 3.4;
+  const statsDuration = 3.2;
+  const outroDuration = 3.5;
+  const targetSeconds = 54;
+  const photoDuration = expandedPhotos.length
+    ? Math.max(2, Math.min(3, (targetSeconds - introDuration - statsDuration - outroDuration) / expandedPhotos.length))
+    : 2.8;
+  let cursor = 0;
+  const intro = {
+    order: 1,
+    type: "intro",
+    sceneType: "Address intro",
+    duration: introDuration,
+    beatStart: cursor,
+    beatCut: Number((cursor + introDuration).toFixed(2)),
+    overlayText: state.project.address || sequence.intro?.caption || aiCopy().hook || "Featured Listing",
+    overlaySubline: [state.project.price, state.project.city].filter(Boolean).join(" · "),
+    cardLabel: selectedListingVideoStyleLabel(),
+    transition: "light_leak",
+    cameraMotion: "push_in"
+  };
+  cursor += introDuration;
+  const stats = {
+    order: 2,
+    type: "stats",
+    sceneType: "Property stats",
+    duration: statsDuration,
+    beatStart: Number(cursor.toFixed(2)),
+    beatCut: Number((cursor + statsDuration).toFixed(2)),
+    overlayText: [state.project.beds ? `${state.project.beds} Bed` : "", state.project.baths ? `${state.project.baths} Bath` : "", state.project.squareFeet ? `${state.project.squareFeet} Sq Ft` : ""].filter(Boolean).join(" | ") || "Property Details",
+    overlaySubline: state.project.price || state.project.city || "",
+    cardLabel: "Property facts",
+    transition: "blur_wipe",
+    cameraMotion: "pull_out"
+  };
+  cursor += statsDuration;
+  const timedPhotos = expandedPhotos.map((scene, index) => {
+    const duration = Number(photoDuration.toFixed(2));
+    const timed = {
+      ...scene,
+      order: index + 3,
+      duration,
+      beatStart: Number(cursor.toFixed(2)),
+      beatCut: Number((cursor + duration).toFixed(2)),
+      beatMarker: `Beat ${index + 1}${index % 4 === 3 ? " / transition accent" : ""}`
+    };
+    cursor += duration;
+    return timed;
+  });
+  return [intro, stats, ...timedPhotos].map((scene, index) => ({ ...scene, order: index + 1 }));
+}
+
+function alternateSceneOverlay(scene, index) {
+  const options = [
+    scene.overlayText,
+    scene.overlaySubline,
+    scene.featureCard,
+    scene.sceneType ? `${scene.sceneType} detail` : "Property detail"
+  ].filter(Boolean);
+  return options[index % options.length] || scene.overlayText || "Property highlight";
 }
 
 function selectedListingVideoStyleLabel() {
@@ -6190,6 +6522,12 @@ function buildExportPayload() {
       futureProviders: ["Runway", "Luma", "Pika", "Replicate", "custom-depth-model"]
     },
     editPlan: state.project.motionDirectorPlan || null,
+    previewContract: {
+      source: "The browser preview uses the same scenes, image URLs, camera motions, transitions, overlays, durations, and beat markers sent to Remotion.",
+      brandedVariants: ["vertical-branded", "wide-branded", "square-branded"],
+      unbrandedVariants: ["vertical-unbranded", "mls-clean"],
+      authenticity: "All visual property content comes from uploaded listing photos."
+    },
     musicTiming: {
       track: music,
       beatMarkers: beatSyncPlan(renderManifestScenes(sequence)).beatMarkers,

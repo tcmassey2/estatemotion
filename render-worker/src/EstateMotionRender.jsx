@@ -35,16 +35,28 @@ export function EstateMotionRender({ manifest = {}, format = "vertical" }) {
         cursor += duration;
         return (
           <Sequence key={`${scene.photoId || index}-${from}`} from={from} durationInFrames={duration + stylePack.overlapFrames}>
-            <RenderScene
-              scene={scene}
-              manifest={manifest}
-              index={index}
-              total={scenes.length}
-              duration={duration}
-              accentColor={template.accentColor || brandKit.accentColor || "#C7A76C"}
-              dimensions={dimensions}
-              stylePack={stylePack}
-            />
+            {String(scene.type || "photo").toLowerCase() === "photo" ? (
+              <RenderScene
+                scene={scene}
+                manifest={manifest}
+                index={index}
+                total={scenes.length}
+                duration={duration}
+                accentColor={template.accentColor || brandKit.accentColor || "#C7A76C"}
+                dimensions={dimensions}
+                stylePack={stylePack}
+              />
+            ) : (
+              <RenderCardScene
+                scene={scene}
+                manifest={manifest}
+                index={index}
+                total={scenes.length}
+                duration={duration}
+                accentColor={template.accentColor || brandKit.accentColor || "#C7A76C"}
+                stylePack={stylePack}
+              />
+            )}
           </Sequence>
         );
       })}
@@ -58,6 +70,42 @@ export function EstateMotionRender({ manifest = {}, format = "vertical" }) {
         />
       </Sequence>
       {!music.url && stylePack.showMusicFallback ? <MusicFallbackBadge music={music} stylePack={stylePack} /> : null}
+    </AbsoluteFill>
+  );
+}
+
+function RenderCardScene({ scene, manifest, duration, accentColor, stylePack }) {
+  const frame = useCurrentFrame();
+  const project = normalizeProject(manifest.project || {});
+  const brandKit = normalizeBrandKit(manifest.brandKit || {}, project);
+  const progress = interpolate(frame, [0, duration], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const opacity = interpolate(frame, [0, 20, Math.max(30, duration - 18), duration], [0, 1, 1, .92], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const y = interpolate(frame, [0, 24], [36, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const facts = [project.price, project.beds ? `${project.beds} BD` : "", project.baths ? `${project.baths} BA` : "", project.squareFeet ? `${project.squareFeet} SQFT` : ""].filter(Boolean);
+  return (
+    <AbsoluteFill style={{ background: stylePack.background, color: "white", overflow: "hidden" }}>
+      <AbsoluteFill style={{ background: `radial-gradient(circle at 20% 18%, ${accentColor}55, transparent 34%), linear-gradient(145deg, ${stylePack.background}, #060606)` }} />
+      <LightLeakOverlay progress={progress} stylePack={stylePack} />
+      <BrandedFrame accentColor={accentColor} stylePack={stylePack} />
+      <div style={{ position: "absolute", left: 72, right: 72, top: 210, opacity, transform: `translateY(${y}px)` }}>
+        <p style={{ color: accentColor, fontSize: 25, fontWeight: 950, textTransform: "uppercase", margin: "0 0 18px" }}>{scene.cardLabel || stylePack.label}</p>
+        <h1 style={{ fontFamily: stylePack.headlineFont, fontSize: scene.type === "stats" ? 74 : 88, lineHeight: .92, maxWidth: 920, margin: 0 }}>{scene.overlayText || project.address || "Featured listing"}</h1>
+        {scene.overlaySubline ? <p style={{ fontSize: 34, lineHeight: 1.2, maxWidth: 820, margin: "28px 0 0", opacity: .86 }}>{scene.overlaySubline}</p> : null}
+        {scene.type === "stats" ? (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 18, marginTop: 54, maxWidth: 760 }}>
+            {facts.map((fact) => (
+              <div key={fact} style={{ padding: "24px 26px", borderRadius: 18, background: "rgba(248,245,239,.94)", color: "#0D0D0D", fontSize: 32, fontWeight: 950 }}>{fact}</div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      {scene.type === "stats" ? (
+        <div style={{ position: "absolute", left: 72, right: 72, bottom: 132, padding: "24px 28px", borderRadius: 18, border: `1px solid ${accentColor}`, background: "rgba(13,13,13,.62)", color: "white" }}>
+          <strong style={{ fontSize: 34 }}>{project.cta || brandKit.ctaText || "Schedule a private tour"}</strong>
+          <span style={{ display: "block", marginTop: 10, fontSize: 24, opacity: .78 }}>{[brandKit.name, brandKit.brokerage].filter(Boolean).join(" / ")}</span>
+        </div>
+      ) : null}
+      <ComplianceFooter compliance={manifest.compliance || {}} />
     </AbsoluteFill>
   );
 }
@@ -724,11 +772,15 @@ const stylePacks = {
 
 function scenesFromManifest(manifest = {}) {
   const photos = manifest.orderedPhotos || [];
-  return (manifest.scenes || []).map((scene, index) => ({
-    ...scene,
-    imageUrl: photos[index]?.durableUrl || photos[index]?.durable_url || photos[index]?.publicUrl || photos[index]?.public_url || photos[index]?.imageUrl || photos[index]?.uri || scene.durableUrl || scene.durable_url || scene.publicUrl || scene.public_url || scene.imageUrl || scene.uri || "",
-    duration: Number(scene.duration || 3)
-  }));
+  const photosById = new Map(photos.map((photo) => [photo.id, photo]));
+  return (manifest.scenes || []).map((scene) => {
+    const photo = photosById.get(scene.photoId) || {};
+    return {
+      ...scene,
+      imageUrl: photo.durableUrl || photo.durable_url || photo.publicUrl || photo.public_url || photo.imageUrl || photo.uri || scene.durableUrl || scene.durable_url || scene.publicUrl || scene.public_url || scene.imageUrl || scene.uri || "",
+      duration: Number(scene.duration || 3)
+    };
+  });
 }
 
 function secondsToFrames(seconds) {
