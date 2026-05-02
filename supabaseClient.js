@@ -390,6 +390,15 @@
       branding_visible: project.brandingVisible,
       authenticity_mode: project.authenticityMode,
       local_agent_mode: project.localAgentMode,
+      intro_text: project.introText || "",
+      outro_text: project.outroText || "",
+      content_mode: project.contentMode || "listing-reel",
+      conversion_goal: project.conversionGoal || "",
+      cta_url: project.ctaUrl || "",
+      qr_code_url: project.qrCodeUrl || "",
+      seller_presentation_mode: Boolean(project.sellerPresentationMode),
+      investor_metrics: project.investorMetrics || {},
+      reel_plan_edits: project.reelPlanEdits || null,
       status: "draft"
     };
   }
@@ -421,6 +430,15 @@
       brandingVisible: row.branding_visible ?? true,
       authenticityMode: row.authenticity_mode ?? true,
       localAgentMode: row.local_agent_mode ?? true,
+      introText: row.intro_text || "",
+      outroText: row.outro_text || "",
+      contentMode: row.content_mode || "listing-reel",
+      conversionGoal: row.conversion_goal || "",
+      ctaUrl: row.cta_url || "",
+      qrCodeUrl: row.qr_code_url || "",
+      sellerPresentationMode: row.seller_presentation_mode ?? false,
+      investorMetrics: row.investor_metrics || {},
+      reelPlanEdits: row.reel_plan_edits || null,
       photos: photos.map(mapPhotoFromRow)
     };
   }

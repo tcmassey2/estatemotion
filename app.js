@@ -2595,23 +2595,20 @@ async function enhanceUploadedPhotosWithVision(uploadedPhotos) {
 
 async function ensureRemoteProjectForUploads() {
   if (!authUser) throw new Error("Sign in before uploading photos to Supabase Storage.");
-  try {
-    const ids = await window.EstateMotionSupabase.saveWorkspace(state, authUser);
-    if (ids.projectId && state.project.id !== ids.projectId) {
-      state = { ...state, project: { ...state.project, id: ids.projectId } };
-    }
-    if (ids.brandKitId && state.brandKit.id !== ids.brandKitId) {
-      state = { ...state, brandKit: { ...state.brandKit, id: ids.brandKitId } };
-    }
-    if (ids.warnings?.length) {
-      showToast(ids.warnings[0], "error");
-    }
-    return ids.projectId || state.project.id;
-  } catch (error) {
-    console.warn("Workspace sync failed before upload; continuing with durable Storage upload only.", error);
-    showToast("Profile/project sync did not finish, but photo upload will continue to Supabase Storage.", "error");
-    return state.project.id || "draft";
+  const ids = await window.EstateMotionSupabase.saveWorkspace(state, authUser);
+  if (ids.projectId && state.project.id !== ids.projectId) {
+    state = { ...state, project: { ...state.project, id: ids.projectId } };
   }
+  if (ids.brandKitId && state.brandKit.id !== ids.brandKitId) {
+    state = { ...state, brandKit: { ...state.brandKit, id: ids.brandKitId } };
+  }
+  if (ids.warnings?.length) {
+    showToast(ids.warnings[0], "error");
+  }
+  if (!ids.projectId && !state.project.id) {
+    throw new Error("Project sync did not return a Supabase project id. Run the live schema migration, then try uploading again.");
+  }
+  return ids.projectId || state.project.id;
 }
 
 async function prepareProjectPhoto(file, index, remoteProjectId = "") {

@@ -61,9 +61,28 @@ create table if not exists public.projects (
   branding_visible boolean not null default true,
   authenticity_mode boolean not null default true,
   local_agent_mode boolean not null default true,
+  intro_text text,
+  outro_text text,
+  content_mode text not null default 'listing-reel',
+  conversion_goal text,
+  cta_url text,
+  qr_code_url text,
+  seller_presentation_mode boolean not null default false,
+  investor_metrics jsonb not null default '{}'::jsonb,
+  reel_plan_edits jsonb,
   status text not null default 'draft',
   created_at timestamptz not null default now()
 );
+
+alter table public.projects add column if not exists intro_text text;
+alter table public.projects add column if not exists outro_text text;
+alter table public.projects add column if not exists content_mode text not null default 'listing-reel';
+alter table public.projects add column if not exists conversion_goal text;
+alter table public.projects add column if not exists cta_url text;
+alter table public.projects add column if not exists qr_code_url text;
+alter table public.projects add column if not exists seller_presentation_mode boolean not null default false;
+alter table public.projects add column if not exists investor_metrics jsonb not null default '{}'::jsonb;
+alter table public.projects add column if not exists reel_plan_edits jsonb;
 
 create table if not exists public.project_photos (
   id uuid primary key default uuid_generate_v4(),
