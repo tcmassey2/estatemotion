@@ -65,6 +65,18 @@ alter table public.project_photos add column if not exists render_metadata jsonb
 alter table public.project_photos add column if not exists created_at timestamptz not null default now();
 
 -- BETA_FEEDBACK: required by saveBetaFeedback().
+create table if not exists public.beta_feedback (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid references public.users(id) on delete set null,
+  project_id uuid references public.projects(id) on delete set null,
+  project_title text,
+  rating integer,
+  usable_enough text,
+  feedback_text text,
+  render_metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
 alter table public.beta_feedback add column if not exists user_id uuid references public.users(id) on delete set null;
 alter table public.beta_feedback add column if not exists project_id uuid references public.projects(id) on delete set null;
 alter table public.beta_feedback add column if not exists project_title text;
@@ -83,6 +95,11 @@ alter table public.users enable row level security;
 alter table public.projects enable row level security;
 alter table public.project_photos enable row level security;
 alter table public.beta_feedback enable row level security;
+
+drop policy if exists "Users manage own beta feedback" on public.beta_feedback;
+create policy "Users manage own beta feedback" on public.beta_feedback
+  for all using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
 
 do $$
 begin
@@ -135,10 +152,4 @@ begin
       );
   end if;
 
-  if not exists (
-    select 1 from pg_policies
-    where schemaname = 'public' and tablename = 'beta_feedback' and policyname = 'Users manage own beta feedback'
-  ) then
-    create policy "Users manage own beta feedback" on public.beta_feedback for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
-  end if;
 end $$;
