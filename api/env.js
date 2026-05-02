@@ -17,6 +17,7 @@ function publicEnv() {
     SUPABASE_SIGNED_URL_TTL_SECONDS: Number(process.env.SUPABASE_SIGNED_URL_TTL_SECONDS || 172800),
     OPENAI_ENDPOINT: process.env.OPENAI_ENDPOINT || "",
     VISION_CLASSIFICATION_ENDPOINT: process.env.VISION_CLASSIFICATION_ENDPOINT || "/api/classify-image",
+    CREATE_EDIT_PLAN_ENDPOINT: process.env.CREATE_EDIT_PLAN_ENDPOINT || "/api/create-edit-plan",
     MUSIC_LUXURY_URL: process.env.MUSIC_LUXURY_URL || "",
     MUSIC_VIRAL_URL: process.env.MUSIC_VIRAL_URL || "",
     MUSIC_MLS_CLEAN_URL: process.env.MUSIC_MLS_CLEAN_URL || "",

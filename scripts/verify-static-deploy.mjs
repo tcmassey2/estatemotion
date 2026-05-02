@@ -9,6 +9,7 @@ const requiredFiles = [
   "beta/index.html",
   "api/env.js",
   "api/classify-image.js",
+  "api/create-edit-plan.js",
   "lib/reel/demoFixtures.js",
   "vercel.json",
   "supabase/schema.sql",

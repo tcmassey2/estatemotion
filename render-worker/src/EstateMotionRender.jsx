@@ -68,8 +68,8 @@ function RenderScene({ scene, manifest, index, total, duration, accentColor, dim
   const progress = interpolate(frame, [0, duration], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const entrance = interpolate(frame, [0, Math.min(18, duration * 0.18)], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const exit = interpolate(frame, [Math.max(1, duration - 14), duration], [1, 0.94], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
-  const transform = cameraTransform(scene.renderMotion || scene.motionStyle, progress, dimensions, scene.sceneType);
-  const transitionStyle = transitionLayer(scene.transition, entrance, exit, accentColor, stylePack);
+  const transform = cameraTransform(scene.cameraMotion || scene.renderMotion || scene.motionStyle, progress, dimensions, scene.sceneType);
+  const transitionStyle = transitionLayer(scene.directorTransition || scene.transition, entrance, exit, accentColor, stylePack);
   const project = normalizeProject(manifest.project || {});
   const brandKit = normalizeBrandKit(manifest.brandKit || {}, project);
   const showHero = index === 0;
@@ -410,6 +410,35 @@ function ComplianceFooter({ compliance, dark = false }) {
 function cameraTransform(style = "Push-in", progress, dimensions, sceneType = "") {
   const wide = dimensions.width > dimensions.height;
   const pan = wide ? 24 : 42;
+  const normalized = String(style || "").toLowerCase().replace(/[\s-]+/g, "_");
+  if (normalized === "push_in") {
+    const scale = interpolate(progress, [0, 1], [1.015, 1.095]);
+    const y = interpolate(progress, [0, 1], [8, -8]);
+    return `scale(${scale}) translate3d(0, ${y}px, 0)`;
+  }
+  if (normalized === "pull_out") {
+    const scale = interpolate(progress, [0, 1], [1.11, 1.02]);
+    return `scale(${scale}) translate3d(0, 0, 0)`;
+  }
+  if (normalized === "lateral_pan") {
+    const x = interpolate(progress, [0, 1], [-pan * 1.35, pan * 1.35]);
+    return `scale(1.085) translate3d(${x}px, 0, 0)`;
+  }
+  if (normalized === "vertical_reveal") {
+    const y = interpolate(progress, [0, 1], [38, -34]);
+    return `scale(1.075) translate3d(0, ${y}px, 0)`;
+  }
+  if (normalized === "parallax_zoom") {
+    const scale = interpolate(progress, [0, 1], [1.02, 1.135]);
+    const x = interpolate(progress, [0, 1], [-10, 18]);
+    const rotate = interpolate(progress, [0, 1], [-0.08, 0.08]);
+    return `scale(${scale}) translate3d(${x}px, 0, 0) rotate(${rotate}deg)`;
+  }
+  if (normalized === "detail_sweep") {
+    const x = interpolate(progress, [0, 1], [-34, 34]);
+    const scale = interpolate(progress, [0, 1], [1.12, 1.055]);
+    return `scale(${scale}) translate3d(${x}px, 0, 0)`;
+  }
   if (style === "Exterior slow zoom" || sceneType === "Exterior hero") {
     const scale = interpolate(progress, [0, 1], [1.015, 1.105]);
     const y = interpolate(progress, [0, 1], [10, -10]);
@@ -459,7 +488,23 @@ function cameraTransform(style = "Push-in", progress, dimensions, sceneType = ""
 }
 
 function transitionLayer(transition = "", entrance, exit, accentColor, stylePack) {
+  const normalized = String(transition || "").toLowerCase().replace(/[\s-]+/g, "_");
   const opacity = 1 - entrance;
+  if (normalized === "whip_pan") {
+    const x = interpolate(entrance, [0, 1], [-70, 100]);
+    return <AbsoluteFill style={{ background: `linear-gradient(90deg, transparent, ${stylePack.transitionColor}, ${accentColor})`, opacity: opacity * .84, transform: `translateX(${x}%) skewX(-8deg)` }} />;
+  }
+  if (normalized === "match_cut") {
+    return <AbsoluteFill style={{ background: "#FFFFFF", opacity: opacity * .24 }} />;
+  }
+  if (normalized === "light_leak") {
+    const x = interpolate(entrance, [0, 1], [-40, 110]);
+    return <AbsoluteFill style={{ background: `radial-gradient(circle at 35% 50%, ${accentColor}88, transparent 42%), linear-gradient(90deg, transparent, rgba(255,255,255,.32), transparent)`, mixBlendMode: "screen", opacity: opacity * .95, transform: `translateX(${x}%)` }} />;
+  }
+  if (normalized === "blur_wipe") {
+    const x = interpolate(entrance, [0, 1], [0, -100]);
+    return <AbsoluteFill style={{ background: `linear-gradient(90deg, ${accentColor}, ${stylePack.transitionColor})`, opacity: opacity * .88, filter: "blur(10px)", transform: `translateX(${x}%)` }} />;
+  }
   if (transition.includes("slide")) {
     const x = interpolate(entrance, [0, 1], [0, 100]);
     return <AbsoluteFill style={{ background: stylePack.transitionColor, opacity, transform: `translateX(${x}%)` }} />;

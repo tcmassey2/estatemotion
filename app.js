@@ -702,6 +702,16 @@ const defaultState = {
       dealStructure: "",
       assignmentFee: ""
     },
+    motionDirectorStatus: {
+      status: "idle",
+      label: "Motion Director pending",
+      reason: "",
+      signature: "",
+      source: "",
+      lastRunAt: "",
+      openaiCalls: 0,
+      callLimit: 3
+    },
     reelPlanEdits: null,
     photos: demoPhotos
   }
@@ -713,6 +723,7 @@ let authUser = null;
 let remoteWorkspaceLoaded = featureFlags.MOCK_SUPABASE;
 let saveTimer = null;
 let quietSaveTimer = null;
+let motionDirectorInFlightSignature = "";
 
 function loadState() {
   try {
@@ -739,7 +750,12 @@ function mergeState(base, saved) {
     betaFeedbackForm: { ...base.betaFeedbackForm, ...saved.betaFeedbackForm },
     user: { ...base.user, ...saved.user },
     brandKit: { ...base.brandKit, ...saved.brandKit },
-    project: { ...base.project, ...saved.project, photos: saved.project?.photos ?? base.project.photos }
+    project: {
+      ...base.project,
+      ...saved.project,
+      motionDirectorStatus: { ...base.project.motionDirectorStatus, ...saved.project?.motionDirectorStatus },
+      photos: saved.project?.photos ?? base.project.photos
+    }
   };
 }
 
@@ -759,6 +775,7 @@ function readFeatureFlags() {
     SUPABASE_SIGNED_URL_TTL_SECONDS: Number(params.get("SUPABASE_SIGNED_URL_TTL_SECONDS") || env.SUPABASE_SIGNED_URL_TTL_SECONDS || 172800),
     OPENAI_ENDPOINT: params.get("OPENAI_ENDPOINT") || env.OPENAI_ENDPOINT || "",
     VISION_CLASSIFICATION_ENDPOINT: params.get("VISION_CLASSIFICATION_ENDPOINT") || env.VISION_CLASSIFICATION_ENDPOINT || "/api/classify-image",
+    CREATE_EDIT_PLAN_ENDPOINT: params.get("CREATE_EDIT_PLAN_ENDPOINT") || env.CREATE_EDIT_PLAN_ENDPOINT || "/api/create-edit-plan",
     MUSIC_LUXURY_URL: params.get("MUSIC_LUXURY_URL") || env.MUSIC_LUXURY_URL || "",
     MUSIC_VIRAL_URL: params.get("MUSIC_VIRAL_URL") || env.MUSIC_VIRAL_URL || "",
     MUSIC_MLS_CLEAN_URL: params.get("MUSIC_MLS_CLEAN_URL") || env.MUSIC_MLS_CLEAN_URL || "",
@@ -1343,7 +1360,12 @@ function loadBetaSampleListing() {
     renderQueue: [],
     exportResult: null,
     error: "",
-    project: structuredClone(betaSampleListing),
+    project: {
+      ...structuredClone(betaSampleListing),
+      motionDirectorStatus: motionDirectorIdleStatus(current.project.motionDirectorStatus),
+      motionDirectorPlan: null,
+      reelPlanEdits: null
+    },
     screen: "processing"
   }));
   showToast("Sample listing loaded");
@@ -1560,7 +1582,7 @@ function updateProject(key, value, options = {}) {
 
 function updateProjectAndResetPlan(key, value, options = {}) {
   const commit = options.quiet ? setStateQuietly : setState;
-  commit((current) => ({ ...current, error: "", project: { ...current.project, [key]: value, reelPlanEdits: null } }));
+  commit((current) => ({ ...current, error: "", project: { ...current.project, [key]: value, reelPlanEdits: null, motionDirectorPlan: null, motionDirectorStatus: motionDirectorIdleStatus(current.project.motionDirectorStatus) } }));
 }
 
 function updateBrand(key, value, options = {}) {
@@ -2974,21 +2996,39 @@ function sequenceFromEditedPlan(plan) {
     .map((item, index) => {
       const photo = photosById.get(item.photoId);
       if (!photo) return null;
+      const category = item.category || mdRoomToPipelineCategory(item.roomType || mdPipelineCategoryToRoomType(photo.pipelineCategory || sceneToPipelineCategory(photo.category)));
+      const roomType = item.roomType || mdPipelineCategoryToRoomType(category);
+      const overlayParts = String(item.caption || "").split(" · ");
+      const directorScene = {
+        photoId: item.photoId,
+        order: index + 1,
+        roomType,
+        visibleFeatures: Array.isArray(item.visibleFeatures) ? item.visibleFeatures : [],
+        qualityScore: item.qualityScore ?? sceneConfidence(photo),
+        duration: Number(item.duration || 2),
+        cameraMotion: item.cameraMotion || mdCameraMotion(roomType, index),
+        transition: item.transition || mdTransition(roomType, index),
+        overlay: item.overlay || {
+          headline: overlayParts[0] || sceneLabel(photo.category),
+          subline: overlayParts.slice(1).join(" · ")
+        }
+      };
       return {
         id: item.id || `edited-scene-${index + 1}`,
         type: "photo",
         order: index + 1,
         photo: {
           ...photo,
-          category: pipelineToSceneCategory(item.category),
-          pipelineCategory: item.category,
+          category: pipelineToSceneCategory(category),
+          pipelineCategory: category,
           durableUrl: photo.durableUrl || photo.durable_url || "",
           durable_url: photo.durable_url || photo.durableUrl || ""
         },
-        category: item.category || sceneToPipelineCategory(photo.category),
+        category,
         caption: enforceMlsSafeCaption(item.caption || sceneLabel(photo.category), item.claimConfirmed),
         duration: Number(item.duration || 2),
-        role: "edited property tour"
+        role: "edited property tour",
+        directorScene
       };
     })
     .filter(Boolean);
@@ -3130,7 +3170,7 @@ function renderTemplate() {
   document.querySelector("[data-generate-variations]")?.addEventListener("click", generateReelVariations);
   document.querySelectorAll("[data-template]").forEach((button) => button.addEventListener("click", () => {
     trackEvent("template_select", { templateId: button.dataset.template });
-    setState((current) => ({ ...current, selectedTemplateId: button.dataset.template, project: { ...current.project, reelPlanEdits: null } }));
+    setState((current) => ({ ...current, selectedTemplateId: button.dataset.template, project: { ...current.project, reelPlanEdits: null, motionDirectorPlan: null, motionDirectorStatus: motionDirectorIdleStatus(current.project.motionDirectorStatus) } }));
   }));
   document.querySelector("[data-one-click]").addEventListener("click", oneClickReel);
   document.querySelector("[data-next]").addEventListener("click", () => guard(validateProjectBasics() || validatePhotos() || validateTemplate() || validateMarketingOSFields(), () => navigate("processing")));
@@ -4733,6 +4773,1063 @@ function render() {
     export: renderExport
   };
   (screens[state.screen] ?? renderDashboard)();
+}
+
+function listingVideoTemplates() {
+  return [
+    {
+      id: "modern-luxury",
+      label: "Cinematic Luxury",
+      description: "Slow depth zooms, editorial address intro, warm cinematic overlays, premium lower-thirds.",
+      bestFor: "Luxury listings and high-end seller presentations"
+    },
+    {
+      id: "viral-fast-cut",
+      label: "Modern Social",
+      description: "Punchier cuts, speed ramps, bold lower-thirds, and scroll-stopping social pacing.",
+      bestFor: "Instagram Reels, TikTok, and YouTube Shorts"
+    },
+    {
+      id: "mls-clean",
+      label: "MLS Clean",
+      description: "Clean motion, factual stat cards, restrained transitions, and unbranded export readiness.",
+      bestFor: "MLS-safe distribution and compliance-sensitive teams"
+    },
+    {
+      id: "investor-wholesale",
+      label: "Investor Property Tour",
+      description: "Direct property-tour sequencing, clean number cards, and simple buyer-demand framing.",
+      bestFor: "Investor-focused listings and practical property tours"
+    }
+  ];
+}
+
+function renderLayout(content) {
+  const navItems = [
+    { screen: "upload", label: "Upload" },
+    { screen: "processing", label: "AI Order" },
+    { screen: "template", label: "Style" },
+    { screen: "preview", label: "Preview" },
+    { screen: "export", label: "Export" }
+  ];
+  const step = navItems.findIndex((item) => item.screen === state.screen) + 1;
+  app.innerHTML = `
+    <main class="app listing-video-app">
+      <header class="topbar video-topbar">
+        <button class="brand video-brand" data-home>
+          <span>EM</span>
+          <b>EstateMotion</b>
+        </button>
+        <div class="top-progress video-progress" aria-label="Listing video creation progress">
+          ${navItems.map((item, index) => `<button class="${state.screen === item.screen ? "active" : ""} ${step > index + 1 ? "complete" : ""}" data-nav="${item.screen}"><span>${index + 1}</span><b>${item.label}</b></button>`).join("")}
+        </div>
+        <div class="top-actions">
+          ${!featureFlags.MOCK_SUPABASE && authUser ? `<button class="reset-demo" data-sign-out>Sign out</button>` : ""}
+          ${!featureFlags.MOCK_SUPABASE && !authUser ? `<button class="reset-demo auth-entry primary-lite" data-auth-entry="sign-in">Sign in</button>` : ""}
+        </div>
+      </header>
+      <section class="screen video-screen">
+        ${state.error ? `<div class="state-banner error-state"><strong>Needs attention</strong><span>${escapeHtml(state.error)}</span></div>` : ""}
+        ${state.loading ? `<div class="state-banner loading-state"><span class="spinner"></span><strong>${escapeHtml(state.loading)}</strong></div>` : ""}
+        ${content}
+      </section>
+      <nav class="bottom-nav">
+        ${navItems.map((item) => `<button class="${state.screen === item.screen ? "active" : ""}" data-nav="${item.screen}">${item.label}</button>`).join("")}
+      </nav>
+      <div class="toast-stack">${state.toasts.map((toast) => `<div class="toast ${toast.type}">${escapeHtml(toast.message)}</div>`).join("")}</div>
+    </main>
+  `;
+  document.querySelector("[data-home]")?.addEventListener("click", () => navigate(isDemoRoute() ? "demo" : "dashboard"));
+  document.querySelectorAll("[data-nav]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.nav)));
+  document.querySelector("[data-sign-out]")?.addEventListener("click", signOut);
+  document.querySelectorAll("[data-auth-entry]").forEach((button) => button.addEventListener("click", () => {
+    setState({ authMode: button.dataset.authEntry, authReturnScreen: state.screen === "auth" ? state.authReturnScreen : state.screen, screen: "auth", error: "" });
+  }));
+  bindInputs();
+}
+
+function maybeStartOnboarding() {
+  const route = routeFromUrl();
+  if (route) {
+    state.screen = route;
+    saveState();
+    return;
+  }
+  if (["onboarding", "details", "edit", "brand", "pricing", "analytics", "create"].includes(state.screen)) {
+    state.screen = "dashboard";
+    saveState();
+  }
+}
+
+function renderDashboard() {
+  renderLayout(`
+    <section class="video-hero">
+      <div class="video-hero-copy">
+        <p class="eyebrow">AI listing video engine</p>
+        <h2>Professional listing videos from MLS photos.</h2>
+        <p>Upload real property photos. EstateMotion orders the scenes, adds cinematic camera motion, premium overlays, music-aware pacing, and exports branded or unbranded videos.</p>
+        <div class="actions">
+          <button class="primary" data-start-video>Create listing video</button>
+          <button class="secondary" data-watch-sample>Watch sample</button>
+        </div>
+        <div class="video-proof-row">
+          <span>Uses your real photos</span>
+          <span>No fake rooms or views</span>
+          <span>9:16 / 16:9 / 1:1 exports</span>
+        </div>
+      </div>
+      <div class="video-hero-preview">
+        ${professionalPhonePreview(demoPhotos[0], "Cinematic Luxury")}
+      </div>
+    </section>
+    <section class="video-step-grid">
+      ${["Upload 8-25 listing photos", "AI orders the property tour", "Choose a cinematic style", "Preview motion and overlays", "Export MP4 variants"].map((item, index) => `<article><span>${String(index + 1).padStart(2, "0")}</span><strong>${escapeHtml(item)}</strong></article>`).join("")}
+    </section>
+  `);
+  document.querySelector("[data-start-video]").addEventListener("click", () => navigate("upload"));
+  document.querySelector("[data-watch-sample]").addEventListener("click", () => navigate("demo"));
+}
+
+function renderDemoLandingPremium() {
+  trackDemoVisitOnce();
+  renderLayout(`
+    <section class="video-landing-hero">
+      <div class="video-hero-copy">
+        <p class="eyebrow">EstateMotion</p>
+        <h2>Professional listing videos from MLS photos.</h2>
+        <p>Cinematic property videos, AI photo ordering, beat-synced edits, branded and unbranded exports. No video shoot required.</p>
+        <div class="actions">
+          <button class="primary" data-nav="upload">Create my first video</button>
+          <button class="secondary" data-scroll-sample>Watch sample</button>
+        </div>
+      </div>
+      <div class="video-hero-preview">
+        ${professionalPhonePreview(demoPhotos[0], "Sample output")}
+      </div>
+    </section>
+    <section class="video-section">
+      <div class="section-title centered"><p>How it works</p><h3>Upload photos. EstateMotion renders the video.</h3></div>
+      <div class="video-step-grid">
+        <article><span>01</span><strong>Upload photos</strong><small>Use the MLS/listing photos you already have.</small></article>
+        <article><span>02</span><strong>AI orders scenes</strong><small>Exterior, kitchen, living, bedrooms, baths, outdoor, amenities.</small></article>
+        <article><span>03</span><strong>Render cinematic video</strong><small>Depth motion, transitions, stat cards, music timing, exports.</small></article>
+      </div>
+    </section>
+    <section class="video-section" id="sampleOutput">
+      <div class="section-title centered"><p>Sample outputs</p><h3>Three professional listing styles.</h3></div>
+      <div class="sample-output-grid">
+        ${listingVideoTemplates().slice(0, 3).map((template, index) => `<article>${professionalPhonePreview(demoPhotos[index] || demoPhotos[0], template.label)}<strong>${escapeHtml(template.label)}</strong><small>${escapeHtml(template.description)}</small></article>`).join("")}
+      </div>
+    </section>
+    <section class="video-section">
+      <div class="section-title centered"><p>Why it is different</p><h3>Built for authentic property videos, not generic slideshows.</h3></div>
+      <div class="video-feature-grid">
+        ${["AI photo ordering", "Cinematic camera motion", "Beat-synced edits", "Branded/unbranded exports", "No fake property features"].map((item) => `<article><strong>${escapeHtml(item)}</strong><small>Every visible element supports better listing video output.</small></article>`).join("")}
+      </div>
+    </section>
+    <section class="video-section">
+      <div class="section-title centered"><p>Plans</p><h3>Pricing-ready for listing volume.</h3></div>
+      <div class="pricing-grid video-pricing">
+        ${pricingCard("Starter", "Listings/month", "Essential exports", "For agents who need polished launch videos.", "Starter")}
+        ${pricingCard("Growth", "More listings", "Branded + unbranded variants", "For consistent listing marketers.", "Growth")}
+        ${pricingCard("Pro", "Team volume", "Priority rendering", "For brokerages and high-volume teams.", "Pro")}
+      </div>
+    </section>
+    <section class="video-section faq-section">
+      <div class="section-title centered"><p>FAQ</p><h3>Built around real listing photos.</h3></div>
+      <div class="faq-grid">
+        ${faqItem("Does it use my real photos?", "Yes. EstateMotion builds motion and overlays from uploaded listing photos only.")}
+        ${faqItem("Can I export unbranded videos?", "Yes. The export architecture supports branded and unbranded variants.")}
+        ${faqItem("Is it MLS-safe?", "MLS Clean mode uses factual captions, restrained graphics, and clean formatting.")}
+        ${faqItem("How long does rendering take?", "The local demo uses mock rendering. Live Remotion workers are structured for queued MP4 rendering.")}
+      </div>
+    </section>
+    <section class="video-final-cta">
+      <h3>Create a professional video from your listing photos.</h3>
+      <button class="primary" data-nav="upload">Create my first video</button>
+    </section>
+  `);
+  document.querySelector("[data-scroll-sample]")?.addEventListener("click", () => document.querySelector("#sampleOutput").scrollIntoView({ behavior: "smooth" }));
+}
+
+function professionalPhonePreview(photo, label) {
+  return `
+    <div class="pro-phone">
+      <div class="pro-phone-top"><span>${escapeHtml(label)}</span><b>9:16</b></div>
+      <div class="pro-phone-stage reel-depth-zoom">
+        <img src="${photo.uri}" alt="">
+        <div class="pro-video-vignette"></div>
+        <div class="pro-address-card">${escapeHtml(state.project.address || "1234 E Camelback Road")}</div>
+        <div class="pro-stat-card">${escapeHtml(state.project.price || "$1,250,000")} · ${escapeHtml(state.project.beds || "4")} BD · ${escapeHtml(state.project.baths || "3")} BA</div>
+        <div class="pro-lower-third"><strong>${escapeHtml(aiCopy().hook)}</strong><span>${escapeHtml(state.brandKit.name || "EstateMotion Agent")}</span></div>
+      </div>
+    </div>
+  `;
+}
+
+function renderUpload() {
+  const photos = orderedPhotos();
+  const needsLiveAuth = !featureFlags.MOCK_SUPABASE && !authUser && !isDemoRoute();
+  renderLayout(`
+    <div class="screen-title cinematic-title"><p class="eyebrow">Step 1</p><h2>Upload listing photos.</h2><p>Select 8-25 MLS or listing photos. EstateMotion uses only your uploaded property visuals in the final video.</p></div>
+    ${needsLiveAuth ? `<section class="panel sign-in-required-card"><div><p class="eyebrow">Sign in required</p><h3>Sign in to upload listing photos.</h3><p class="muted">Live rendering requires durable Supabase Storage URLs.</p></div><button class="primary" data-auth-entry-upload>Sign in</button></section>` : ""}
+    <section class="upload-studio-card pro-upload-card">
+      <label class="upload-zone" data-upload-zone>
+        <input id="photoInput" type="file" accept="image/*" multiple>
+        <span class="upload-plus">+</span>
+        <strong>Upload 8-25 listing photos</strong>
+        <span class="muted">JPG, PNG, or WebP. Select multiple photos at once or drag a full listing set here.</span>
+        <b class="upload-count">${photos.length} photo${photos.length === 1 ? "" : "s"} uploaded</b>
+      </label>
+      <aside class="upload-status-card">
+        <span>Upload reliability</span>
+        <strong>${photos.length >= 3 ? "Photos ready for AI ordering" : "Add at least 3 photos"}</strong>
+        <small>${needsLiveAuth ? "Sign in before uploading." : "Durable upload path is preserved for render jobs."}</small>
+      </aside>
+    </section>
+    <section class="panel listing-basics-panel">
+      <div class="section-title"><p>Listing details</p><h3>Used for factual overlays only.</h3></div>
+      <div class="grid-2">${field("Property address", "address")}${field("Price", "price")}</div>
+      <div class="grid-2">${field("Beds", "beds")}${field("Baths", "baths")}</div>
+      <div class="grid-2">${field("Square footage", "squareFeet")}${field("City / area", "city")}</div>
+      <div class="grid-2">${brandField("Agent name", "name")}${brandField("Brokerage", "brokerage")}</div>
+    </section>
+    <div class="actions single-primary-row">
+      <button class="secondary" data-add-more type="button">Add more photos</button>
+      <button class="secondary" data-sample-listing type="button">Use sample listing</button>
+      <button class="primary" data-next="processing">AI order photos</button>
+    </div>
+    <section class="photo-grid pro-photo-grid">
+      ${photos.length ? photos.map((photo, index) => photoCard(photo, index)).join("") : emptyState("No photos uploaded", "Upload listing photos or use the sample listing to see a professional output.")}
+    </section>
+  `);
+  const input = document.querySelector("#photoInput");
+  input.addEventListener("change", handlePhotoFiles);
+  document.querySelector("[data-add-more]").addEventListener("click", () => input.click());
+  document.querySelector("[data-auth-entry-upload]")?.addEventListener("click", () => setState({ authMode: "sign-in", authReturnScreen: "upload", screen: "auth", error: "" }));
+  document.querySelector("[data-sample-listing]").addEventListener("click", loadBetaSampleListing);
+  document.querySelector("[data-next]").addEventListener("click", () => guard(validatePhotos(), () => navigate("processing")));
+  bindUploadDropZone();
+  bindPhotoControls();
+}
+
+function renderProcessing() {
+  ensureMotionDirectorPlan();
+  const plan = activeEditableReelPlan();
+  const sequence = sequenceFromEditedPlan(plan);
+  const captions = pipelineCaptions(sequence);
+  const captionByScene = new Map(captions.map((item) => [item.sceneId, item.caption]));
+  const director = state.project.motionDirectorPlan;
+  const status = motionDirectorDisplayStatus();
+  renderLayout(`
+    <div class="screen-title cinematic-title"><p class="eyebrow">Step 2</p><h2>Review the AI property-tour order.</h2><p>${escapeHtml(status.summary)} Remove weak scenes or reorder before choosing a style.</p></div>
+    <section class="video-step-grid ai-order-metrics">
+      ${engineMetric("Scene types", new Set(orderedPhotos().map((photo) => sceneLabel(photo.category))).size || 0)}
+      ${engineMetric("Avg confidence", `${averageConfidence(orderedPhotos())}%`)}
+      ${engineMetric("Video length", `${beatSyncPlan(renderManifestScenes(sequence)).totalDuration}s`)}
+      ${engineMetric("Director", status.metric)}
+    </section>
+    <section class="motion-director-status ${escapeAttr(status.className)}">
+      <div>
+        <span>${escapeHtml(status.label)}</span>
+        <strong>${escapeHtml(status.headline)}</strong>
+        <small>${escapeHtml(status.reason)}</small>
+      </div>
+      <button class="secondary" data-regenerate-edit-plan ${status.disabled ? "disabled" : ""}>Regenerate edit plan</button>
+    </section>
+    <section class="panel reel-plan-panel">
+      <div class="section-title"><p>AI photo ordering</p><h3>${sequence.scenes.length} scenes in listing-tour order</h3></div>
+      <div class="reel-plan-grid">
+        ${sequence.scenes.map((scene, index) => reelPlanRow(scene, index, captionByScene.get(scene.id))).join("")}
+      </div>
+      <div class="actions single-primary-row">
+        <button class="secondary" data-reset-ai-plan>Reset AI order</button>
+        <button class="primary" data-next-style>Choose video style</button>
+      </div>
+    </section>
+  `);
+  bindReelPlanEditor(plan);
+  document.querySelector("[data-regenerate-edit-plan]")?.addEventListener("click", () => regenerateMotionDirectorPlan());
+  document.querySelector("[data-next-style]")?.addEventListener("click", () => guard(validateReelPlanBeforePreview(), () => navigate("template")));
+}
+
+function renderTemplate() {
+  renderLayout(`
+    <div class="screen-title cinematic-title"><p class="eyebrow">Step 3</p><h2>Choose a professional video style.</h2><p>Each style changes motion pacing, transitions, text treatment, and export behavior while preserving the exact property photos.</p></div>
+    <section class="template-showcase pro-template-grid">
+      ${listingVideoTemplates().map((item) => {
+        const template = templates.find((entry) => entry.id === item.id) || templates[0];
+        return `<button class="template-card template-premium-card ${template.id === normalizeTemplateId(state.selectedTemplateId) ? "selected" : ""}" data-template="${template.id}" style="--template-accent:${template.accentColor}">
+          <span class="template-preview"><span></span><b></b><i></i></span>
+          <span class="template-copy"><em>${escapeHtml(item.bestFor)}</em><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.description)}</small></span>
+        </button>`;
+      }).join("")}
+    </section>
+    <div class="actions single-primary-row">
+      <button class="secondary" data-back-order>Back to order</button>
+      <button class="primary" data-next="preview">Generate preview</button>
+    </div>
+  `);
+  document.querySelectorAll("[data-template]").forEach((button) => button.addEventListener("click", () => {
+    trackEvent("template_select", { templateId: button.dataset.template });
+    setState((current) => ({ ...current, selectedTemplateId: button.dataset.template, project: { ...current.project, reelPlanEdits: null, motionDirectorPlan: null, motionDirectorStatus: motionDirectorIdleStatus(current.project.motionDirectorStatus) } }));
+  }));
+  document.querySelector("[data-back-order]").addEventListener("click", () => navigate("processing"));
+  document.querySelector("[data-next]").addEventListener("click", () => guard(validateProjectBasics() || validatePhotos() || validateTemplate(), () => navigate("preview")));
+}
+
+function renderPreview() {
+  const sequence = createPipelineSequence();
+  const manifestScenes = renderManifestScenes(sequence);
+  const photos = sequence.scenes.length ? sequence.scenes.map((scene) => scene.photo) : orderedPhotos();
+  const photo = photos[state.selectedScene] ?? photos[0] ?? demoPhotos[0];
+  const copy = aiCopy();
+  const template = selectedTemplate();
+  const pacing = manifestScenes.map((scene) => ({
+    motionStyle: scene.motionStyle,
+    duration: scene.duration,
+    beatMarker: scene.beatMarker,
+    move: motionToClass(scene.renderMotion || scene.motionStyle)
+  }));
+  const currentPlan = pacing[state.selectedScene] ?? reelPacing(photos)[state.selectedScene] ?? motionPlanForPhoto(photo, state.selectedScene);
+  renderLayout(`
+    <div class="screen-title cinematic-title"><p class="eyebrow">Step 4</p><h2>Preview the cinematic listing video.</h2><p>Depth-style camera movement, scene-aware transitions, stat cards, safe-area overlays, and branded outro are ready for export.</p></div>
+    <section class="preview-suite pro-preview-suite">
+      <div class="video-player-shell">
+        <div class="player-chrome"><span>Professional preview</span><b>${escapeHtml(template.name)}</b></div>
+        ${reelStage(photo, copy, template, state.selectedScene, photos.length)}
+      </div>
+      <aside class="preview-inspector panel export-status-card">
+        <div class="section-title"><p>Motion design</p><h3>${escapeHtml(currentPlan.motionStyle)}</h3></div>
+        <p class="muted">Scene-aware simulated depth movement with no hallucinated rooms, views, or property features.</p>
+        <div class="metric-row"><span>Scene</span><b>${escapeHtml(sceneLabel(photo.category))}</b></div>
+        <div class="metric-row"><span>Duration</span><b>${escapeHtml(currentPlan.duration)}s</b></div>
+        <div class="metric-row"><span>Beat marker</span><b>${escapeHtml(currentPlan.beatMarker)}</b></div>
+        <div class="metric-row"><span>Exports</span><b>9:16 / 16:9 / 1:1</b></div>
+        <div class="metric-row"><span>Variants</span><b>Branded / unbranded</b></div>
+      </aside>
+    </section>
+    <div class="actions single-primary-row">
+      <button class="secondary" data-scene="-1">Previous scene</button>
+      <button class="secondary" data-scene="1">Next scene</button>
+      <button class="primary" data-next="export">Export videos</button>
+    </div>
+    <section class="panel scene-card-panel">
+      <div class="section-title"><p>Timeline</p><h3>${photos.length} scenes / ${beatSyncPlan(renderManifestScenes()).totalDuration}s</h3></div>
+      <div class="scene-card-grid">${photos.map((item, index) => sceneCard(item, index, pacing[index])).join("")}</div>
+    </section>
+  `);
+  document.querySelectorAll("[data-scene]").forEach((button) => button.addEventListener("click", () => {
+    const next = Math.max(0, Math.min(photos.length - 1, state.selectedScene + Number(button.dataset.scene)));
+    setState({ selectedScene: next });
+  }));
+  document.querySelectorAll("[data-jump]").forEach((button) => button.addEventListener("click", () => setState({ selectedScene: Number(button.dataset.jump) })));
+  document.querySelector("[data-next]").addEventListener("click", () => guard(validateProjectBasics() || validatePhotos() || validateTemplate(), () => navigate("export")));
+}
+
+function reelStage(photo, copy, template, index = 0, total = 1) {
+  const manifestScene = renderManifestScenes()[index];
+  const pacing = manifestScene ? {
+    move: motionToClass(manifestScene.renderMotion || manifestScene.motionStyle),
+    motionStyle: manifestScene.motionStyle,
+    beatMarker: manifestScene.beatMarker,
+    duration: manifestScene.duration,
+    overlayText: manifestScene.overlayText,
+    overlaySubline: manifestScene.overlaySubline
+  } : (reelPacing(orderedPhotos())[index] ?? motionPlanForPhoto(photo, index));
+  const category = sceneLabel(photo?.category || "Detail shots");
+  return `
+    <section class="reel-stage pro-reel-stage reel-${slug(pacing.move)}" style="--reel-accent:${template.accentColor || "#C7A76C"}">
+      <img src="${photo.uri}" alt="">
+      <div class="cinematic-gradient"></div>
+      <div class="safe-frame"></div>
+      <div class="address-intro-card">${escapeHtml(state.project.address || "Listing Video")}</div>
+      <div class="property-stat-card">${escapeHtml(state.project.price || "Price available")} · ${escapeHtml(state.project.beds || "-")} BD · ${escapeHtml(state.project.baths || "-")} BA · ${escapeHtml(state.project.squareFeet || "-")} SQ FT</div>
+      <div class="scene-lower-third"><span>${escapeHtml(category)}</span><strong>${escapeHtml(pacing.overlayText || copy.hook)}</strong>${pacing.overlaySubline ? `<small>${escapeHtml(pacing.overlaySubline)}</small>` : ""}</div>
+      <div class="motion-badge">${escapeHtml(pacing.motionStyle || "Depth zoom")} · ${escapeHtml(pacing.beatMarker || "Beat cut")}</div>
+      ${state.project.brandingVisible ? `<div class="pro-outro-card"><strong>${escapeHtml(state.brandKit.name || "EstateMotion Agent")}</strong><span>${escapeHtml(state.brandKit.brokerage || "Brokerage")}</span></div>` : ""}
+      <div class="reel-progress">${Array.from({ length: total }, (_, dotIndex) => `<span class="${dotIndex <= index ? "active" : ""}"></span>`).join("")}</div>
+    </section>
+  `;
+}
+
+function renderExport() {
+  const result = buildExportPayload();
+  const preflightError = validatePreRenderManifest(result, { live: !featureFlags.MOCK_RENDERING });
+  const exportOptions = [
+    ["Vertical Reel", "9:16 branded MP4", "Instagram / TikTok / Shorts"],
+    ["Horizontal Tour", "16:9 branded MP4", "YouTube / website"],
+    ["Square Feed", "1:1 branded MP4", "Instagram feed"],
+    ["MLS Clean", "Unbranded clean MP4", "Compliance-ready"],
+    ["Manifest", "Render JSON + captions", "Production handoff"]
+  ];
+  renderLayout(`
+    <div class="screen-title cinematic-title"><p class="eyebrow">Step 5</p><h2>Export professional video variants.</h2><p>Create branded and unbranded videos for social, website, YouTube, and MLS-safe distribution.</p></div>
+    <section class="export-delivery-grid">
+      <div class="video-player-shell export-preview-shell">
+        <div class="player-chrome"><span>Final video preview</span><b>${escapeHtml(selectedTemplate().name)}</b></div>
+        ${reelStage(orderedPhotos()[0] ?? demoPhotos[0], aiCopy(), selectedTemplate(), 0, Math.max(1, orderedPhotos().length))}
+      </div>
+      <section class="panel elevated export-command">
+        <div class="section-title"><p>Export package</p><h3>${preflightError ? "Fix before rendering" : "Ready to render"}</h3></div>
+        ${preflightError ? `<div class="state-banner error-state"><strong>Export blocked</strong><span>${escapeHtml(preflightError)}</span></div>` : `<div class="state-banner loading-state"><strong>Render-ready manifest</strong><span>Every photo scene is mapped to the listing photo URL available to the renderer.</span></div>`}
+        <div class="export-option-grid">${exportOptions.map(([title, body, format]) => exportOptionCard(title, body, format)).join("")}</div>
+        <div class="actions single-primary-row">
+          <button class="primary" data-queue-pack>Create video exports</button>
+          <button class="secondary" data-download-json>Download render manifest</button>
+          <button class="secondary" data-download-html>Download preview HTML</button>
+        </div>
+      </section>
+    </section>
+    ${renderQueuePanel()}
+  `);
+  document.querySelector("[data-queue-pack]").addEventListener("click", queueContentPack);
+  document.querySelector("[data-download-json]").addEventListener("click", () => downloadFile(`${slug(state.project.title)}-render-manifest.json`, "application/json", JSON.stringify(result, null, 2)));
+  document.querySelector("[data-download-html]").addEventListener("click", () => downloadFile(`${slug(state.project.title)}-preview.html`, "text/html", buildPreviewHtml(result)));
+}
+
+function contentPack() {
+  const photos = orderedPhotos();
+  return [
+    { id: "vertical-branded", title: "Vertical Reel - Branded", format: "9:16", duration: 28, hook: aiCopy().hook, photoIds: photos.map((photo) => photo.id) },
+    { id: "vertical-unbranded", title: "Vertical Reel - Unbranded", format: "9:16", duration: 28, hook: aiCopy().hook, photoIds: photos.map((photo) => photo.id) },
+    { id: "wide-branded", title: "Horizontal Tour - Branded", format: "16:9", duration: 28, hook: aiCopy().hook, photoIds: photos.map((photo) => photo.id) },
+    { id: "square-branded", title: "Square Feed Video", format: "1:1", duration: 22, hook: aiCopy().hook, photoIds: photos.slice(0, 10).map((photo) => photo.id) },
+    { id: "mls-clean", title: "MLS Clean - Unbranded", format: "16:9", duration: 24, hook: "Property tour", photoIds: photos.map((photo) => photo.id) }
+  ];
+}
+
+function ensureMotionDirectorPlan() {
+  if (state.loading || state.screen !== "processing") return;
+  const signature = motionDirectorSignature();
+  if (motionDirectorInFlightSignature === signature) return;
+  if (state.project.motionDirectorStatus?.signature === signature && ["complete", "fallback", "unavailable", "limit"].includes(state.project.motionDirectorStatus.status)) return;
+  if (state.project.motionDirectorPlan?.signature === signature && state.project.reelPlanEdits?.source === "motion-director") return;
+  motionDirectorInFlightSignature = signature;
+  window.setTimeout(() => createMotionDirectorPlan({ signature, force: false }), 0);
+}
+
+async function regenerateMotionDirectorPlan() {
+  const signature = motionDirectorSignature();
+  await createMotionDirectorPlan({ signature, force: true });
+}
+
+async function createMotionDirectorPlan({ signature = motionDirectorSignature(), force = false } = {}) {
+  if (state.loading) return;
+  const photos = orderedPhotos();
+  if (photos.length < 3) return;
+  const apiPhotos = motionDirectorPhotoInputs();
+  const urlIssue = motionDirectorUrlIssue(apiPhotos);
+  const usage = motionDirectorUsage();
+  const canAttemptOpenAI = !featureFlags.MOCK_AI && !urlIssue && usage.openaiCalls < usage.callLimit;
+  const unavailableReason = featureFlags.MOCK_AI
+    ? "MOCK_AI=true, so EstateMotion is using the local deterministic planner."
+    : urlIssue || (usage.openaiCalls >= usage.callLimit ? `Motion Director call limit reached for this session (${usage.openaiCalls}/${usage.callLimit}).` : "");
+  if (!force && !canAttemptOpenAI && state.project.motionDirectorStatus?.signature === signature) return;
+  motionDirectorInFlightSignature = signature;
+  setState((current) => ({
+    ...current,
+    loading: canAttemptOpenAI ? "OpenAI Motion Director is planning the edit..." : "Building fallback edit plan...",
+    error: "",
+    project: {
+      ...current.project,
+      motionDirectorStatus: {
+        ...motionDirectorUsage(current.project.motionDirectorStatus),
+        status: "planning",
+        label: canAttemptOpenAI ? "OpenAI-directed edit plan" : "Fallback edit plan",
+        reason: canAttemptOpenAI ? "Analyzing uploaded photos and creating a fresh edit plan." : unavailableReason,
+        signature,
+        source: canAttemptOpenAI ? "openai-motion-director" : "deterministic-fallback",
+        lastRunAt: new Date().toISOString()
+      }
+    }
+  }));
+  try {
+    const fallbackPlan = deterministicMotionDirectorPlan();
+    let payload = { status: "fallback", editPlan: fallbackPlan, reason: unavailableReason || "OpenAI Motion Director unavailable." };
+    let openaiCalls = usage.openaiCalls;
+    if (canAttemptOpenAI) {
+      openaiCalls += 1;
+      const response = await fetchWithTimeout(featureFlags.CREATE_EDIT_PLAN_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          photos: apiPhotos,
+          listingDetails: pipelineListingDetails(),
+          selectedStyle: selectedListingVideoStyleLabel(),
+          exportFormat: "vertical"
+        })
+      }, 30000);
+      payload = await response.json().catch(() => payload);
+      if (!response.ok) throw new Error(payload.error || "OpenAI Motion Director request failed.");
+    }
+    const validation = validateMotionDirectorPlan(payload.editPlan, photos);
+    const editPlan = validation.valid ? payload.editPlan : fallbackPlan;
+    const normalized = normalizeMotionDirectorPlan(editPlan, payload.status === "complete" ? "openai-motion-director" : "deterministic-fallback", signature);
+    const reelPlanEdits = reelPlanFromMotionDirector(normalized);
+    const status = motionDirectorStatusForResult(normalized, payload.reason || unavailableReason || validation.error, signature, openaiCalls);
+    setState((current) => ({
+      ...current,
+      loading: "",
+      project: {
+        ...current.project,
+        motionDirectorPlan: normalized,
+        reelPlanEdits,
+        motionDirectorStatus: status
+      }
+    }));
+    showToast(normalized.source === "openai-motion-director" ? "OpenAI Motion Director edit plan ready" : "Fallback edit plan ready");
+  } catch (error) {
+    const normalized = normalizeMotionDirectorPlan(deterministicMotionDirectorPlan(), "deterministic-fallback", signature);
+    const reason = error.name === "AbortError" ? "OpenAI Motion Director timed out. Fallback edit plan created." : (error.message || "OpenAI Motion Director unavailable. Fallback edit plan created.");
+    setState((current) => ({
+      ...current,
+      loading: "",
+      project: {
+        ...current.project,
+        motionDirectorPlan: normalized,
+        reelPlanEdits: reelPlanFromMotionDirector(normalized),
+        motionDirectorStatus: motionDirectorStatusForResult(normalized, reason, signature, usage.openaiCalls + (canAttemptOpenAI ? 1 : 0))
+      }
+    }));
+    showToast(`Motion Director fallback used. ${reason}`, "error");
+  } finally {
+    if (motionDirectorInFlightSignature === signature) motionDirectorInFlightSignature = "";
+  }
+}
+
+function motionDirectorUsage(status = state.project.motionDirectorStatus || {}) {
+  return {
+    openaiCalls: Number(status.openaiCalls || 0),
+    callLimit: Number(status.callLimit || 3)
+  };
+}
+
+function motionDirectorIdleStatus(previous = {}) {
+  const usage = motionDirectorUsage(previous);
+  return {
+    status: "idle",
+    label: "Motion Director pending",
+    reason: "",
+    signature: "",
+    source: "",
+    lastRunAt: "",
+    ...usage
+  };
+}
+
+function motionDirectorStatusForResult(plan, reason, signature, openaiCalls) {
+  const source = plan.source === "openai-motion-director" ? "openai-motion-director" : "deterministic-fallback";
+  const usage = motionDirectorUsage();
+  return {
+    status: source === "openai-motion-director" ? "complete" : "fallback",
+    label: source === "openai-motion-director" ? "OpenAI-directed edit plan" : "Fallback edit plan",
+    reason: source === "openai-motion-director" ? "OpenAI Vision directed the scene order, motion, transitions, and overlays from the uploaded photos." : (reason || "OpenAI Motion Director was unavailable, so the deterministic fallback planner created the edit."),
+    signature,
+    source,
+    lastRunAt: new Date().toISOString(),
+    openaiCalls,
+    callLimit: usage.callLimit
+  };
+}
+
+function motionDirectorDisplayStatus() {
+  const status = state.project.motionDirectorStatus || motionDirectorIdleStatus();
+  const usage = motionDirectorUsage(status);
+  if (status.status === "planning") {
+    return {
+      className: "planning",
+      label: "Motion Director",
+      headline: status.label || "Planning edit",
+      reason: status.reason || "Creating a scene order, camera motion plan, transitions, and overlays.",
+      summary: "Motion Director is creating an edit plan from the uploaded listing photos.",
+      metric: "Planning",
+      disabled: true
+    };
+  }
+  if (status.source === "openai-motion-director" || status.status === "complete") {
+    return {
+      className: "openai",
+      label: "Motion Director",
+      headline: "OpenAI-directed edit plan",
+      reason: `${status.reason || "OpenAI Vision directed this plan."} Usage ${usage.openaiCalls}/${usage.callLimit}.`,
+      summary: "OpenAI Motion Director created this edit plan from the visible listing photos.",
+      metric: "OpenAI",
+      disabled: false
+    };
+  }
+  if (status.status === "fallback" || status.source === "deterministic-fallback") {
+    return {
+      className: "fallback",
+      label: "Motion Director unavailable",
+      headline: "Fallback edit plan",
+      reason: `${status.reason || "Fallback planner created this edit."} Usage ${usage.openaiCalls}/${usage.callLimit}.`,
+      summary: "EstateMotion is using the deterministic fallback planner until OpenAI Motion Director is available.",
+      metric: "Fallback",
+      disabled: false
+    };
+  }
+  return {
+    className: "idle",
+    label: "Motion Director",
+    headline: "Edit plan pending",
+    reason: "EstateMotion will create an edit plan once this screen finishes loading.",
+    summary: "EstateMotion is preparing the property-tour order from the uploaded listing photos.",
+    metric: "Pending",
+    disabled: true
+  };
+}
+
+function motionDirectorUrlIssue(photos) {
+  if (!photos.length) return "No uploaded photos are available for Motion Director.";
+  const invalid = photos.filter((photo) => !photo.durableUrl || isLocalOnlyUrl(photo.durableUrl));
+  if (!invalid.length) return "";
+  return `${invalid.length} photo URL${invalid.length === 1 ? " is" : "s are"} local or temporary. Sign in and upload to Supabase Storage before using OpenAI Motion Director.`;
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 30000) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+function motionDirectorSignature() {
+  return [
+    normalizeTemplateId(state.selectedTemplateId),
+    "vertical",
+    orderedPhotos().map((photo) => `${photo.id}:${photo.durableUrl || photo.publicUrl || photo.uri}`).join("|"),
+    state.project.address,
+    state.project.price,
+    state.project.beds,
+    state.project.baths,
+    state.project.squareFeet
+  ].join("::");
+}
+
+function motionDirectorPhotoInputs() {
+  return orderedPhotos().map((photo, index) => ({
+    id: photo.id,
+    photoId: photo.id,
+    durableUrl: photo.durableUrl || photo.durable_url || photo.publicUrl || photo.public_url || photo.uri || "",
+    publicUrl: photo.publicUrl || photo.public_url || "",
+    imageUrl: photo.durableUrl || photo.durable_url || photo.publicUrl || photo.public_url || photo.uri || "",
+    fileName: photo.fileName || `photo-${index + 1}.jpg`,
+    category: sceneLabel(photo.category),
+    width: photo.width || 0,
+    height: photo.height || 0
+  }));
+}
+
+function deterministicMotionDirectorPlan() {
+  const photos = motionDirectorPhotoInputs();
+  const sorted = photos
+    .map((photo, index) => ({ ...photo, roomType: mdRoomType(photo, index), qualityScore: mdQualityScore(photo, index) }))
+    .sort((a, b) => mdRoomRank(a.roomType) - mdRoomRank(b.roomType) || b.qualityScore - a.qualityScore);
+  const scenes = sorted.slice(0, 10).map((photo, index) => ({
+    photoId: photo.id,
+    order: index + 1,
+    roomType: photo.roomType,
+    visibleFeatures: mdVisibleFeatures(photo, photo.roomType),
+    qualityScore: photo.qualityScore,
+    duration: mdDuration(photo.roomType, index),
+    cameraMotion: mdCameraMotion(photo.roomType, index),
+    transition: mdTransition(photo.roomType, index),
+    overlay: mdOverlay(photo.roomType, index)
+  }));
+  return {
+    heroPhotoId: scenes[0]?.photoId || photos[0]?.id,
+    exportFormat: "vertical",
+    selectedStyle: selectedListingVideoStyleLabel(),
+    musicMood: selectedMusicTrack().mood || "slow cinematic",
+    introCard: {
+      headline: state.project.address || "Featured listing",
+      subline: [state.project.price, state.project.city].filter(Boolean).join(" · ")
+    },
+    outroCard: {
+      headline: state.brandKit.name || "Schedule a private tour",
+      subline: state.brandKit.brokerage || state.project.cta || "Contact the listing agent"
+    },
+    scenes
+  };
+}
+
+function normalizeMotionDirectorPlan(plan, source, signature) {
+  const photos = new Map(orderedPhotos().map((photo) => [photo.id, photo]));
+  const fallback = deterministicMotionDirectorPlan();
+  const base = plan?.scenes?.length ? plan : fallback;
+  const scenes = [...base.scenes]
+    .filter((scene) => photos.has(scene.photoId))
+    .sort((a, b) => Number(a.order || 0) - Number(b.order || 0))
+    .slice(0, 12)
+    .map((scene, index) => ({
+      photoId: scene.photoId,
+      order: index + 1,
+      roomType: mdAllowedRoomTypes().includes(scene.roomType) ? scene.roomType : mdRoomType(photos.get(scene.photoId), index),
+      visibleFeatures: Array.isArray(scene.visibleFeatures) ? scene.visibleFeatures.map((item) => String(item).trim()).filter(Boolean).slice(0, 5) : [],
+      qualityScore: Math.max(0, Math.min(100, Math.round(Number(scene.qualityScore || 70)))),
+      duration: Math.max(1.2, Math.min(5, Number(scene.duration || 2.4))),
+      cameraMotion: mdAllowedCameraMotions().includes(scene.cameraMotion) ? scene.cameraMotion : mdCameraMotion(scene.roomType, index),
+      transition: mdAllowedTransitions().includes(scene.transition) ? scene.transition : mdTransition(scene.roomType, index),
+      overlay: {
+        headline: String(scene.overlay?.headline || mdOverlay(scene.roomType, index).headline || "").slice(0, 70),
+        subline: String(scene.overlay?.subline || mdOverlay(scene.roomType, index).subline || "").slice(0, 90)
+      }
+    }));
+  return {
+    id: `motion-director-${Date.now()}`,
+    source,
+    signature,
+    heroPhotoId: photos.has(base.heroPhotoId) ? base.heroPhotoId : scenes[0]?.photoId,
+    exportFormat: "vertical",
+    selectedStyle: selectedListingVideoStyleLabel(),
+    musicMood: String(base.musicMood || selectedMusicTrack().mood || "slow cinematic").slice(0, 80),
+    introCard: {
+      headline: String(base.introCard?.headline || state.project.address || "Featured listing").slice(0, 80),
+      subline: String(base.introCard?.subline || [state.project.price, state.project.city].filter(Boolean).join(" · ")).slice(0, 100)
+    },
+    outroCard: {
+      headline: String(base.outroCard?.headline || state.brandKit.name || "Schedule a private tour").slice(0, 80),
+      subline: String(base.outroCard?.subline || state.brandKit.brokerage || "").slice(0, 100)
+    },
+    scenes
+  };
+}
+
+function validateMotionDirectorPlan(plan, photos = orderedPhotos()) {
+  const ids = new Set(photos.map((photo) => photo.id));
+  if (!plan || !Array.isArray(plan.scenes) || plan.scenes.length < 3) return { valid: false, error: "Edit plan needs at least 3 scenes." };
+  if (!ids.has(plan.heroPhotoId)) return { valid: false, error: "Hero photo must be one of the uploaded photos." };
+  const seen = new Set();
+  for (const scene of plan.scenes) {
+    if (!ids.has(scene.photoId)) return { valid: false, error: "Scene references a photo that was not uploaded." };
+    if (seen.has(scene.photoId)) return { valid: false, error: "Scene repeats a photo." };
+    seen.add(scene.photoId);
+    if (!mdAllowedRoomTypes().includes(scene.roomType)) return { valid: false, error: "Unsupported room type." };
+    if (!mdAllowedCameraMotions().includes(scene.cameraMotion)) return { valid: false, error: "Unsupported camera motion." };
+    if (!mdAllowedTransitions().includes(scene.transition)) return { valid: false, error: "Unsupported transition." };
+  }
+  return { valid: true, error: "" };
+}
+
+function reelPlanFromMotionDirector(plan) {
+  return {
+    id: plan.id,
+    source: "motion-director",
+    directorSource: plan.source,
+    introText: plan.introCard.headline,
+    outroText: plan.outroCard.headline,
+    claimConfirmed: false,
+    scenes: plan.scenes.map((scene) => ({
+      id: `director-${scene.order}`,
+      photoId: scene.photoId,
+      category: mdRoomToPipelineCategory(scene.roomType),
+      caption: [scene.overlay.headline, scene.overlay.subline].filter(Boolean).join(" · "),
+      duration: scene.duration,
+      order: scene.order,
+      cameraMotion: scene.cameraMotion,
+      transition: scene.transition,
+      visibleFeatures: scene.visibleFeatures,
+      qualityScore: scene.qualityScore
+    }))
+  };
+}
+
+function createPipelineSequence() {
+  if (state.project.reelPlanEdits?.scenes?.length) return sequenceFromEditedPlan(state.project.reelPlanEdits);
+  if (state.project.motionDirectorPlan?.scenes?.length) return sequenceFromMotionDirectorPlan(state.project.motionDirectorPlan);
+  return createAISequence();
+}
+
+function sequenceFromMotionDirectorPlan(plan) {
+  const photosById = new Map(orderedPhotos().map((photo) => [photo.id, photo]));
+  const scenes = plan.scenes.map((item, index) => {
+    const photo = photosById.get(item.photoId);
+    if (!photo) return null;
+    return {
+      id: `director-scene-${index + 1}`,
+      type: "photo",
+      order: index + 1,
+      photo: {
+        ...photo,
+        category: mdRoomToSceneLabel(item.roomType),
+        pipelineCategory: mdRoomToPipelineCategory(item.roomType)
+      },
+      category: mdRoomToPipelineCategory(item.roomType),
+      caption: [item.overlay?.headline, item.overlay?.subline].filter(Boolean).join(" · "),
+      duration: item.duration,
+      role: "openai motion directed",
+      directorScene: item
+    };
+  }).filter(Boolean);
+  return {
+    intro: { id: "intro", type: "intro", caption: plan.introCard?.headline || aiCopy().hook, duration: 2.2 },
+    scenes,
+    outro: { id: "outro", type: "outro", caption: plan.outroCard?.headline || state.project.cta || state.brandKit.ctaText, duration: 3 },
+    totalDuration: Number((scenes.reduce((sum, scene) => sum + Number(scene.duration || 0), 5.2)).toFixed(1))
+  };
+}
+
+function renderManifestScenes(sequence = createPipelineSequence()) {
+  const scenes = sequence.scenes || [];
+  const copy = aiCopy();
+  const captionByScene = new Map(pipelineCaptions(sequence).map((item) => [item.sceneId, item.caption]));
+  let beatCursor = 0;
+  const music = selectedMusicTrack();
+  return scenes.map((scene, index) => {
+    const photo = scene.photo;
+    const motion = motionPlanForPhoto(photo, index);
+    const directorScene = scene.directorScene || state.project.motionDirectorPlan?.scenes?.find((item) => item.photoId === photo.id);
+    const duration = Number(directorScene?.duration || scene.duration || motion.duration);
+    const imageUrl = photoRenderUrl(photo);
+    const durableUrl = photoDurableUrl(photo);
+    const publicUrl = photo.publicUrl || photo.public_url || (!featureFlags.SUPABASE_STORAGE_PRIVATE ? durableUrl : "");
+    const overlay = directorScene?.overlay || {};
+    const sceneManifest = {
+      order: index + 1,
+      type: "photo",
+      photoId: photo.id,
+      fileName: photo.fileName,
+      imageUrl,
+      durableUrl,
+      durable_url: durableUrl,
+      publicUrl,
+      public_url: publicUrl,
+      sourceImageUrl: imageUrl,
+      objectUrl: photo.objectUrl || "",
+      durableUrlExpiresAt: photo.durableUrlExpiresAt || "",
+      bucket: photo.bucket || featureFlags.LISTING_PHOTOS_BUCKET || "",
+      storagePath: photo.storagePath || "",
+      sceneType: mdRoomToSceneLabel(directorScene?.roomType) || motion.sceneType,
+      roomType: directorScene?.roomType || sceneToPipelineCategory(photo.category),
+      visibleFeatures: directorScene?.visibleFeatures || photo.visibleFeatures || photo.tags || [],
+      qualityScore: directorScene?.qualityScore ?? sceneConfidence(photo),
+      confidence: sceneConfidence(photo),
+      duration,
+      cameraMotion: directorScene?.cameraMotion || mdRenderMotionToCamera(motion.renderMotion || motion.motionStyle),
+      motionStyle: mdCameraMotionLabel(directorScene?.cameraMotion) || motion.motionStyle || pipelineTemplateConfig().motionStyle,
+      renderMotion: mdCameraMotionToRenderMotion(directorScene?.cameraMotion) || motion.renderMotion || motion.motionStyle || pipelineTemplateConfig().motionStyle,
+      transition: mdTransitionToRenderTransition(directorScene?.transition) || motion.transition || pipelineTemplateConfig().transitionStyle,
+      directorTransition: directorScene?.transition || "",
+      beatMarker: motion.beatMarker,
+      beatStart: Number(beatCursor.toFixed(2)),
+      beatCut: Number((beatCursor + duration).toFixed(2)),
+      musicTrackId: music.id,
+      overlayText: overlay.headline || (index === 0 ? (sequence.intro?.caption || copy.hook) : (index === scenes.length - 1 ? (sequence.outro?.caption || captionByScene.get(scene.id) || motion.overlayText) : (captionByScene.get(scene.id) || motion.overlayText))),
+      overlaySubline: overlay.subline || "",
+      editPlanOverlay: overlay,
+      introCard: index === 0 ? state.project.motionDirectorPlan?.introCard : null,
+      outroCard: index === scenes.length - 1 ? state.project.motionDirectorPlan?.outroCard : null,
+      branding: index === scenes.length - 1 ? "Personal brand end card" : "Subtle lower-third safe area",
+      cta: index === scenes.length - 1 ? (sequence.outro?.caption || state.project.cta) : "",
+      complianceFooter: state.brandKit.complianceEnabled ? state.brandKit.listingCourtesyOf : "",
+      realismGuardrail: "Use only the uploaded photo. Do not hallucinate rooms, views, features, or objects."
+    };
+    beatCursor += duration;
+    return sceneManifest;
+  });
+}
+
+function selectedListingVideoStyleLabel() {
+  return listingVideoTemplates().find((item) => item.id === normalizeTemplateId(state.selectedTemplateId))?.label || selectedTemplate().name || "Cinematic Luxury";
+}
+
+function mdAllowedRoomTypes() {
+  return ["exterior", "kitchen", "living", "bedroom", "bathroom", "outdoor", "amenity", "detail"];
+}
+
+function mdAllowedCameraMotions() {
+  return ["push_in", "pull_out", "lateral_pan", "vertical_reveal", "parallax_zoom", "detail_sweep"];
+}
+
+function mdAllowedTransitions() {
+  return ["crossfade", "blur_wipe", "whip_pan", "match_cut", "light_leak"];
+}
+
+function mdRoomType(photo = {}, index = 0) {
+  const haystack = `${photo.fileName || ""} ${photo.category || ""}`.toLowerCase();
+  if (/exterior|front|facade|house|home|curb/.test(haystack) || index === 0) return "exterior";
+  if (/kitchen|island|cabinet|counter/.test(haystack)) return "kitchen";
+  if (/living|family|great/.test(haystack)) return "living";
+  if (/bed|primary|master/.test(haystack)) return "bedroom";
+  if (/bath|shower|tub|vanity/.test(haystack)) return "bathroom";
+  if (/yard|backyard|pool|patio|outdoor/.test(haystack)) return "outdoor";
+  if (/gym|club|amenity|garage|view/.test(haystack)) return "amenity";
+  return "detail";
+}
+
+function mdRoomRank(roomType) {
+  return { exterior: 0, kitchen: 1, living: 2, bedroom: 3, bathroom: 4, outdoor: 5, amenity: 6, detail: 7 }[roomType] ?? 99;
+}
+
+function mdQualityScore(photo, index) {
+  const pixels = Number(photo.width || 0) * Number(photo.height || 0);
+  const resolution = pixels ? Math.min(18, Math.round(pixels / 180000)) : 8;
+  return Math.max(45, Math.min(98, Math.round(92 - index * 3 + resolution - mdRoomRank(mdRoomType(photo, index)))));
+}
+
+function mdVisibleFeatures(photo, roomType) {
+  const name = String(photo.fileName || "").replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ").trim();
+  return [name || mdRoomToSceneLabel(roomType), mdRoomToSceneLabel(roomType)].filter(Boolean).slice(0, 3);
+}
+
+function mdDuration(roomType, index) {
+  const style = selectedListingVideoStyleLabel();
+  const fast = /social|modern/i.test(style);
+  if (index === 0) return fast ? 2.1 : 3.0;
+  if (["kitchen", "living"].includes(roomType)) return fast ? 1.8 : 2.7;
+  if (["detail", "bathroom"].includes(roomType)) return fast ? 1.4 : 2.0;
+  return fast ? 1.65 : 2.35;
+}
+
+function mdCameraMotion(roomType, index) {
+  if (index === 0) return "parallax_zoom";
+  if (["kitchen", "living"].includes(roomType)) return "lateral_pan";
+  if (roomType === "bathroom") return "vertical_reveal";
+  if (roomType === "detail") return "detail_sweep";
+  if (["outdoor", "amenity"].includes(roomType)) return "pull_out";
+  return "push_in";
+}
+
+function mdTransition(roomType, index) {
+  const style = selectedListingVideoStyleLabel();
+  if (index === 0) return "crossfade";
+  if (/social|modern/i.test(style)) return roomType === "kitchen" ? "whip_pan" : "match_cut";
+  if (/luxury/i.test(style)) return index % 3 === 0 ? "light_leak" : "blur_wipe";
+  return "crossfade";
+}
+
+function mdOverlay(roomType, index) {
+  if (index === 0) return { headline: state.project.address || "Featured listing", subline: [state.project.price, state.project.city].filter(Boolean).join(" · ") };
+  const labels = { exterior: "Curb appeal", kitchen: "Kitchen", living: "Living space", bedroom: "Bedroom", bathroom: "Bath", outdoor: "Outdoor living", amenity: "Amenity", detail: "Design detail" };
+  return {
+    headline: labels[roomType] || "Property detail",
+    subline: [state.project.beds ? `${state.project.beds} bed` : "", state.project.baths ? `${state.project.baths} bath` : "", state.project.squareFeet ? `${state.project.squareFeet} sq ft` : ""].filter(Boolean).join(" · ")
+  };
+}
+
+function mdRoomToPipelineCategory(roomType) {
+  return {
+    exterior: "exterior hero",
+    kitchen: "kitchen",
+    living: "living room",
+    bedroom: "bedroom",
+    bathroom: "bathroom",
+    outdoor: "backyard/outdoor",
+    amenity: "amenity",
+    detail: "detail/other"
+  }[roomType] || "detail/other";
+}
+
+function mdPipelineCategoryToRoomType(category) {
+  const value = String(category || "").toLowerCase();
+  if (value.includes("exterior")) return "exterior";
+  if (value.includes("kitchen")) return "kitchen";
+  if (value.includes("living")) return "living";
+  if (value.includes("bed")) return "bedroom";
+  if (value.includes("bath")) return "bathroom";
+  if (value.includes("backyard") || value.includes("outdoor") || value.includes("pool")) return "outdoor";
+  if (value.includes("amenity") || value.includes("neighborhood")) return "amenity";
+  return "detail";
+}
+
+function mdRoomToSceneLabel(roomType) {
+  return {
+    exterior: "Exterior hero",
+    kitchen: "Kitchen",
+    living: "Living room",
+    bedroom: "Primary bedroom",
+    bathroom: "Bathroom",
+    outdoor: "Backyard / pool",
+    amenity: "Neighborhood / amenities",
+    detail: "Detail shots"
+  }[roomType] || "";
+}
+
+function mdCameraMotionToRenderMotion(cameraMotion) {
+  return {
+    push_in: "Push-in",
+    pull_out: "Pull-out",
+    lateral_pan: "Slow pan",
+    vertical_reveal: "Vertical social framing",
+    parallax_zoom: "Depth zoom",
+    detail_sweep: "Orbit simulation"
+  }[cameraMotion] || "";
+}
+
+function mdCameraMotionLabel(cameraMotion) {
+  return {
+    push_in: "Push-in",
+    pull_out: "Pull-out",
+    lateral_pan: "Lateral pan",
+    vertical_reveal: "Vertical reveal",
+    parallax_zoom: "Parallax zoom",
+    detail_sweep: "Detail sweep"
+  }[cameraMotion] || "";
+}
+
+function mdRenderMotionToCamera(renderMotion) {
+  const value = String(renderMotion || "").toLowerCase();
+  if (value.includes("pull")) return "pull_out";
+  if (value.includes("pan")) return "lateral_pan";
+  if (value.includes("vertical")) return "vertical_reveal";
+  if (value.includes("orbit")) return "detail_sweep";
+  if (value.includes("depth")) return "parallax_zoom";
+  return "push_in";
+}
+
+function mdTransitionToRenderTransition(transition) {
+  return {
+    crossfade: "soft dissolve",
+    blur_wipe: "blur wipe",
+    whip_pan: "whip pan",
+    match_cut: "match cut",
+    light_leak: "light leak"
+  }[transition] || "";
+}
+
+function isLocalOnlyUrl(url = "") {
+  const value = String(url || "").toLowerCase();
+  return !value || value.startsWith("blob:") || value.startsWith("data:") || value.includes("localhost") || value.includes("127.0.0.1");
+}
+
+function buildExportPayload() {
+  const sequence = createPipelineSequence();
+  const music = selectedMusicTrack();
+  return {
+    app: "EstateMotion",
+    product: "Professional real estate listing video renderer",
+    createdAt: new Date().toISOString(),
+    project: state.project,
+    brandKit: state.brandKit,
+    template: selectedTemplate(),
+    stylePack: templatePipelineId(),
+    renderer: {
+      engine: "Remotion",
+      motionSystem: "deterministic-still-photo-depth-simulation",
+      editPlanSource: state.project.motionDirectorPlan?.source || "deterministic-fallback",
+      editPlanId: state.project.motionDirectorPlan?.id || "",
+      noHallucinatedPropertyFeatures: true,
+      futureProviders: ["Runway", "Luma", "Pika", "Replicate", "custom-depth-model"]
+    },
+    editPlan: state.project.motionDirectorPlan || null,
+    musicTiming: {
+      track: music,
+      beatMarkers: beatSyncPlan(renderManifestScenes(sequence)).beatMarkers,
+      fallback: music.fallback || ""
+    },
+    formats: [
+      { id: "vertical-branded", width: 1080, height: 1920, aspectRatio: "9:16", branded: true },
+      { id: "vertical-unbranded", width: 1080, height: 1920, aspectRatio: "9:16", branded: false },
+      { id: "wide-branded", width: 1920, height: 1080, aspectRatio: "16:9", branded: true },
+      { id: "square-branded", width: 1080, height: 1080, aspectRatio: "1:1", branded: true },
+      { id: "mls-clean", width: 1920, height: 1080, aspectRatio: "16:9", branded: false, mlsSafe: true }
+    ],
+    scenes: renderManifestScenes(sequence)
+  };
 }
 
 maybeStartOnboarding();
