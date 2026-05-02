@@ -1,6 +1,7 @@
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const DEFAULT_MODEL = "gpt-4.1-mini";
 const DEFAULT_TIMEOUT_MS = 25000;
+const OPENAI_PHOTO_LIMIT = 3;
 
 const ROOM_TYPES = ["exterior", "kitchen", "living", "bedroom", "bathroom", "outdoor", "amenity", "detail"];
 const CAMERA_MOTIONS = ["push_in", "pull_out", "lateral_pan", "vertical_reveal", "parallax_zoom", "detail_sweep"];
@@ -29,34 +30,64 @@ export default async function handler(request, response) {
     });
   }
   const photos = normalizeInputPhotos(rawPhotos);
+  const requestPhotos = photos.slice(0, OPENAI_PHOTO_LIMIT);
   const listingDetails = normalizeListingDetails(body.listingDetails || {});
   const selectedStyle = String(body.selectedStyle || "Cinematic Luxury");
   const exportFormat = String(body.exportFormat || "vertical");
 
   if (photos.length < 3) {
+    const error = invalidPhotoUrls.length
+      ? `Motion Director needs at least 3 durable public or signed listing photo URLs. ${invalidPhotoUrls.length} photo URL${invalidPhotoUrls.length === 1 ? " was" : "s were"} local, temporary, or missing.`
+      : "Motion Director needs at least 3 uploaded listing photos.";
     logMotionDirector("warn", "fallback unavailable: fewer than 3 valid photos", {
       validPhotoCount: photos.length,
-      invalidPhotoCount: invalidPhotoUrls.length
+      invalidPhotoCount: invalidPhotoUrls.length,
+      category: invalidPhotoUrls.length ? "invalid_photo_urls" : "too_few_photos"
     });
-    response.status(400).json({ status: "failed", error: "Motion Director needs at least 3 uploaded listing photos." });
+    response.status(400).json({
+      status: "failed",
+      error,
+      errorCategory: invalidPhotoUrls.length ? "invalid_photo_urls" : "too_few_photos"
+    });
     return;
   }
 
   if (!process.env.OPENAI_API_KEY) {
-    logMotionDirector("warn", "fallback reason", { reason: "OPENAI_API_KEY is not configured server-side.", validPhotoCount: photos.length });
+    const reason = "Motion Director unavailable: missing OPENAI_API_KEY.";
+    logMotionDirector("warn", "fallback reason", { category: "missing_openai_api_key", reason, validPhotoCount: photos.length });
     response.status(200).json({
       status: "fallback",
-      reason: "OPENAI_API_KEY is not configured server-side.",
+      reason,
+      errorCategory: "missing_openai_api_key",
       editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat })
     });
     return;
   }
 
   try {
+    const urlCheck = await validateRemotePhotos(requestPhotos);
+    if (!urlCheck.valid) {
+      const reason = `Motion Director unavailable: ${urlCheck.reason}`;
+      logMotionDirector("warn", "invalid photo URLs rejected before OpenAI", {
+        category: "inaccessible_image_url",
+        reason,
+        invalidPhotos: urlCheck.invalidPhotos
+      });
+      response.status(200).json({
+        status: "fallback",
+        reason,
+        errorCategory: "inaccessible_image_url",
+        editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat })
+      });
+      return;
+    }
+
     logMotionDirector("info", "OpenAI request started", {
       photoCount: photos.length,
+      openaiPhotoCount: requestPhotos.length,
       selectedStyle,
       exportFormat,
+      model: motionModel(),
       timeoutMs: Number(process.env.OPENAI_MOTION_DIRECTOR_TIMEOUT_MS || DEFAULT_TIMEOUT_MS)
     });
 
@@ -66,28 +97,36 @@ export default async function handler(request, response) {
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify(buildOpenAIRequest({ photos, listingDetails, selectedStyle, exportFormat }))
+      body: JSON.stringify(buildOpenAIRequest({ photos: requestPhotos, listingDetails, selectedStyle, exportFormat }))
     }, Number(process.env.OPENAI_MOTION_DIRECTOR_TIMEOUT_MS || DEFAULT_TIMEOUT_MS));
 
     const payload = await openaiResponse.json().catch(() => ({}));
     if (!openaiResponse.ok) {
-      const reason = payload.error?.message || `OpenAI Motion Director returned ${openaiResponse.status}.`;
-      logMotionDirector("error", "OpenAI request failed; fallback used", { reason, status: openaiResponse.status });
+      const openaiError = extractOpenAIError(openaiResponse, payload);
+      const reason = userFacingOpenAIReason(openaiError);
+      logMotionDirector("error", "OpenAI request failed; fallback used", openaiError);
       response.status(200).json({
         status: "fallback",
         reason,
+        errorCategory: openaiError.category,
+        requestId: openaiError.requestId,
         editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat })
       });
       return;
     }
 
     const parsed = parseOpenAIJson(payload);
-    const validation = validateEditPlan(parsed, photos);
+    const validation = validateEditPlan(parsed, requestPhotos);
     if (!validation.valid) {
-      logMotionDirector("warn", "JSON parse/validation failure; fallback used", { reason: validation.error });
+      logMotionDirector("warn", "JSON parse/validation failure; fallback used", {
+        category: "schema_validation",
+        reason: validation.error,
+        outputId: payload.id || ""
+      });
       response.status(200).json({
         status: "fallback",
-        reason: validation.error,
+        reason: `Motion Director unavailable: schema validation failed. ${validation.error}`,
+        errorCategory: "schema_validation",
         editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat })
       });
       return;
@@ -102,20 +141,26 @@ export default async function handler(request, response) {
       editPlan: normalizeEditPlan(parsed, photos, { listingDetails, selectedStyle, exportFormat })
     });
   } catch (error) {
-    const reason = error.name === "AbortError" ? "OpenAI Motion Director timed out." : error.message || "OpenAI Motion Director failed.";
-    logMotionDirector("error", "OpenAI request exception; fallback used", { reason });
+    const category = error.name === "AbortError" ? "timeout" : "openai_exception";
+    const reason = error.name === "AbortError" ? "Motion Director unavailable: OpenAI timed out." : `Motion Director unavailable: ${error.message || "OpenAI request failed."}`;
+    logMotionDirector("error", "OpenAI request exception; fallback used", {
+      category,
+      message: error.message || "",
+      name: error.name || ""
+    });
     response.status(200).json({
       status: "fallback",
       reason,
+      errorCategory: category,
       editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat })
     });
   }
 }
 
 function buildOpenAIRequest({ photos, listingDetails, selectedStyle, exportFormat }) {
-  const capped = photos.slice(0, 25);
+  const capped = photos.slice(0, OPENAI_PHOTO_LIMIT);
   return {
-    model: process.env.OPENAI_MOTION_DIRECTOR_MODEL || DEFAULT_MODEL,
+    model: motionModel(),
     input: [
       {
         role: "system",
@@ -167,15 +212,23 @@ function buildOpenAIRequest({ photos, listingDetails, selectedStyle, exportForma
       }
     ],
     text: {
-      format: {
-        type: "json_schema",
-        name: "estate_motion_edit_plan",
-        strict: true,
-        schema: editPlanSchema(capped.map((photo) => photo.id))
-      }
+      format: editPlanTextFormat(capped.map((photo) => photo.id))
     },
     temperature: 0.2,
-    max_output_tokens: 2200
+    max_output_tokens: 1600
+  };
+}
+
+function motionModel() {
+  return process.env.OPENAI_MOTION_MODEL || process.env.OPENAI_MOTION_DIRECTOR_MODEL || DEFAULT_MODEL;
+}
+
+function editPlanTextFormat(photoIds) {
+  return {
+    type: "json_schema",
+    name: "estate_motion_edit_plan",
+    strict: true,
+    schema: editPlanSchema(photoIds)
   };
 }
 
@@ -376,6 +429,53 @@ function invalidInputPhotos(photos) {
     .filter((photo) => !photo.url || isLocalOnlyUrl(photo.url));
 }
 
+async function validateRemotePhotos(photos) {
+  const invalidPhotos = [];
+  for (const photo of photos) {
+    const result = await validateRemotePhoto(photo);
+    if (!result.valid) invalidPhotos.push({ id: photo.id, urlHost: safeUrlHost(photo.url), reason: result.reason, status: result.status || 0 });
+  }
+  if (invalidPhotos.length) {
+    return {
+      valid: false,
+      reason: `${invalidPhotos.length} uploaded photo URL${invalidPhotos.length === 1 ? " is" : "s are"} not publicly reachable by the render/AI worker.`,
+      invalidPhotos
+    };
+  }
+  return { valid: true, reason: "", invalidPhotos: [] };
+}
+
+async function validateRemotePhoto(photo) {
+  if (!photo.url || isLocalOnlyUrl(photo.url)) return { valid: false, reason: "local_or_temporary_url" };
+  if (!/^https:\/\//i.test(photo.url)) return { valid: false, reason: "url_must_be_https" };
+  try {
+    const head = await fetchWithTimeout(photo.url, { method: "HEAD" }, 6000);
+    if (head.ok) return validateImageContentType(head.headers.get("content-type"), photo.url);
+    if (![403, 405].includes(head.status)) return { valid: false, reason: `http_${head.status}`, status: head.status };
+  } catch (error) {
+    logMotionDirector("warn", "photo HEAD validation failed; trying range GET", {
+      photoId: photo.id,
+      urlHost: safeUrlHost(photo.url),
+      reason: error.message || error.name || "HEAD failed"
+    });
+  }
+  try {
+    const get = await fetchWithTimeout(photo.url, { method: "GET", headers: { Range: "bytes=0-0" } }, 7000);
+    if (!get.ok && get.status !== 206) return { valid: false, reason: `http_${get.status}`, status: get.status };
+    return validateImageContentType(get.headers.get("content-type"), photo.url);
+  } catch (error) {
+    return { valid: false, reason: error.name === "AbortError" ? "url_validation_timeout" : (error.message || "url_validation_failed") };
+  }
+}
+
+function validateImageContentType(contentType, url) {
+  const type = String(contentType || "").toLowerCase();
+  if (!type) return { valid: true };
+  if (type.startsWith("image/")) return { valid: true };
+  if (/\.(jpe?g|png|webp|gif)(\?|#|$)/i.test(url)) return { valid: true };
+  return { valid: false, reason: `unsupported_content_type:${type}` };
+}
+
 function normalizeListingDetails(details) {
   return {
     address: cleanText(details.address || details.propertyAddress || "", 120),
@@ -507,6 +607,57 @@ function setCorsHeaders(response) {
   response.setHeader("Access-Control-Allow-Origin", "*");
   response.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   response.setHeader("Access-Control-Allow-Headers", "Content-Type");
+}
+
+function extractOpenAIError(openaiResponse, payload) {
+  const error = payload?.error || {};
+  const status = openaiResponse.status;
+  const type = String(error.type || "");
+  const code = String(error.code || "");
+  const message = String(error.message || `OpenAI returned ${status}.`);
+  const requestId = openaiResponse.headers?.get?.("x-request-id") || payload.request_id || error.request_id || "";
+  return {
+    category: categorizeOpenAIError({ status, type, code, message }),
+    status,
+    type,
+    code,
+    message,
+    requestId,
+    model: motionModel()
+  };
+}
+
+function categorizeOpenAIError({ status, type, code, message }) {
+  const haystack = `${type} ${code} ${message}`.toLowerCase();
+  if (status === 404 || haystack.includes("model") && (haystack.includes("not found") || haystack.includes("does not exist") || haystack.includes("invalid"))) return "invalid_model";
+  if (status === 429 || haystack.includes("rate limit")) return "rate_limit";
+  if (status === 402 || haystack.includes("billing") || haystack.includes("quota") || haystack.includes("insufficient_quota")) return "billing_or_quota";
+  if (haystack.includes("image") && (haystack.includes("url") || haystack.includes("download") || haystack.includes("fetch") || haystack.includes("access"))) return "inaccessible_image_url";
+  if (haystack.includes("schema") || haystack.includes("json_schema") || haystack.includes("structured")) return "schema_validation";
+  if (status >= 500) return "openai_server_error";
+  return "openai_request_failed";
+}
+
+function userFacingOpenAIReason(error) {
+  const requestText = error.requestId ? ` Request ID: ${error.requestId}.` : "";
+  const messages = {
+    invalid_model: `Motion Director unavailable: invalid OpenAI model "${error.model}". Set OPENAI_MOTION_MODEL to a vision-capable model such as ${DEFAULT_MODEL}.${requestText}`,
+    inaccessible_image_url: `Motion Director unavailable: OpenAI could not access one or more uploaded image URLs. Use public or long-lived signed Supabase URLs.${requestText}`,
+    schema_validation: `Motion Director unavailable: OpenAI rejected or could not satisfy the edit-plan JSON schema.${requestText}`,
+    rate_limit: `Motion Director unavailable: OpenAI rate limit reached. Try again shortly.${requestText}`,
+    billing_or_quota: `Motion Director unavailable: OpenAI billing or quota issue. Check the project billing settings.${requestText}`,
+    timeout: `Motion Director unavailable: OpenAI timed out.${requestText}`,
+    openai_server_error: `Motion Director unavailable: OpenAI server error.${requestText}`
+  };
+  return messages[error.category] || `Motion Director unavailable: ${error.message}${requestText}`;
+}
+
+function safeUrlHost(url) {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "";
+  }
 }
 
 function logMotionDirector(level, message, details = {}) {

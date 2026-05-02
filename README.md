@@ -206,6 +206,8 @@ OPENAI_ENDPOINT=https://your-api-domain.com/openai-copy
 VISION_CLASSIFICATION_ENDPOINT=/api/classify-image
 OPENAI_API_KEY=sk-your-server-side-key
 OPENAI_VISION_MODEL=gpt-4.1-mini
+OPENAI_MOTION_MODEL=gpt-4.1-mini
+OPENAI_MOTION_DIRECTOR_TIMEOUT_MS=25000
 STRIPE_PUBLISHABLE_KEY=pk_live_or_test_xxx
 STRIPE_CHECKOUT_ENDPOINT=https://your-api-domain.com/create-checkout-session
 RENDER_WORKER_URL=https://your-render-worker.com
@@ -302,10 +304,11 @@ Or with localStorage keys like `ESTATEMOTION_MOCK_RENDERING`.
 1. Keep `MOCK_AI=true` for local deterministic copy.
 2. For optional OpenAI Vision room classification, set `MOCK_AI=false`, add `OPENAI_API_KEY` in Vercel, and keep `VISION_CLASSIFICATION_ENDPOINT=/api/classify-image`.
 3. The browser sends image URLs to `/api/classify-image`; the API key stays server-side and the app falls back to filename/order classification if Vision is unavailable.
-4. For copy generation, create a secure backend endpoint that holds `OPENAI_API_KEY`.
-5. Send project, template, local market, and brand kit fields to that endpoint.
-6. Return hook, property description, highlights, caption, hashtags, and voiceover.
-7. Replace `aiCopy()` in `app.js` or `requestOpenAICopy()` in `src/lib/ai.ts` with the endpoint response.
+4. For OpenAI Motion Director, set `OPENAI_MOTION_MODEL=gpt-4.1-mini` or another vision-capable Responses API model. The endpoint limits the live Vision request to 3 durable photos first, logs exact OpenAI status/type/code/message/request ID, and falls back safely if OpenAI is unavailable.
+5. For copy generation, create a secure backend endpoint that holds `OPENAI_API_KEY`.
+6. Send project, template, local market, and brand kit fields to that endpoint.
+7. Return hook, property description, highlights, caption, hashtags, and voiceover.
+8. Replace `aiCopy()` in `app.js` or `requestOpenAICopy()` in `src/lib/ai.ts` with the endpoint response.
 
 Never expose a production OpenAI API key in the browser.
 

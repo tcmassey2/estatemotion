@@ -611,6 +611,7 @@ const defaultState = {
   authPassword: "",
   authMode: "sign-in",
   authReturnScreen: "dashboard",
+  pendingExportAfterAuth: false,
   selectedTemplateId: "desert-luxury",
   selectedShowcaseId: "showcase-scottsdale-luxury",
   selectedScene: 0,
@@ -724,6 +725,7 @@ let remoteWorkspaceLoaded = featureFlags.MOCK_SUPABASE;
 let saveTimer = null;
 let quietSaveTimer = null;
 let motionDirectorInFlightSignature = "";
+const temporaryPhotoFiles = new Map();
 
 function loadState() {
   try {
@@ -741,6 +743,7 @@ function mergeState(base, saved) {
     authPassword: "",
     authMode: saved.authMode ?? base.authMode,
     authReturnScreen: saved.authReturnScreen ?? base.authReturnScreen,
+    pendingExportAfterAuth: Boolean(saved.pendingExportAfterAuth),
     renderQueue: saved.renderQueue ?? base.renderQueue,
     selectedShowcaseId: saved.selectedShowcaseId ?? base.selectedShowcaseId,
     leads: saved.leads ?? base.leads,
@@ -1045,6 +1048,7 @@ async function bootstrapSupabase() {
 }
 
 function mergeRemoteWorkspace(current, workspace) {
+  const keepLocalProject = current.pendingExportAfterAuth || current.project?.photos?.some((photo) => photo.localOnly || isLocalOnlyUrl(photo.uri) || isLocalOnlyUrl(photo.objectUrl));
   return {
     ...current,
     user: workspace.user ? {
@@ -1055,7 +1059,7 @@ function mergeRemoteWorkspace(current, workspace) {
       creditBalance: workspace.user.credit_balance ?? current.user.creditBalance
     } : current.user,
     brandKit: workspace.brandKit ? { ...current.brandKit, ...workspace.brandKit } : current.brandKit,
-    project: workspace.project ? { ...current.project, ...workspace.project, photos: workspace.project.photos?.length ? workspace.project.photos : current.project.photos } : current.project
+    project: workspace.project && !keepLocalProject ? { ...current.project, ...workspace.project, photos: workspace.project.photos?.length ? workspace.project.photos : current.project.photos } : current.project
   };
 }
 
@@ -1109,7 +1113,7 @@ async function signInWithPassword() {
     authUser = result.user || result.session?.user || null;
     showToast("Signed in");
     await bootstrapSupabase();
-    setState({ loading: "", authStatus: "signed-in", authPassword: "", screen: state.authReturnScreen || state.screen });
+    await continueAfterAuth();
   } catch (error) {
     setError(error.message || "Email/password sign in failed.");
   }
@@ -1135,9 +1139,35 @@ async function signUpWithPassword() {
     authUser = result.user || result.session?.user || null;
     showToast(result.session ? "Account created" : "Account created. Check your email if confirmation is required.");
     await bootstrapSupabase();
-    setState({ loading: "", authStatus: authUser ? "signed-in" : "email-sent", authPassword: "", screen: authUser ? (state.authReturnScreen || state.screen) : state.screen });
+    if (authUser) await continueAfterAuth();
+    else setState({ loading: "", authStatus: "email-sent", authPassword: "" });
   } catch (error) {
     setError(error.message || "Account creation failed.");
+  }
+}
+
+async function continueAfterAuth() {
+  const returnScreen = state.authReturnScreen || "export";
+  const shouldQueueExport = state.pendingExportAfterAuth && returnScreen === "export";
+  setState({ loading: shouldQueueExport ? "Saving photos for export..." : "", authStatus: "signed-in", authPassword: "", screen: returnScreen });
+  if (!authUser) return;
+  try {
+    await persistTemporaryPhotosAfterAuth();
+    await window.EstateMotionSupabase?.saveWorkspace?.(state, authUser);
+    setState((current) => ({
+      ...current,
+      loading: "",
+      pendingExportAfterAuth: false,
+      authReturnScreen: "dashboard",
+      project: current.project
+    }));
+    if (shouldQueueExport) {
+      showToast("Project saved. Starting export.");
+      window.setTimeout(() => queueContentPack(), 0);
+    }
+  } catch (error) {
+    setState({ loading: "", pendingExportAfterAuth: false, screen: "export", error: error.message || "Could not save photos for export." });
+    showToast(error.message || "Could not save photos for export.", "error");
   }
 }
 
@@ -2254,11 +2284,13 @@ function faqItem(question, answer) {
 function renderAuth() {
   const envError = supabaseEnvError();
   const isSignUp = state.authMode === "sign-up";
+  const isExportGate = state.authReturnScreen === "export" || state.pendingExportAfterAuth;
   renderLayout(`
-    <section class="auth-panel panel elevated">
-      <p class="eyebrow">EstateMotion App</p>
-      <h2>${isSignUp ? "Create your account" : "Sign in to continue"}</h2>
-      <p>Supabase Auth unlocks durable listing-photo uploads, project persistence, and live render-ready URLs. Mock mode remains available for local demos.</p>
+    <section class="auth-panel panel elevated ${isExportGate ? "auth-export-gate" : ""}">
+      <p class="eyebrow">${isExportGate ? "Your video is ready" : "EstateMotion App"}</p>
+      <h2>${isExportGate ? (isSignUp ? "Create your free account to export your video" : "Sign in to export your video") : (isSignUp ? "Create your account" : "Sign in to continue")}</h2>
+      <p>${isExportGate ? "Create an account to save your project, render the final MP4, and keep your listing video exports connected to your brand kit." : "Supabase Auth unlocks durable listing-photo uploads, project persistence, and live render-ready URLs. Mock mode remains available for local demos."}</p>
+      ${isExportGate ? `<div class="auth-reassurance"><span>Your photos stay private</span><span>No credit card required</span><span>Save and export your finished video</span></div>` : ""}
       ${envError ? `<div class="state-banner error-state"><strong>Supabase setup needed</strong><span>${escapeHtml(envError)}</span></div>` : ""}
       ${featureFlags.MOCK_SUPABASE ? `<div class="state-banner loading-state"><strong>Mock Mode</strong><span>Authentication is not required while MOCK_SUPABASE=true.</span></div>` : ""}
       <div class="auth-tabs">
@@ -2274,9 +2306,10 @@ function renderAuth() {
         <input data-auth="authPassword" type="password" placeholder="${isSignUp ? "Create a password" : "Enter your password"}" value="${escapeAttr(state.authPassword)}">
       </div>
       <div class="actions">
-        <button class="primary" data-auth-password ${envError ? "disabled" : ""}>${isSignUp ? "Create Account" : "Sign In"}</button>
+        <button class="primary" data-auth-password ${envError ? "disabled" : ""}>${isSignUp ? (isExportGate ? "Create free account" : "Create Account") : "Sign In"}</button>
         <button class="secondary" data-auth-email ${envError ? "disabled" : ""}>Send magic link</button>
         <button class="secondary" data-auth-google ${envError ? "disabled" : ""}>Continue with Google</button>
+        ${isExportGate ? `<button class="ghost" data-continue-editing>Continue editing</button>` : ""}
       </div>
       <p class="muted">${isSignUp ? "Already have an account?" : "New to EstateMotion?"} <button class="text-button" data-auth-mode="${isSignUp ? "sign-in" : "sign-up"}">${isSignUp ? "Sign in" : "Create account"}</button></p>
       ${state.authStatus === "email-sent" ? `<div class="state-banner loading-state"><strong>Magic link sent</strong><span>Open the link from your email to finish signing in.</span></div>` : ""}
@@ -2286,6 +2319,8 @@ function renderAuth() {
   document.querySelector("[data-auth-password]").addEventListener("click", () => state.authMode === "sign-up" ? signUpWithPassword() : signInWithPassword());
   document.querySelector("[data-auth-email]").addEventListener("click", signInWithEmail);
   document.querySelector("[data-auth-google]").addEventListener("click", signInWithGoogle);
+  document.querySelector("[data-continue-editing]")?.addEventListener("click", () => setState({ screen: "preview", pendingExportAfterAuth: false, authReturnScreen: "dashboard", error: "" }));
+  bindAuthInputs();
 }
 
 function trackDemoVisitOnce() {
@@ -2467,11 +2502,6 @@ async function handlePhotoFiles(event) {
 }
 
 async function processSelectedFiles(selectedFiles) {
-  if (!featureFlags.MOCK_SUPABASE && !authUser && !isDemoRoute()) {
-    setError("Sign in to upload and persist listing photos.");
-    setState({ authMode: "sign-in", authReturnScreen: state.screen, screen: "auth" });
-    return;
-  }
   const ingestion = window.EstateMotionReel?.photoIngestion;
   const validated = ingestion?.validateImageFiles ? ingestion.validateImageFiles(selectedFiles) : {
     imageFiles: selectedFiles.filter((file) => file.type.startsWith("image/")),
@@ -2507,12 +2537,13 @@ async function processSelectedFiles(selectedFiles) {
     setError("Those photos are already in this project.");
     return;
   }
-  setState({ loading: featureFlags.MOCK_SUPABASE ? "Preparing uploaded photos..." : "Uploading photos to Supabase Storage...", error: "" });
+  const shouldUploadDurablyNow = !featureFlags.MOCK_SUPABASE && Boolean(authUser) && !isDemoRoute();
+  setState({ loading: shouldUploadDurablyNow ? "Uploading photos to Supabase Storage..." : "Preparing local preview photos...", error: "" });
   try {
-    const remoteProjectId = shouldUseLocalPersistence() ? "" : await ensureRemoteProjectForUploads();
+    const remoteProjectId = shouldUploadDurablyNow ? await ensureRemoteProjectForUploads() : "";
     const uploadedAssets = await Promise.all(uniqueFiles.map(async (file, index) => {
       const asset = await prepareProjectPhoto(file, index, remoteProjectId);
-      if (!featureFlags.MOCK_SUPABASE && !asset?.durableUrl) {
+      if (shouldUploadDurablyNow && !asset?.durableUrl) {
         throw new Error(`${file.name} uploaded but did not return a durable render URL. Check the ${featureFlags.LISTING_PHOTOS_BUCKET} Supabase bucket permissions or signed URL policy.`);
       }
       return asset;
@@ -2555,10 +2586,24 @@ async function processSelectedFiles(selectedFiles) {
         order: currentPhotos.length + index + 1
       };
     }));
+    uploadedPhotos.forEach((photo, index) => {
+      if (!uploadedAssets[index].durableUrl) temporaryPhotoFiles.set(photo.id, uniqueFiles[index]);
+    });
     setState((current) => {
       const existing = [...current.project.photos].sort((a, b) => a.order - b.order);
-      const photos = [...existing, ...uploadedPhotos].map((photo, index) => ({ ...photo, order: index + 1 }));
-      return { ...current, loading: "", error: "", project: { ...current.project, photos } };
+      const photos = [...existing, ...uploadedPhotos].map((photo, index) => ({ ...photo, localOnly: !photo.durableUrl && !photo.durable_url, order: index + 1 }));
+      return {
+        ...current,
+        loading: "",
+        error: "",
+        project: {
+          ...current.project,
+          motionDirectorPlan: null,
+          reelPlanEdits: null,
+          motionDirectorStatus: motionDirectorIdleStatus(current.project.motionDirectorStatus),
+          photos
+        }
+      };
     });
     const total = currentPhotos.length + uploadedPhotos.length;
     showToast(`${total} photo${total === 1 ? "" : "s"} uploaded`);
@@ -2570,6 +2615,10 @@ async function processSelectedFiles(selectedFiles) {
 
 async function enhanceUploadedPhotosWithVision(uploadedPhotos) {
   if (featureFlags.MOCK_AI || !uploadedPhotos.length || !window.EstateMotionReel?.imageClassifier?.classifyPhotoWithVision) return;
+  if (uploadedPhotos.some((photo) => isLocalOnlyUrl(photo.durableUrl || photo.durable_url || photo.uri))) {
+    showToast("Vision unavailable before account creation; fallback classification used.", "error");
+    return;
+  }
   try {
     setState({ loading: "Analyzing photos with OpenAI Vision...", error: "" });
     const enhanced = [];
@@ -2633,10 +2682,60 @@ async function ensureRemoteProjectForUploads() {
   return ids.projectId || state.project.id;
 }
 
+async function persistTemporaryPhotosAfterAuth() {
+  if (featureFlags.MOCK_SUPABASE || !authUser || isDemoRoute()) return;
+  const photos = orderedPhotos();
+  const needsUpload = photos.filter((photo) => !photo.durableUrl && !photo.durable_url);
+  if (!needsUpload.length) return;
+  const remoteProjectId = await ensureRemoteProjectForUploads();
+  const uploaded = [];
+  for (let index = 0; index < needsUpload.length; index += 1) {
+    const photo = needsUpload[index];
+    if (!isLocalOnlyUrl(photo.uri || photo.objectUrl)) {
+      uploaded.push({
+        id: photo.id,
+        durableUrl: photo.uri || photo.publicUrl || photo.public_url,
+        publicUrl: photo.uri || photo.publicUrl || photo.public_url,
+        public_url: photo.uri || photo.publicUrl || photo.public_url,
+        durable_url: photo.uri || photo.publicUrl || photo.public_url,
+        localOnly: false
+      });
+      continue;
+    }
+    const file = temporaryPhotoFiles.get(photo.id);
+    if (!file) {
+      throw new Error(`Re-select ${photo.fileName || "the local photo"} to save it for final MP4 export. Browser preview URLs cannot be uploaded after a page refresh.`);
+    }
+    const asset = await prepareProjectPhoto(file, index, remoteProjectId);
+    if (!asset.durableUrl) throw new Error(`${photo.fileName || file.name} did not return a durable Supabase URL.`);
+    uploaded.push({
+      id: photo.id,
+      uri: asset.publicUrl || asset.durableUrl,
+      publicUrl: asset.publicUrl || "",
+      public_url: asset.publicUrl || "",
+      durableUrl: asset.durableUrl,
+      durable_url: asset.durableUrl,
+      durableUrlExpiresAt: asset.durableUrlExpiresAt || "",
+      bucket: asset.bucket || featureFlags.LISTING_PHOTOS_BUCKET,
+      storagePath: asset.path || "",
+      localOnly: false
+    });
+  }
+  const byId = new Map(uploaded.map((photo) => [photo.id, photo]));
+  state = {
+    ...state,
+    project: {
+      ...state.project,
+      photos: state.project.photos.map((photo) => byId.has(photo.id) ? { ...photo, ...byId.get(photo.id) } : photo)
+    }
+  };
+  saveState();
+}
+
 async function prepareProjectPhoto(file, index, remoteProjectId = "") {
-  if (shouldUseLocalPersistence()) {
+  if (shouldUseLocalPersistence() || !authUser) {
     const objectUrl = URL.createObjectURL(file);
-    return { previewUrl: objectUrl, objectUrl, publicUrl: "", durableUrl: "", path: "", bucket: "" };
+    return { previewUrl: objectUrl, objectUrl, publicUrl: "", durableUrl: "", path: "", bucket: "", localOnly: true };
   }
   if (!authUser) throw new Error("Sign in before uploading photos to Supabase Storage.");
   const projectId = remoteProjectId || state.project.id || "draft";
@@ -3951,6 +4050,10 @@ async function queueContentPack() {
     setError(validationError);
     return;
   }
+  if (exportRequiresAccount()) {
+    requestExportAuthGate();
+    return;
+  }
   if (!featureFlags.MOCK_RENDERING) {
     const durableError = await ensureDurableUrlsForLiveRender();
     if (durableError) {
@@ -3995,6 +4098,20 @@ async function queueContentPack() {
     uploadGeneratedRenderManifest();
     showToast("Render complete", "success");
   }, 1900);
+}
+
+function exportRequiresAccount() {
+  return !featureFlags.MOCK_SUPABASE && !authUser && !isDemoRoute();
+}
+
+function requestExportAuthGate() {
+  setState({
+    authMode: "sign-up",
+    authReturnScreen: "export",
+    pendingExportAfterAuth: true,
+    screen: "auth",
+    error: ""
+  });
 }
 
 async function startRealRender(jobs) {
@@ -4744,15 +4861,9 @@ function capitalize(value) {
 }
 
 function render() {
-  if (isProtectedAppRoute() && !featureFlags.MOCK_SUPABASE) {
-    if (state.authStatus === "checking" || state.authStatus === "loading") {
-      renderLayout(`<section class="panel elevated"><div class="state-banner loading-state"><span class="spinner"></span><strong>Connecting to Supabase...</strong></div></section>`);
-      return;
-    }
-    if (!authUser) {
-      renderAuth();
-      return;
-    }
+  if (isProtectedAppRoute() && !featureFlags.MOCK_SUPABASE && (state.authStatus === "checking" || state.authStatus === "loading")) {
+    renderLayout(`<section class="panel elevated"><div class="state-banner loading-state"><span class="spinner"></span><strong>Connecting to Supabase...</strong></div></section>`);
+    return;
   }
   const screens = {
     demo: renderDemoLandingPremium,
@@ -4825,7 +4936,7 @@ function renderLayout(content) {
         </div>
         <div class="top-actions">
           ${!featureFlags.MOCK_SUPABASE && authUser ? `<button class="reset-demo" data-sign-out>Sign out</button>` : ""}
-          ${!featureFlags.MOCK_SUPABASE && !authUser ? `<button class="reset-demo auth-entry primary-lite" data-auth-entry="sign-in">Sign in</button>` : ""}
+          ${!featureFlags.MOCK_SUPABASE && !authUser ? `<button class="reset-demo auth-entry" data-auth-entry="sign-in">Sign in</button><button class="reset-demo auth-entry primary-lite" data-auth-entry="sign-up">Start free trial</button>` : ""}
         </div>
       </header>
       <section class="screen video-screen">
@@ -4969,10 +5080,10 @@ function professionalPhonePreview(photo, label) {
 
 function renderUpload() {
   const photos = orderedPhotos();
-  const needsLiveAuth = !featureFlags.MOCK_SUPABASE && !authUser && !isDemoRoute();
+  const isAnonymousLive = !featureFlags.MOCK_SUPABASE && !authUser && !isDemoRoute();
   renderLayout(`
     <div class="screen-title cinematic-title"><p class="eyebrow">Step 1</p><h2>Upload listing photos.</h2><p>Select 8-25 MLS or listing photos. EstateMotion uses only your uploaded property visuals in the final video.</p></div>
-    ${needsLiveAuth ? `<section class="panel sign-in-required-card"><div><p class="eyebrow">Sign in required</p><h3>Sign in to upload listing photos.</h3><p class="muted">Live rendering requires durable Supabase Storage URLs.</p></div><button class="primary" data-auth-entry-upload>Sign in</button></section>` : ""}
+    ${isAnonymousLive ? `<section class="panel sign-in-required-card"><div><p class="eyebrow">Preview first</p><h3>Upload now. Create an account when you export.</h3><p class="muted">EstateMotion uses local preview images until you create your free account, then saves photos for final MP4 rendering.</p></div><button class="secondary" data-auth-entry-upload>Sign in</button></section>` : ""}
     <section class="upload-studio-card pro-upload-card">
       <label class="upload-zone" data-upload-zone>
         <input id="photoInput" type="file" accept="image/*" multiple>
@@ -4984,7 +5095,7 @@ function renderUpload() {
       <aside class="upload-status-card">
         <span>Upload reliability</span>
         <strong>${photos.length >= 3 ? "Photos ready for AI ordering" : "Add at least 3 photos"}</strong>
-        <small>${needsLiveAuth ? "Sign in before uploading." : "Durable upload path is preserved for render jobs."}</small>
+        <small>${isAnonymousLive ? "Temporary local previews. Export will ask you to create an account." : "Durable upload path is preserved for render jobs."}</small>
       </aside>
     </section>
     <section class="panel listing-basics-panel">
@@ -5155,7 +5266,8 @@ function reelStage(photo, copy, template, index = 0, total = 1) {
 
 function renderExport() {
   const result = buildExportPayload();
-  const preflightError = validatePreRenderManifest(result, { live: !featureFlags.MOCK_RENDERING });
+  const accountGate = exportRequiresAccount();
+  const preflightError = accountGate ? "" : validatePreRenderManifest(result, { live: !featureFlags.MOCK_RENDERING });
   const exportOptions = [
     ["Vertical Reel", "9:16 branded MP4", "Instagram / TikTok / Shorts"],
     ["Horizontal Tour", "16:9 branded MP4", "YouTube / website"],
@@ -5171,8 +5283,8 @@ function renderExport() {
         ${reelStage(orderedPhotos()[0] ?? demoPhotos[0], aiCopy(), selectedTemplate(), 0, Math.max(1, orderedPhotos().length))}
       </div>
       <section class="panel elevated export-command">
-        <div class="section-title"><p>Export package</p><h3>${preflightError ? "Fix before rendering" : "Ready to render"}</h3></div>
-        ${preflightError ? `<div class="state-banner error-state"><strong>Export blocked</strong><span>${escapeHtml(preflightError)}</span></div>` : `<div class="state-banner loading-state"><strong>Render-ready manifest</strong><span>Every photo scene is mapped to the listing photo URL available to the renderer.</span></div>`}
+        <div class="section-title"><p>Export package</p><h3>${accountGate ? "Create account to export" : preflightError ? "Fix before rendering" : "Ready to render"}</h3></div>
+        ${accountGate ? `<div class="state-banner loading-state"><strong>Your preview is ready</strong><span>Create your free account to save this project, upload photos to durable storage, and export the finished MP4.</span></div>` : preflightError ? `<div class="state-banner error-state"><strong>Export blocked</strong><span>${escapeHtml(preflightError)}</span></div>` : `<div class="state-banner loading-state"><strong>Render-ready manifest</strong><span>Every photo scene is mapped to the listing photo URL available to the renderer.</span></div>`}
         <div class="export-option-grid">${exportOptions.map(([title, body, format]) => exportOptionCard(title, body, format)).join("")}</div>
         <div class="actions single-primary-row">
           <button class="primary" data-queue-pack>Create video exports</button>
@@ -5184,8 +5296,8 @@ function renderExport() {
     ${renderQueuePanel()}
   `);
   document.querySelector("[data-queue-pack]").addEventListener("click", queueContentPack);
-  document.querySelector("[data-download-json]").addEventListener("click", () => downloadFile(`${slug(state.project.title)}-render-manifest.json`, "application/json", JSON.stringify(result, null, 2)));
-  document.querySelector("[data-download-html]").addEventListener("click", () => downloadFile(`${slug(state.project.title)}-preview.html`, "text/html", buildPreviewHtml(result)));
+  document.querySelector("[data-download-json]").addEventListener("click", () => exportRequiresAccount() ? requestExportAuthGate() : downloadFile(`${slug(state.project.title)}-render-manifest.json`, "application/json", JSON.stringify(result, null, 2)));
+  document.querySelector("[data-download-html]").addEventListener("click", () => exportRequiresAccount() ? requestExportAuthGate() : downloadFile(`${slug(state.project.title)}-preview.html`, "text/html", buildPreviewHtml(result)));
 }
 
 function contentPack() {
@@ -5261,7 +5373,7 @@ async function createMotionDirectorPlan({ signature = motionDirectorSignature(),
         })
       }, 30000);
       payload = await response.json().catch(() => payload);
-      if (!response.ok) throw new Error(payload.error || "OpenAI Motion Director request failed.");
+      if (!response.ok) throw new Error(motionDirectorPayloadReason(payload) || "OpenAI Motion Director request failed.");
     }
     const validation = validateMotionDirectorPlan(payload.editPlan, photos);
     const editPlan = validation.valid ? payload.editPlan : fallbackPlan;
@@ -5296,6 +5408,25 @@ async function createMotionDirectorPlan({ signature = motionDirectorSignature(),
   } finally {
     if (motionDirectorInFlightSignature === signature) motionDirectorInFlightSignature = "";
   }
+}
+
+function motionDirectorPayloadReason(payload = {}) {
+  const categoryLabels = {
+    invalid_model: "invalid OpenAI model",
+    inaccessible_image_url: "inaccessible image URL",
+    schema_validation: "edit-plan schema validation failed",
+    rate_limit: "OpenAI rate limit",
+    billing_or_quota: "OpenAI billing or quota",
+    timeout: "OpenAI timeout",
+    missing_openai_api_key: "missing OPENAI_API_KEY",
+    invalid_photo_urls: "invalid photo URLs",
+    too_few_photos: "too few photos"
+  };
+  const label = categoryLabels[payload.errorCategory] || "";
+  const message = payload.reason || payload.error || "";
+  return label && message && !message.toLowerCase().includes(label.toLowerCase())
+    ? `${label}: ${message}`
+    : message;
 }
 
 function motionDirectorUsage(status = state.project.motionDirectorStatus || {}) {

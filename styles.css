@@ -3520,6 +3520,39 @@ button:hover {
   border-color: rgba(184, 135, 70, .48);
 }
 
+.auth-export-gate {
+  max-width: 760px;
+  margin: 0 auto;
+  border-color: rgba(199, 167, 108, .34);
+  background:
+    radial-gradient(circle at 10% 0%, rgba(199, 167, 108, .22), transparent 34%),
+    linear-gradient(145deg, rgba(255, 255, 255, .96), rgba(248, 245, 239, .92));
+  box-shadow: 0 34px 100px rgba(13, 13, 13, .2);
+}
+
+.auth-export-gate h2 {
+  font-size: clamp(2.2rem, 5vw, 4.2rem);
+  line-height: .95;
+  max-width: 680px;
+}
+
+.auth-reassurance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.auth-reassurance span {
+  padding: 9px 12px;
+  border: 1px solid rgba(199, 167, 108, .28);
+  border-radius: 999px;
+  background: rgba(255, 252, 246, .78);
+  color: rgba(13, 13, 13, .72);
+  font-size: .82rem;
+  font-weight: 850;
+}
+
 .reel-plan-grid {
   display: grid;
   gap: 14px;
