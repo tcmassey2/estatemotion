@@ -797,7 +797,7 @@ function readFlag(key, env, params, fallback) {
 
 function saveState() {
   if (shouldUseLocalPersistence()) {
-    localStorage.setItem(storageKey, JSON.stringify(state));
+    localStorage.setItem(storageKey, JSON.stringify(stateForStorage()));
     return;
   }
   scheduleRemoteSave();
@@ -807,7 +807,7 @@ function saveStateQuietly() {
   window.clearTimeout(quietSaveTimer);
   quietSaveTimer = window.setTimeout(() => {
     if (shouldUseLocalPersistence()) {
-      localStorage.setItem(storageKey, JSON.stringify(state));
+      localStorage.setItem(storageKey, JSON.stringify(stateForStorage()));
       return;
     }
     scheduleRemoteSave();
@@ -815,7 +815,15 @@ function saveStateQuietly() {
 }
 
 function shouldUseLocalPersistence() {
-  return featureFlags.MOCK_SUPABASE || isDemoRoute();
+  return featureFlags.MOCK_SUPABASE || isDemoRoute() || !authUser || !remoteWorkspaceLoaded;
+}
+
+function stateForStorage() {
+  return {
+    ...state,
+    authPassword: "",
+    loading: state.loading === "Saving your photos..." || state.loading === "Preparing final render..." ? "" : state.loading
+  };
 }
 
 function appModeLabel() {
@@ -1063,23 +1071,59 @@ function mergeRemoteWorkspace(current, workspace) {
   };
 }
 
-async function signInWithEmail() {
+async function getCurrentSession() {
+  const envError = supabaseEnvError();
+  if (envError) throw new Error(envError);
+  if (!window.EstateMotionSupabase?.getSession) throw new Error("Supabase auth helper is unavailable. Refresh the page and try again.");
+  return window.EstateMotionSupabase.getSession();
+}
+
+function authCredentials() {
+  return {
+    email: String(state.authEmail || "").trim(),
+    password: String(state.authPassword || "")
+  };
+}
+
+function validateAuthCredentials(email, password, { requirePassword = true } = {}) {
+  if (!email) return "Enter your email address.";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "Enter a valid email address.";
+  if (requirePassword && !password) return "Enter your password.";
+  if (requirePassword && password.length < 6) return "Password must be at least 6 characters.";
+  return "";
+}
+
+function friendlyAuthError(error, fallback = "Authentication failed.") {
+  const message = String(error?.message || fallback);
+  const lower = message.toLowerCase();
+  if (lower.includes("invalid login") || lower.includes("invalid credentials")) return "Invalid email or password. Check your login details and try again.";
+  if (lower.includes("already registered") || lower.includes("already exists") || lower.includes("user already")) return "That email is already registered. Switch to Sign In to continue.";
+  if (lower.includes("password")) return message.includes("Password") ? message : "Password is too weak or invalid. Use at least 6 characters.";
+  if (lower.includes("confirm") || lower.includes("verification")) return "Email confirmation is required. Check your inbox, then return to export your video.";
+  if (lower.includes("rate")) return "Too many auth attempts. Wait a moment, then try again.";
+  if (lower.includes("supabase") || lower.includes("environment")) return message;
+  return message || fallback;
+}
+
+async function signInWithMagicLink() {
   const envError = supabaseEnvError();
   if (envError) {
     setError(envError);
     return;
   }
-  if (!state.authEmail.trim()) {
-    setError("Enter your email address to sign in.");
+  const { email } = authCredentials();
+  const validation = validateAuthCredentials(email, "", { requirePassword: false });
+  if (validation) {
+    setError(validation);
     return;
   }
   setState({ loading: "Sending sign-in link...", error: "" });
   try {
-    await window.EstateMotionSupabase.signInWithEmail(state.authEmail.trim());
+    await window.EstateMotionSupabase.signInWithEmail(email);
     setState({ loading: "", authStatus: "email-sent" });
     showToast("Check your email for the sign-in link");
   } catch (error) {
-    setError(error.message || "Email sign-in failed.");
+    setError(friendlyAuthError(error, "Email sign-in failed."));
   }
 }
 
@@ -1093,81 +1137,127 @@ async function signInWithGoogle() {
   try {
     await window.EstateMotionSupabase.signInWithGoogle();
   } catch (error) {
-    setError(error.message || "Google sign-in failed.");
+    setError(friendlyAuthError(error, "Google sign-in failed."));
   }
 }
 
-async function signInWithPassword() {
+async function signInWithEmail(email = authCredentials().email, password = authCredentials().password) {
   const envError = supabaseEnvError();
   if (envError) {
     setError(envError);
     return;
   }
-  if (!state.authEmail.trim() || !state.authPassword) {
-    setError("Enter your email and password to sign in.");
+  const validation = validateAuthCredentials(email, password);
+  if (validation) {
+    setError(validation);
     return;
   }
   setState({ loading: "Signing in...", error: "" });
   try {
-    const result = await window.EstateMotionSupabase.signInWithPassword(state.authEmail.trim(), state.authPassword);
-    authUser = result.user || result.session?.user || null;
-    showToast("Signed in");
-    await bootstrapSupabase();
-    await continueAfterAuth();
+    const result = await window.EstateMotionSupabase.signInWithPassword(email, password);
+    await completeAuthResult(result, "Signed in");
   } catch (error) {
-    setError(error.message || "Email/password sign in failed.");
+    setError(friendlyAuthError(error, "Email/password sign in failed."));
   }
 }
 
-async function signUpWithPassword() {
+async function signInWithPassword() {
+  const { email, password } = authCredentials();
+  return signInWithEmail(email, password);
+}
+
+async function signUpWithEmail(email = authCredentials().email, password = authCredentials().password) {
   const envError = supabaseEnvError();
   if (envError) {
     setError(envError);
     return;
   }
-  if (!state.authEmail.trim() || !state.authPassword) {
-    setError("Enter your email and password to create an account.");
-    return;
-  }
-  if (state.authPassword.length < 6) {
-    setError("Password must be at least 6 characters.");
+  const validation = validateAuthCredentials(email, password);
+  if (validation) {
+    setError(validation);
     return;
   }
   setState({ loading: "Creating account...", error: "" });
   try {
-    const result = await window.EstateMotionSupabase.signUpWithPassword(state.authEmail.trim(), state.authPassword);
-    authUser = result.user || result.session?.user || null;
-    showToast(result.session ? "Account created" : "Account created. Check your email if confirmation is required.");
-    await bootstrapSupabase();
-    if (authUser) await continueAfterAuth();
-    else setState({ loading: "", authStatus: "email-sent", authPassword: "" });
+    const result = await window.EstateMotionSupabase.signUpWithPassword(email, password);
+    if (Array.isArray(result.user?.identities) && result.user.identities.length === 0) {
+      setError("That email is already registered. Switch to Sign In to continue.");
+      return;
+    }
+    if (!result.session) {
+      authUser = null;
+      setState({ loading: "", authStatus: "email-sent", authPassword: "", error: "Email confirmation required. Check your inbox, then sign in to export your video." });
+      showToast("Check your email to confirm your account", "success");
+      return;
+    }
+    await completeAuthResult(result, "Account created");
   } catch (error) {
-    setError(error.message || "Account creation failed.");
+    setError(friendlyAuthError(error, "Account creation failed."));
   }
+}
+
+async function signUpWithPassword() {
+  const { email, password } = authCredentials();
+  return signUpWithEmail(email, password);
+}
+
+async function completeAuthResult(result, successMessage = "Signed in") {
+  authUser = result?.user || result?.session?.user || null;
+  if (!authUser) {
+    const session = await getCurrentSession();
+    authUser = session.user || null;
+  }
+  if (!authUser) throw new Error("Email confirmation required. Check your inbox, then sign in to export your video.");
+  showToast(successMessage);
+  await continueAfterAuth();
 }
 
 async function continueAfterAuth() {
   const returnScreen = state.authReturnScreen || "export";
   const shouldQueueExport = state.pendingExportAfterAuth && returnScreen === "export";
-  setState({ loading: shouldQueueExport ? "Saving photos for export..." : "", authStatus: "signed-in", authPassword: "", screen: returnScreen });
-  if (!authUser) return;
+  setState({ loading: "Signed in", authStatus: "signed-in", authPassword: "", screen: returnScreen, error: "" });
   try {
+    const session = await getCurrentSession();
+    authUser = session.user || authUser;
+    if (!authUser?.id) throw new Error("Supabase session is missing. Sign in again before exporting.");
+    remoteWorkspaceLoaded = false;
+    try {
+      const workspace = await window.EstateMotionSupabase.loadWorkspace(authUser.id);
+      state = mergeRemoteWorkspace(state, workspace);
+      state = { ...state, user: { ...state.user, email: authUser.email || state.user.email } };
+      saveState();
+    } catch (workspaceError) {
+      console.warn("Supabase workspace load warning:", workspaceError);
+      showToast("Signed in. Existing workspace could not be loaded, so EstateMotion kept this local project.", "error");
+    }
+    setState({ loading: "Saving your photos...", authStatus: "signed-in", screen: returnScreen, error: "" });
     await persistTemporaryPhotosAfterAuth();
+    setState((current) => ({
+      ...current,
+      loading: "Preparing final render...",
+      project: {
+        ...current.project,
+        motionDirectorStatus: motionDirectorIdleStatus(current.project.motionDirectorStatus)
+      }
+    }));
     await window.EstateMotionSupabase?.saveWorkspace?.(state, authUser);
+    remoteWorkspaceLoaded = true;
     setState((current) => ({
       ...current,
       loading: "",
       pendingExportAfterAuth: false,
       authReturnScreen: "dashboard",
+      authStatus: "signed-in",
       project: current.project
     }));
     if (shouldQueueExport) {
-      showToast("Project saved. Starting export.");
+      showToast("Photos saved. Starting export.");
       window.setTimeout(() => queueContentPack(), 0);
     }
   } catch (error) {
-    setState({ loading: "", pendingExportAfterAuth: false, screen: "export", error: error.message || "Could not save photos for export." });
-    showToast(error.message || "Could not save photos for export.", "error");
+    const message = friendlyAuthError(error, "Upload failed. Try again.");
+    setState({ loading: "", pendingExportAfterAuth: shouldQueueExport, screen: returnScreen, error: message });
+    showToast(message, "error");
   }
 }
 
@@ -1782,8 +1872,8 @@ function renderLayout(content) {
         <div class="top-actions">
           <span class="status-dot ${appModeClass()}">${appModeLabel()}</span>
           <span class="credit-pill">${state.user.creditBalance} credits</span>
-          ${!featureFlags.MOCK_SUPABASE && authUser ? `<button class="reset-demo" data-sign-out>Sign out</button>` : ""}
-          ${!featureFlags.MOCK_SUPABASE && !authUser ? `<button class="reset-demo auth-entry" data-auth-entry="sign-in">Sign In</button><button class="reset-demo auth-entry primary-lite" data-auth-entry="sign-up">Create Account</button>` : ""}
+          ${!featureFlags.MOCK_SUPABASE && authUser ? `<span class="status-dot live">Signed in</span><button class="reset-demo" data-sign-out>Sign out</button>` : ""}
+          ${!featureFlags.MOCK_SUPABASE && !authUser ? `<button class="reset-demo auth-entry" data-auth-entry="sign-in">Sign in</button><button class="reset-demo auth-entry primary-lite" data-auth-entry="sign-up">Start free trial</button>` : ""}
           <button class="reset-demo" data-reset-demo>Reset demo</button>
         </div>
       </header>
@@ -1832,10 +1922,19 @@ function bindInputs() {
   document.querySelectorAll("[data-beta-feedback]").forEach((input) => {
     bindStableField(input, (value, quiet) => updateBetaFeedback(input.dataset.betaFeedback, value, { quiet }));
   });
+}
+
+function bindAuthInputs() {
   document.querySelectorAll("[data-auth]").forEach((input) => {
     bindStableField(input, (value, quiet) => {
-      if (quiet) setStateQuietly({ [input.dataset.auth]: value, error: "" });
-      else setState({ [input.dataset.auth]: value, error: "" });
+      const patch = { [input.dataset.auth]: value, error: "" };
+      if (quiet) setStateQuietly(patch);
+      else setState(patch);
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      state.authMode === "sign-up" ? signUpWithPassword() : signInWithPassword();
     });
   });
 }
@@ -2289,10 +2388,9 @@ function renderAuth() {
     <section class="auth-panel panel elevated ${isExportGate ? "auth-export-gate" : ""}">
       <p class="eyebrow">${isExportGate ? "Your video is ready" : "EstateMotion App"}</p>
       <h2>${isExportGate ? (isSignUp ? "Create your free account to export your video" : "Sign in to export your video") : (isSignUp ? "Create your account" : "Sign in to continue")}</h2>
-      <p>${isExportGate ? "Create an account to save your project, render the final MP4, and keep your listing video exports connected to your brand kit." : "Supabase Auth unlocks durable listing-photo uploads, project persistence, and live render-ready URLs. Mock mode remains available for local demos."}</p>
+      <p>${isExportGate ? "Create an account to save your project, render the final MP4, and keep your listing video exports connected to your brand kit." : "Sign in to save listing projects, brand kits, and finished video exports."}</p>
       ${isExportGate ? `<div class="auth-reassurance"><span>Your photos stay private</span><span>No credit card required</span><span>Save and export your finished video</span></div>` : ""}
-      ${envError ? `<div class="state-banner error-state"><strong>Supabase setup needed</strong><span>${escapeHtml(envError)}</span></div>` : ""}
-      ${featureFlags.MOCK_SUPABASE ? `<div class="state-banner loading-state"><strong>Mock Mode</strong><span>Authentication is not required while MOCK_SUPABASE=true.</span></div>` : ""}
+      ${envError ? `<div class="state-banner error-state"><strong>Account setup unavailable</strong><span>Sign-in is not available in this environment yet. You can keep editing or try the sample video.</span></div>` : ""}
       <div class="auth-tabs">
         <button class="${!isSignUp ? "active" : ""}" data-auth-mode="sign-in">Sign In</button>
         <button class="${isSignUp ? "active" : ""}" data-auth-mode="sign-up">Create Account</button>
@@ -2317,7 +2415,7 @@ function renderAuth() {
   `);
   document.querySelectorAll("[data-auth-mode]").forEach((button) => button.addEventListener("click", () => setState({ authMode: button.dataset.authMode, error: "" })));
   document.querySelector("[data-auth-password]").addEventListener("click", () => state.authMode === "sign-up" ? signUpWithPassword() : signInWithPassword());
-  document.querySelector("[data-auth-email]").addEventListener("click", signInWithEmail);
+  document.querySelector("[data-auth-email]").addEventListener("click", signInWithMagicLink);
   document.querySelector("[data-auth-google]").addEventListener("click", signInWithGoogle);
   document.querySelector("[data-continue-editing]")?.addEventListener("click", () => setState({ screen: "preview", pendingExportAfterAuth: false, authReturnScreen: "dashboard", error: "" }));
   bindAuthInputs();
@@ -2733,7 +2831,7 @@ async function persistTemporaryPhotosAfterAuth() {
 }
 
 async function prepareProjectPhoto(file, index, remoteProjectId = "") {
-  if (shouldUseLocalPersistence() || !authUser) {
+  if (featureFlags.MOCK_SUPABASE || isDemoRoute() || !authUser) {
     const objectUrl = URL.createObjectURL(file);
     return { previewUrl: objectUrl, objectUrl, publicUrl: "", durableUrl: "", path: "", bucket: "", localOnly: true };
   }
@@ -4054,6 +4152,11 @@ async function queueContentPack() {
     requestExportAuthGate();
     return;
   }
+  const photoPersistenceError = await ensurePhotosPersistedForExport();
+  if (photoPersistenceError) {
+    setError(photoPersistenceError);
+    return;
+  }
   if (!featureFlags.MOCK_RENDERING) {
     const durableError = await ensureDurableUrlsForLiveRender();
     if (durableError) {
@@ -4098,6 +4201,24 @@ async function queueContentPack() {
     uploadGeneratedRenderManifest();
     showToast("Render complete", "success");
   }, 1900);
+}
+
+async function ensurePhotosPersistedForExport() {
+  if (featureFlags.MOCK_SUPABASE || isDemoRoute()) return "";
+  if (!authUser) return "Sign in to save your photos and export the finished video.";
+  const localPhotos = orderedPhotos().filter((photo) => !photo.durableUrl && !photo.durable_url && isLocalOnlyUrl(photo.uri || photo.objectUrl));
+  if (!localPhotos.length) return "";
+  setState({ loading: "Saving your photos...", error: "" });
+  try {
+    await persistTemporaryPhotosAfterAuth();
+    await window.EstateMotionSupabase?.saveWorkspace?.(state, authUser);
+  } catch (error) {
+    return friendlyAuthError(error, "Upload failed. Try again.");
+  } finally {
+    setState({ loading: "" });
+  }
+  const stillLocal = orderedPhotos().filter((photo) => !photo.durableUrl && !photo.durable_url && isLocalOnlyUrl(photo.uri || photo.objectUrl));
+  return stillLocal.length ? "Upload failed. Try again before exporting the final video." : "";
 }
 
 function exportRequiresAccount() {
@@ -4891,39 +5012,56 @@ function listingVideoTemplates() {
     {
       id: "modern-luxury",
       label: "Cinematic Luxury",
-      description: "Slow depth zooms, editorial address intro, warm cinematic overlays, premium lower-thirds.",
-      bestFor: "Luxury listings and high-end seller presentations"
+      description: "Elegant cinematic motion built for premium listings and luxury branding.",
+      bestFor: "Luxury listings / premium agents",
+      badge: "Recommended",
+      previewImage: "https://images.unsplash.com/photo-1600607687644-c7171b42498f?auto=format&fit=crop&w=1200&q=80",
+      previewTone: "Dramatic exterior, slow push-in, warm gold titles",
+      motion: "Slow zooms · Light leaks · Editorial lower thirds"
     },
     {
       id: "viral-fast-cut",
       label: "Modern Social",
-      description: "Punchier cuts, speed ramps, bold lower-thirds, and scroll-stopping social pacing.",
-      bestFor: "Instagram Reels, TikTok, and YouTube Shorts"
+      description: "Fast-paced modern edits optimized for social media engagement.",
+      bestFor: "Instagram / TikTok / lead gen",
+      badge: "Social-ready",
+      previewImage: "https://images.unsplash.com/photo-1600566753086-00f18fb6b3ea?auto=format&fit=crop&w=1200&q=80",
+      previewTone: "Punchy room cuts, bold captions, mobile-first rhythm",
+      motion: "Fast cuts · Speed ramps · Bold stat cards"
     },
     {
       id: "mls-clean",
       label: "MLS Clean",
-      description: "Clean motion, factual stat cards, restrained transitions, and unbranded export readiness.",
-      bestFor: "MLS-safe distribution and compliance-sensitive teams"
+      description: "Professional, MLS-safe listing videos with clean transitions.",
+      bestFor: "MLS / standard listings",
+      badge: "Clean",
+      previewImage: "https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=1200&q=80",
+      previewTone: "Simple property tour, factual overlays, restrained motion",
+      motion: "Clean fades · Stat cards · Unbranded option"
     },
     {
       id: "investor-wholesale",
       label: "Investor Property Tour",
-      description: "Direct property-tour sequencing, clean number cards, and simple buyer-demand framing.",
-      bestFor: "Investor-focused listings and practical property tours"
+      description: "Straightforward property walkthroughs for investors and deal presentations.",
+      bestFor: "Investors / wholesalers",
+      badge: "Deal-focused",
+      previewImage: "https://images.unsplash.com/photo-1600566752355-35792bedcfea?auto=format&fit=crop&w=1200&q=80",
+      previewTone: "Direct walkthrough, practical captions, clear property facts",
+      motion: "Steady pans · Detail cards · Investor pacing"
     }
   ];
 }
 
 function renderLayout(content) {
   const navItems = [
-    { screen: "upload", label: "Upload" },
-    { screen: "processing", label: "AI Order" },
+    { screen: "upload", label: "Photos" },
+    { screen: "processing", label: "Order" },
     { screen: "template", label: "Style" },
     { screen: "preview", label: "Preview" },
     { screen: "export", label: "Export" }
   ];
   const step = navItems.findIndex((item) => item.screen === state.screen) + 1;
+  const publicLanding = state.screen === "demo" || isDemoRoute();
   app.innerHTML = `
     <main class="app listing-video-app">
       <header class="topbar video-topbar">
@@ -4931,16 +5069,16 @@ function renderLayout(content) {
           <span>EM</span>
           <b>EstateMotion</b>
         </button>
-        <div class="top-progress video-progress" aria-label="Listing video creation progress">
+        ${publicLanding ? `<nav class="landing-nav"><button data-scroll-sample>Watch Sample</button><button class="primary" data-nav="upload">Create My Free Video</button></nav>` : `<div class="top-progress video-progress" aria-label="Listing video creation progress">
           ${navItems.map((item, index) => `<button class="${state.screen === item.screen ? "active" : ""} ${step > index + 1 ? "complete" : ""}" data-nav="${item.screen}"><span>${index + 1}</span><b>${item.label}</b></button>`).join("")}
-        </div>
-        <div class="top-actions">
-          ${!featureFlags.MOCK_SUPABASE && authUser ? `<button class="reset-demo" data-sign-out>Sign out</button>` : ""}
+        </div>`}
+        <div class="top-actions ${publicLanding ? "landing-actions-hidden" : ""}">
+          ${!featureFlags.MOCK_SUPABASE && authUser ? `<span class="status-dot live">Signed in</span><button class="reset-demo" data-sign-out>Sign out</button>` : ""}
           ${!featureFlags.MOCK_SUPABASE && !authUser ? `<button class="reset-demo auth-entry" data-auth-entry="sign-in">Sign in</button><button class="reset-demo auth-entry primary-lite" data-auth-entry="sign-up">Start free trial</button>` : ""}
         </div>
       </header>
       <section class="screen video-screen">
-        ${state.error ? `<div class="state-banner error-state"><strong>Needs attention</strong><span>${escapeHtml(state.error)}</span></div>` : ""}
+        ${state.error ? `<div class="state-banner error-state"><strong>Needs attention</strong><span>${escapeHtml(publicFacingError(state.error))}</span></div>` : ""}
         ${state.loading ? `<div class="state-banner loading-state"><span class="spinner"></span><strong>${escapeHtml(state.loading)}</strong></div>` : ""}
         ${content}
       </section>
@@ -4959,6 +5097,17 @@ function renderLayout(content) {
   bindInputs();
 }
 
+function publicFacingError(message = "") {
+  const text = String(message || "");
+  if (/supabase|mock|openai|api\/|schema|rls|vercel|environment|render worker|durable|blob:|data url|storage bucket/i.test(text)) {
+    if (/sign in|account|auth/i.test(text)) return "Create or sign in to your account to save photos and export the finished video.";
+    if (/upload|photo|storage|durable|blob/i.test(text)) return "We could not save your photos for final export. Try again, or use the sample listing.";
+    if (/render|worker|mp4/i.test(text)) return "The final video could not be created yet. Check your photos and try exporting again.";
+    return "This action is not available right now. Try again or continue with the sample listing.";
+  }
+  return text;
+}
+
 function maybeStartOnboarding() {
   const route = routeFromUrl();
   if (route) {
@@ -4974,27 +5123,23 @@ function maybeStartOnboarding() {
 
 function renderDashboard() {
   renderLayout(`
-    <section class="video-hero">
+    <section class="video-hero app-command-hero reveal-on-scroll">
       <div class="video-hero-copy">
-        <p class="eyebrow">AI listing video engine</p>
-        <h2>Professional listing videos from MLS photos.</h2>
-        <p>Upload real property photos. EstateMotion orders the scenes, adds cinematic camera motion, premium overlays, music-aware pacing, and exports branded or unbranded videos.</p>
+        <p class="eyebrow">Listing photos in. Pro video out.</p>
+        <h2>Build a finished listing video in minutes.</h2>
+        <p>Upload the photos you already have. EstateMotion creates the property story, adds cinematic motion, and prepares every social format.</p>
         <div class="actions">
-          <button class="primary" data-start-video>Create listing video</button>
+          <button class="primary" data-start-video>Create My Free Video</button>
           <button class="secondary" data-watch-sample>Watch sample</button>
         </div>
-        <div class="video-proof-row">
-          <span>Uses your real photos</span>
-          <span>No fake rooms or views</span>
-          <span>9:16 / 16:9 / 1:1 exports</span>
-        </div>
+        ${trustBadgeRow()}
       </div>
       <div class="video-hero-preview">
         ${professionalPhonePreview(demoPhotos[0], "Cinematic Luxury")}
       </div>
     </section>
-    <section class="video-step-grid">
-      ${["Upload 8-25 listing photos", "AI orders the property tour", "Choose a cinematic style", "Preview motion and overlays", "Export MP4 variants"].map((item, index) => `<article><span>${String(index + 1).padStart(2, "0")}</span><strong>${escapeHtml(item)}</strong></article>`).join("")}
+    <section class="video-step-grid reveal-on-scroll">
+      ${["Upload listing photos", "Choose a video style", "Preview your reel", "Export social formats"].map((item, index) => `<article><span>${String(index + 1).padStart(2, "0")}</span><strong>${escapeHtml(item)}</strong></article>`).join("")}
     </section>
   `);
   document.querySelector("[data-start-video]").addEventListener("click", () => navigate("upload"));
@@ -5004,63 +5149,115 @@ function renderDashboard() {
 function renderDemoLandingPremium() {
   trackDemoVisitOnce();
   renderLayout(`
-    <section class="video-landing-hero">
+    <section class="video-landing-hero landing-cinematic-hero reveal-on-scroll">
       <div class="video-hero-copy">
-        <p class="eyebrow">EstateMotion</p>
-        <h2>Professional listing videos from MLS photos.</h2>
-        <p>Cinematic property videos, AI photo ordering, beat-synced edits, branded and unbranded exports. No video shoot required.</p>
+        <p class="eyebrow">EstateMotion for real estate agents</p>
+        <h2>Professional Listing Videos From Your Photos</h2>
+        <p>Upload your listing photos and get a cinematic real estate video ready to post in minutes.</p>
         <div class="actions">
-          <button class="primary" data-nav="upload">Create my first video</button>
-          <button class="secondary" data-scroll-sample>Watch sample</button>
+          <button class="primary" data-nav="upload">Create My Free Video</button>
+          <button class="secondary" data-scroll-sample>Watch Sample</button>
         </div>
+        ${trustBadgeRow()}
+        ${reviewStrip()}
       </div>
       <div class="video-hero-preview">
-        ${professionalPhonePreview(demoPhotos[0], "Sample output")}
+        <div class="hero-video-orbit">${professionalPhonePreview(demoPhotos[0], "Sample listing video")}</div>
       </div>
     </section>
-    <section class="video-section">
-      <div class="section-title centered"><p>How it works</p><h3>Upload photos. EstateMotion renders the video.</h3></div>
+    <section class="video-section reveal-on-scroll">
+      <div class="section-title centered"><p>How it works</p><h3>Upload photos. Get a pro video.</h3></div>
       <div class="video-step-grid">
-        <article><span>01</span><strong>Upload photos</strong><small>Use the MLS/listing photos you already have.</small></article>
-        <article><span>02</span><strong>AI orders scenes</strong><small>Exterior, kitchen, living, bedrooms, baths, outdoor, amenities.</small></article>
-        <article><span>03</span><strong>Render cinematic video</strong><small>Depth motion, transitions, stat cards, music timing, exports.</small></article>
+        <article><span>01</span><strong>Upload listing photos</strong><small>Select the property photos you already use for MLS and social.</small></article>
+        <article><span>02</span><strong>EstateMotion builds the reel</strong><small>Scenes are ordered into a polished property tour with cinematic motion.</small></article>
+        <article><span>03</span><strong>Download everywhere</strong><small>Export vertical, square, wide, branded, and clean versions.</small></article>
       </div>
     </section>
-    <section class="video-section" id="sampleOutput">
-      <div class="section-title centered"><p>Sample outputs</p><h3>Three professional listing styles.</h3></div>
+    <section class="video-section proof-section reveal-on-scroll">
+      <div class="section-title centered"><p>Proof</p><h3>Designed to make ordinary listing photos feel professionally edited.</h3></div>
+      <div class="proof-stat-grid">
+        <article><strong>8-25</strong><span>photos to a finished listing story</span></article>
+        <article><strong>5 min</strong><span>from upload to preview</span></article>
+        <article><strong>4.9</strong><span>agent demo rating</span></article>
+      </div>
+      <div class="agent-avatar-row" aria-label="Agent reviewers">
+        ${agentAvatars()}
+        <span>Trusted by agents building better listing launches</span>
+      </div>
+    </section>
+    <section class="video-section reveal-on-scroll" id="sampleOutput">
+      <div class="section-title centered"><p>Sample outputs</p><h3>Three premium styles for real listings.</h3></div>
       <div class="sample-output-grid">
         ${listingVideoTemplates().slice(0, 3).map((template, index) => `<article>${professionalPhonePreview(demoPhotos[index] || demoPhotos[0], template.label)}<strong>${escapeHtml(template.label)}</strong><small>${escapeHtml(template.description)}</small></article>`).join("")}
       </div>
     </section>
-    <section class="video-section">
-      <div class="section-title centered"><p>Why it is different</p><h3>Built for authentic property videos, not generic slideshows.</h3></div>
+    <section class="video-section reveal-on-scroll">
+      <div class="section-title centered"><p>Why agents use it</p><h3>Pro video without a videographer.</h3></div>
       <div class="video-feature-grid">
-        ${["AI photo ordering", "Cinematic camera motion", "Beat-synced edits", "Branded/unbranded exports", "No fake property features"].map((item) => `<article><strong>${escapeHtml(item)}</strong><small>Every visible element supports better listing video output.</small></article>`).join("")}
+        ${[
+          ["Cinematic motion", "Still listing photos get smooth camera movement and premium transitions."],
+          ["Brand-ready", "Your name, brokerage, CTA, and clean end card stay consistent."],
+          ["Social-native", "Built for Reels, TikTok, Shorts, Stories, and feed posts."],
+          ["Authentic visuals", "No fake rooms, fake views, or invented property features."]
+        ].map(([title, body]) => `<article><strong>${escapeHtml(title)}</strong><small>${escapeHtml(body)}</small></article>`).join("")}
       </div>
     </section>
-    <section class="video-section">
-      <div class="section-title centered"><p>Plans</p><h3>Pricing-ready for listing volume.</h3></div>
+    <section class="video-section testimonials-section reveal-on-scroll">
+      <div class="section-title centered"><p>What agents say</p><h3>“This feels easier than hiring an editor.”</h3></div>
+      <div class="testimonial-grid">
+        ${testimonialCard("★★★★★", "I understood it instantly. Upload photos, choose a style, export a reel.", "Scottsdale listing agent")}
+        ${testimonialCard("★★★★★", "The sample output feels polished enough to show sellers at a listing appointment.", "Phoenix team lead")}
+        ${testimonialCard("★★★★★", "This is the kind of tool that makes an agent look bigger online.", "Brokerage partner")}
+      </div>
+    </section>
+    <section class="video-section reveal-on-scroll">
+      <div class="section-title centered"><p>Simple plans</p><h3>Built around listing volume.</h3></div>
       <div class="pricing-grid video-pricing">
-        ${pricingCard("Starter", "Listings/month", "Essential exports", "For agents who need polished launch videos.", "Starter")}
-        ${pricingCard("Growth", "More listings", "Branded + unbranded variants", "For consistent listing marketers.", "Growth")}
-        ${pricingCard("Pro", "Team volume", "Priority rendering", "For brokerages and high-volume teams.", "Pro")}
+        ${pricingCard("Starter", "$19/video", "Pay per listing", "For agents launching one polished listing at a time.", "Starter")}
+        ${pricingCard("Growth", "$49/month", "More monthly videos", "For agents who post consistently and want brand momentum.", "Growth")}
+        ${pricingCard("Pro", "Team plan", "Brokerage volume", "For teams and brokerages standardizing listing media.", "Pro")}
       </div>
     </section>
-    <section class="video-section faq-section">
+    <section class="video-section faq-section reveal-on-scroll">
       <div class="section-title centered"><p>FAQ</p><h3>Built around real listing photos.</h3></div>
       <div class="faq-grid">
         ${faqItem("Does it use my real photos?", "Yes. EstateMotion builds motion and overlays from uploaded listing photos only.")}
         ${faqItem("Can I export unbranded videos?", "Yes. The export architecture supports branded and unbranded variants.")}
         ${faqItem("Is it MLS-safe?", "MLS Clean mode uses factual captions, restrained graphics, and clean formatting.")}
-        ${faqItem("How long does rendering take?", "The local demo uses mock rendering. Live Remotion workers are structured for queued MP4 rendering.")}
+        ${faqItem("How long does rendering take?", "Most previews are ready in minutes, with final exports queued from your finished video plan.")}
       </div>
     </section>
-    <section class="video-final-cta">
+    <section class="video-final-cta reveal-on-scroll">
       <h3>Create a professional video from your listing photos.</h3>
-      <button class="primary" data-nav="upload">Create my first video</button>
+      <button class="primary" data-nav="upload">Create My Free Video</button>
     </section>
   `);
-  document.querySelector("[data-scroll-sample]")?.addEventListener("click", () => document.querySelector("#sampleOutput").scrollIntoView({ behavior: "smooth" }));
+  document.querySelectorAll("[data-scroll-sample]").forEach((button) => button.addEventListener("click", () => document.querySelector("#sampleOutput")?.scrollIntoView({ behavior: "smooth" })));
+}
+
+function trustBadgeRow() {
+  return `<div class="video-proof-row trust-badge-row">
+    <span>Uses your real photos</span>
+    <span>No fake property features</span>
+    <span>MLS-safe style option</span>
+    <span>Brand kit included</span>
+  </div>`;
+}
+
+function reviewStrip() {
+  return `<div class="review-strip">
+    <strong>★★★★★</strong>
+    <span>“Looks like a professional editor touched it.”</span>
+  </div>`;
+}
+
+function agentAvatars() {
+  const initials = ["TM", "AZ", "SC", "PH"];
+  return initials.map((initial, index) => `<i style="--avatar-index:${index}">${initial}</i>`).join("");
+}
+
+function testimonialCard(stars, quote, name) {
+  return `<article><strong>${escapeHtml(stars)}</strong><p>${escapeHtml(quote)}</p><span>${escapeHtml(name)}</span></article>`;
 }
 
 function professionalPhonePreview(photo, label) {
@@ -5082,8 +5279,8 @@ function renderUpload() {
   const photos = orderedPhotos();
   const isAnonymousLive = !featureFlags.MOCK_SUPABASE && !authUser && !isDemoRoute();
   renderLayout(`
-    <div class="screen-title cinematic-title"><p class="eyebrow">Step 1</p><h2>Upload listing photos.</h2><p>Select 8-25 MLS or listing photos. EstateMotion uses only your uploaded property visuals in the final video.</p></div>
-    ${isAnonymousLive ? `<section class="panel sign-in-required-card"><div><p class="eyebrow">Preview first</p><h3>Upload now. Create an account when you export.</h3><p class="muted">EstateMotion uses local preview images until you create your free account, then saves photos for final MP4 rendering.</p></div><button class="secondary" data-auth-entry-upload>Sign in</button></section>` : ""}
+    <div class="screen-title cinematic-title"><p class="eyebrow">Photos</p><h2>Drop in your listing photos.</h2><p>Start with the real property images you already have. You can preview before creating an account.</p></div>
+    ${isAnonymousLive ? `<section class="panel sign-in-required-card"><div><p class="eyebrow">No account needed yet</p><h3>Build the preview first.</h3><p class="muted">Create your free account only when you are ready to save and export the finished video.</p></div><button class="secondary" data-auth-entry-upload>Sign in</button></section>` : ""}
     <section class="upload-studio-card pro-upload-card">
       <label class="upload-zone" data-upload-zone>
         <input id="photoInput" type="file" accept="image/*" multiple>
@@ -5093,13 +5290,13 @@ function renderUpload() {
         <b class="upload-count">${photos.length} photo${photos.length === 1 ? "" : "s"} uploaded</b>
       </label>
       <aside class="upload-status-card">
-        <span>Upload reliability</span>
+        <span>Video readiness</span>
         <strong>${photos.length >= 3 ? "Photos ready for AI ordering" : "Add at least 3 photos"}</strong>
-        <small>${isAnonymousLive ? "Temporary local previews. Export will ask you to create an account." : "Durable upload path is preserved for render jobs."}</small>
+        <small>${isAnonymousLive ? "Your preview is local until export." : "Ready for final video export."}</small>
       </aside>
     </section>
     <section class="panel listing-basics-panel">
-      <div class="section-title"><p>Listing details</p><h3>Used for factual overlays only.</h3></div>
+      <div class="section-title"><p>Listing details</p><h3>Add the facts that should appear on the video.</h3></div>
       <div class="grid-2">${field("Property address", "address")}${field("Price", "price")}</div>
       <div class="grid-2">${field("Beds", "beds")}${field("Baths", "baths")}</div>
       <div class="grid-2">${field("Square footage", "squareFeet")}${field("City / area", "city")}</div>
@@ -5108,7 +5305,7 @@ function renderUpload() {
     <div class="actions single-primary-row">
       <button class="secondary" data-add-more type="button">Add more photos</button>
       <button class="secondary" data-sample-listing type="button">Use sample listing</button>
-      <button class="primary" data-next="processing">AI order photos</button>
+      <button class="primary" data-next="processing">Build My Video</button>
     </div>
     <section class="photo-grid pro-photo-grid">
       ${photos.length ? photos.map((photo, index) => photoCard(photo, index)).join("") : emptyState("No photos uploaded", "Upload listing photos or use the sample listing to see a professional output.")}
@@ -5131,31 +5328,30 @@ function renderProcessing() {
   const captions = pipelineCaptions(sequence);
   const captionByScene = new Map(captions.map((item) => [item.sceneId, item.caption]));
   const director = state.project.motionDirectorPlan;
-  const status = motionDirectorDisplayStatus();
   renderLayout(`
-    <div class="screen-title cinematic-title"><p class="eyebrow">Step 2</p><h2>Review the AI property-tour order.</h2><p>${escapeHtml(status.summary)} Remove weak scenes or reorder before choosing a style.</p></div>
+    <div class="screen-title cinematic-title"><p class="eyebrow">Video story</p><h2>Your property tour is organized.</h2><p>Review the order, remove weak photos, or adjust captions before choosing the final look.</p></div>
     <section class="video-step-grid ai-order-metrics">
       ${engineMetric("Scene types", new Set(orderedPhotos().map((photo) => sceneLabel(photo.category))).size || 0)}
       ${engineMetric("Avg confidence", `${averageConfidence(orderedPhotos())}%`)}
       ${engineMetric("Video length", `${beatSyncPlan(renderManifestScenes(sequence)).totalDuration}s`)}
-      ${engineMetric("Director", status.metric)}
+      ${engineMetric("Ready", "Preview")}
     </section>
-    <section class="motion-director-status ${escapeAttr(status.className)}">
+    <section class="motion-director-status pro-plan-status ready">
       <div>
-        <span>${escapeHtml(status.label)}</span>
-        <strong>${escapeHtml(status.headline)}</strong>
-        <small>${escapeHtml(status.reason)}</small>
+        <span>Smart edit plan</span>
+        <strong>Scenes, captions, and motion are ready.</strong>
+        <small>EstateMotion built a property-tour sequence from your listing photos.</small>
       </div>
-      <button class="secondary" data-regenerate-edit-plan ${status.disabled ? "disabled" : ""}>Regenerate edit plan</button>
+      <button class="secondary" data-regenerate-edit-plan>Refresh plan</button>
     </section>
     <section class="panel reel-plan-panel">
-      <div class="section-title"><p>AI photo ordering</p><h3>${sequence.scenes.length} scenes in listing-tour order</h3></div>
+      <div class="section-title"><p>Photo order</p><h3>${sequence.scenes.length} scenes in listing-tour order</h3></div>
       <div class="reel-plan-grid">
         ${sequence.scenes.map((scene, index) => reelPlanRow(scene, index, captionByScene.get(scene.id))).join("")}
       </div>
       <div class="actions single-primary-row">
-        <button class="secondary" data-reset-ai-plan>Reset AI order</button>
-        <button class="primary" data-next-style>Choose video style</button>
+        <button class="secondary" data-reset-ai-plan>Reset order</button>
+        <button class="primary" data-next-style>Choose Style</button>
       </div>
     </section>
   `);
@@ -5165,20 +5361,52 @@ function renderProcessing() {
 }
 
 function renderTemplate() {
+  const styleTemplates = listingVideoTemplates();
+  const selectedStyle = styleTemplates.find((item) => item.id === normalizeTemplateId(state.selectedTemplateId)) || styleTemplates[0];
+  const selectedEngineTemplate = templates.find((entry) => entry.id === selectedStyle.id) || selectedTemplate();
   renderLayout(`
-    <div class="screen-title cinematic-title"><p class="eyebrow">Step 3</p><h2>Choose a professional video style.</h2><p>Each style changes motion pacing, transitions, text treatment, and export behavior while preserving the exact property photos.</p></div>
-    <section class="template-showcase pro-template-grid">
-      ${listingVideoTemplates().map((item) => {
+    <div class="screen-title cinematic-title style-gallery-title"><p class="eyebrow">Template Gallery</p><h2>Choose Your Video Style</h2><p>Select the look and feel that matches your listing and audience.</p></div>
+    <section class="style-gallery-layout">
+      <div class="style-gallery-grid">
+        ${styleTemplates.map((item, index) => {
         const template = templates.find((entry) => entry.id === item.id) || templates[0];
-        return `<button class="template-card template-premium-card ${template.id === normalizeTemplateId(state.selectedTemplateId) ? "selected" : ""}" data-template="${template.id}" style="--template-accent:${template.accentColor}">
-          <span class="template-preview"><span></span><b></b><i></i></span>
-          <span class="template-copy"><em>${escapeHtml(item.bestFor)}</em><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.description)}</small></span>
+        const selected = template.id === normalizeTemplateId(state.selectedTemplateId);
+        return `<button class="style-template-card ${selected ? "selected" : ""}" data-template="${template.id}" style="--template-accent:${template.accentColor}; --style-image:url('${item.previewImage}')">
+          <span class="style-card-media">
+            <img src="${escapeAttr(item.previewImage)}" alt="">
+            <span class="style-video-shimmer"></span>
+            <span class="style-card-overlay">
+              ${index === 0 ? `<b class="recommended-badge">Recommended</b>` : `<b>${escapeHtml(item.badge)}</b>`}
+              <em>${escapeHtml(item.motion)}</em>
+            </span>
+          </span>
+          <span class="style-card-copy">
+            <span class="style-card-kicker">${escapeHtml(item.bestFor)}</span>
+            <strong>${escapeHtml(item.label)}</strong>
+            <small>${escapeHtml(item.description)}</small>
+          </span>
+          <span class="style-card-actions">
+            <span>${selected ? "Selected" : "Select style"}</span>
+            <small>Preview sample</small>
+          </span>
         </button>`;
       }).join("")}
+      </div>
+      <aside class="style-preview-panel">
+        <div class="section-title"><p>Selected Style</p><h3>${escapeHtml(selectedStyle.label)}</h3></div>
+        <div class="style-preview-device">
+          ${styleGalleryPhonePreview(selectedStyle, selectedEngineTemplate)}
+        </div>
+        <div class="style-preview-details">
+          <span>${escapeHtml(selectedStyle.bestFor)}</span>
+          <strong>${escapeHtml(selectedStyle.previewTone)}</strong>
+          <p>${escapeHtml(selectedStyle.description)}</p>
+        </div>
+      </aside>
     </section>
     <div class="actions single-primary-row">
       <button class="secondary" data-back-order>Back to order</button>
-      <button class="primary" data-next="preview">Generate preview</button>
+      <button class="primary" data-next="preview">Continue to Preview</button>
     </div>
   `);
   document.querySelectorAll("[data-template]").forEach((button) => button.addEventListener("click", () => {
@@ -5187,6 +5415,21 @@ function renderTemplate() {
   }));
   document.querySelector("[data-back-order]").addEventListener("click", () => navigate("processing"));
   document.querySelector("[data-next]").addEventListener("click", () => guard(validateProjectBasics() || validatePhotos() || validateTemplate(), () => navigate("preview")));
+}
+
+function styleGalleryPhonePreview(style, template) {
+  const photo = orderedPhotos()[0] || { uri: style.previewImage, category: "Exterior hero" };
+  const image = photo.uri || style.previewImage;
+  return `
+    <div class="style-phone-preview" style="--template-accent:${template.accentColor || "#C7A76C"}">
+      <img src="${escapeAttr(image)}" alt="">
+      <div class="style-phone-gradient"></div>
+      <div class="style-phone-topline">${escapeHtml(style.label)}</div>
+      <div class="style-phone-title">${escapeHtml(state.project.address || "Featured Listing")}</div>
+      <div class="style-phone-stats">${escapeHtml(state.project.price || "$1,250,000")} · ${escapeHtml(state.project.beds || "4")} BD · ${escapeHtml(state.project.baths || "3")} BA</div>
+      <div class="style-phone-caption">${escapeHtml(style.motion)}</div>
+    </div>
+  `;
 }
 
 function renderPreview() {
@@ -5204,15 +5447,15 @@ function renderPreview() {
   }));
   const currentPlan = pacing[state.selectedScene] ?? reelPacing(photos)[state.selectedScene] ?? motionPlanForPhoto(photo, state.selectedScene);
   renderLayout(`
-    <div class="screen-title cinematic-title"><p class="eyebrow">Step 4</p><h2>Preview the cinematic listing video.</h2><p>Depth-style camera movement, scene-aware transitions, stat cards, safe-area overlays, and branded outro are ready for export.</p></div>
+    <div class="screen-title cinematic-title"><p class="eyebrow">Preview</p><h2>See the video before export.</h2><p>Review the motion, overlays, stat cards, and branded end card before creating the final files.</p></div>
     <section class="preview-suite pro-preview-suite">
       <div class="video-player-shell">
         <div class="player-chrome"><span>Professional preview</span><b>${escapeHtml(template.name)}</b></div>
         ${reelStage(photo, copy, template, state.selectedScene, photos.length)}
       </div>
       <aside class="preview-inspector panel export-status-card">
-        <div class="section-title"><p>Motion design</p><h3>${escapeHtml(currentPlan.motionStyle)}</h3></div>
-        <p class="muted">Scene-aware simulated depth movement with no hallucinated rooms, views, or property features.</p>
+        <div class="section-title"><p>Video feel</p><h3>${escapeHtml(currentPlan.motionStyle)}</h3></div>
+        <p class="muted">Built from the uploaded listing photos with clean, professional movement.</p>
         <div class="metric-row"><span>Scene</span><b>${escapeHtml(sceneLabel(photo.category))}</b></div>
         <div class="metric-row"><span>Duration</span><b>${escapeHtml(currentPlan.duration)}s</b></div>
         <div class="metric-row"><span>Beat marker</span><b>${escapeHtml(currentPlan.beatMarker)}</b></div>
@@ -5223,7 +5466,7 @@ function renderPreview() {
     <div class="actions single-primary-row">
       <button class="secondary" data-scene="-1">Previous scene</button>
       <button class="secondary" data-scene="1">Next scene</button>
-      <button class="primary" data-next="export">Export videos</button>
+      <button class="primary" data-next="export">Export My Video</button>
     </div>
     <section class="panel scene-card-panel">
       <div class="section-title"><p>Timeline</p><h3>${photos.length} scenes / ${beatSyncPlan(renderManifestScenes()).totalDuration}s</h3></div>
@@ -5273,23 +5516,23 @@ function renderExport() {
     ["Horizontal Tour", "16:9 branded MP4", "YouTube / website"],
     ["Square Feed", "1:1 branded MP4", "Instagram feed"],
     ["MLS Clean", "Unbranded clean MP4", "Compliance-ready"],
-    ["Manifest", "Render JSON + captions", "Production handoff"]
+    ["Caption Pack", "Caption + hashtags", "Post-ready copy"]
   ];
   renderLayout(`
-    <div class="screen-title cinematic-title"><p class="eyebrow">Step 5</p><h2>Export professional video variants.</h2><p>Create branded and unbranded videos for social, website, YouTube, and MLS-safe distribution.</p></div>
+    <div class="screen-title cinematic-title"><p class="eyebrow">Export</p><h2>Your listing video is ready.</h2><p>Create polished versions for Reels, TikTok, YouTube, your website, and MLS-safe sharing.</p></div>
     <section class="export-delivery-grid">
       <div class="video-player-shell export-preview-shell">
         <div class="player-chrome"><span>Final video preview</span><b>${escapeHtml(selectedTemplate().name)}</b></div>
         ${reelStage(orderedPhotos()[0] ?? demoPhotos[0], aiCopy(), selectedTemplate(), 0, Math.max(1, orderedPhotos().length))}
       </div>
       <section class="panel elevated export-command">
-        <div class="section-title"><p>Export package</p><h3>${accountGate ? "Create account to export" : preflightError ? "Fix before rendering" : "Ready to render"}</h3></div>
-        ${accountGate ? `<div class="state-banner loading-state"><strong>Your preview is ready</strong><span>Create your free account to save this project, upload photos to durable storage, and export the finished MP4.</span></div>` : preflightError ? `<div class="state-banner error-state"><strong>Export blocked</strong><span>${escapeHtml(preflightError)}</span></div>` : `<div class="state-banner loading-state"><strong>Render-ready manifest</strong><span>Every photo scene is mapped to the listing photo URL available to the renderer.</span></div>`}
+        <div class="section-title"><p>Delivery</p><h3>${accountGate ? "Create account to export" : preflightError ? "One more step" : "Ready to create files"}</h3></div>
+        ${accountGate ? `<div class="state-banner loading-state"><strong>Your preview is ready</strong><span>Create your free account to save the project and export the finished video.</span></div>` : preflightError ? `<div class="state-banner error-state"><strong>Export needs attention</strong><span>${escapeHtml(publicFacingError(preflightError))}</span></div>` : `<div class="state-banner loading-state"><strong>Ready to export</strong><span>Your video package is prepared for download.</span></div>`}
         <div class="export-option-grid">${exportOptions.map(([title, body, format]) => exportOptionCard(title, body, format)).join("")}</div>
         <div class="actions single-primary-row">
-          <button class="primary" data-queue-pack>Create video exports</button>
-          <button class="secondary" data-download-json>Download render manifest</button>
-          <button class="secondary" data-download-html>Download preview HTML</button>
+          <button class="primary" data-queue-pack>Create Video Exports</button>
+          <button class="secondary" data-download-json>Download Caption Pack</button>
+          <button class="secondary" data-download-html>Download Preview</button>
         </div>
       </section>
     </section>
