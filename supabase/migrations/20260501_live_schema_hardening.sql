@@ -96,11 +96,6 @@ alter table public.projects enable row level security;
 alter table public.project_photos enable row level security;
 alter table public.beta_feedback enable row level security;
 
-drop policy if exists "Users manage own beta feedback" on public.beta_feedback;
-create policy "Users manage own beta feedback" on public.beta_feedback
-  for all using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
-
 do $$
 begin
   if not exists (
@@ -152,4 +147,12 @@ begin
       );
   end if;
 
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'beta_feedback' and policyname = 'Users manage own beta feedback'
+  ) then
+    create policy "Users manage own beta feedback" on public.beta_feedback
+      for all using (auth.uid() = user_id)
+      with check (auth.uid() = user_id);
+  end if;
 end $$;
