@@ -9,6 +9,7 @@ export default async function handler(request, response) {
   }
 
   if (request.method === "GET") {
+    // (status polling — unchanged)
     try {
       const jobId = new URL(request.url || "", "http://localhost").searchParams.get("jobId");
       if (!jobId) {
@@ -57,6 +58,20 @@ export default async function handler(request, response) {
     const manifestError = validateManifestForServerRender(manifest, { live: !readFlag("MOCK_RENDERING", true) });
     if (manifestError) {
       response.status(400).json({ status: "failed", error: manifestError });
+      return;
+    }
+
+    // Tier / quota guard. Soft-fails when Supabase isn't configured (so demos
+    // and mock-mode still work). When configured + user is signed in, we
+    // enforce the user's monthly_video_quota and available_engines.
+    const tierGuard = await enforceTierGuard(request, manifest);
+    if (!tierGuard.ok) {
+      response.status(tierGuard.status || 402).json({
+        status: "failed",
+        error: tierGuard.error,
+        upgradeRequired: tierGuard.upgradeRequired || false,
+        currentTier: tierGuard.currentTier || null
+      });
       return;
     }
 
@@ -210,4 +225,82 @@ async function fetchWithTimeout(url, options, timeoutMs) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/* ============================================================
+   Tier / quota guard
+   ============================================================ */
+async function enforceTierGuard(request, manifest) {
+  const supabaseUrl = process.env.SUPABASE_URL || "";
+  const anonKey = process.env.SUPABASE_ANON_KEY || "";
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  // If Supabase isn't fully configured, allow the render (development / demo mode).
+  if (!supabaseUrl || !anonKey || !serviceKey) return { ok: true };
+
+  const auth = String(request.headers.authorization || "");
+  if (!auth.startsWith("Bearer ")) {
+    // No JWT — anonymous request. Only allow Remotion engine, no Runway.
+    if (String(manifest.engine || "remotion").toLowerCase() === "runway") {
+      return {
+        ok: false,
+        status: 401,
+        error: "Sign in or start a free trial to render Cinematic AI videos.",
+        upgradeRequired: true
+      };
+    }
+    return { ok: true };
+  }
+
+  const token = auth.slice(7);
+  const userRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
+    headers: { apikey: anonKey, Authorization: `Bearer ${token}` }
+  });
+  if (!userRes.ok) {
+    return { ok: false, status: 401, error: "Authentication expired. Sign in again." };
+  }
+  const user = await userRes.json().catch(() => ({}));
+  const userId = user?.id;
+  if (!userId) return { ok: false, status: 401, error: "Authentication invalid." };
+
+  const stateRes = await fetch(`${supabaseUrl}/rest/v1/rpc/get_user_tier_state`, {
+    method: "POST",
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ p_user_id: userId })
+  });
+  if (!stateRes.ok) {
+    // RPC failure shouldn't block legitimate users; log and allow.
+    console.warn("[render] tier RPC failed", { status: stateRes.status });
+    return { ok: true };
+  }
+  const stateRows = await stateRes.json().catch(() => []);
+  const state = Array.isArray(stateRows) ? stateRows[0] : stateRows;
+  if (!state) return { ok: true };
+
+  if (!state.can_render) {
+    return {
+      ok: false,
+      status: 402,
+      error: state.reason || "Your plan does not allow more videos this month.",
+      upgradeRequired: true,
+      currentTier: state.tier
+    };
+  }
+
+  const requestedEngine = String(manifest.engine || "remotion").toLowerCase();
+  const available = Array.isArray(state.available_engines) ? state.available_engines : ["remotion"];
+  if (!available.includes(requestedEngine)) {
+    return {
+      ok: false,
+      status: 402,
+      error: `Cinematic AI requires the Cinematic AI plan or higher. You're on ${state.tier}.`,
+      upgradeRequired: true,
+      currentTier: state.tier
+    };
+  }
+
+  return { ok: true, userId, state };
 }

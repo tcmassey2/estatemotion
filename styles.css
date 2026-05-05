@@ -1,18 +1,32 @@
+/* EstateMotion app shell — dark cinematic tokens.
+ * Variable names preserved from earlier light-theme implementations so
+ * existing component styles continue to compose. Values inverted to dark
+ * to match the new landing page (landing.css). */
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
 :root {
-  --ink: #0D0D0D;
-  --slate: #1C1C1C;
-  --muted: #6f726f;
-  --paper: #F8F5EF;
-  --card: #ffffff;
-  --line: #e3ded3;
-  --gold: #c7a76c;
-  --dark-gold: #9c773b;
+  /* Inverted: ink is the cream foreground text, paper is the dark background. */
+  --ink: #F8F5EF;
+  --slate: #1F1F26;
+  --muted: #9B9CA0;
+  --paper: #08080A;
+  --card: #15151B;
+  --card-elevated: #1F1F26;
+  --line: #2A2A33;
+  --line-soft: #1A1A22;
+  --gold: #C7A76C;
+  --gold-light: #E3BB73;
+  --dark-gold: #9C773B;
   --sand: #B88746;
-  --success: #2d7d78;
-  --danger: #a94f4f;
-  --warning: #b88746;
-  --shadow: 0 24px 70px rgba(16, 17, 19, 0.12);
-  --soft-shadow: 0 12px 34px rgba(16, 17, 19, 0.07);
+  --success: #5BBE9B;
+  --danger: #E26B6B;
+  --warning: #B88746;
+  --shadow: 0 24px 60px rgba(0, 0, 0, 0.5), 0 4px 16px rgba(0, 0, 0, 0.3);
+  --soft-shadow: 0 12px 34px rgba(0, 0, 0, 0.3);
+  --gold-glow: 0 0 40px rgba(199, 167, 108, 0.18);
+  --font-display: "Fraunces", "Times New Roman", Georgia, serif;
+  --font-body: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Menlo, monospace;
 }
 
 * {
@@ -22,11 +36,21 @@
 body {
   margin: 0;
   min-height: 100vh;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--font-body);
   background:
-    radial-gradient(circle at 12% -4%, rgba(199, 167, 108, .18), transparent 34%),
-    linear-gradient(180deg, #fbfaf7, var(--paper));
+    radial-gradient(ellipse 60% 40% at 50% -10%, rgba(199, 167, 108, 0.10), transparent 60%),
+    linear-gradient(180deg, #0E0E12, var(--paper));
+  background-attachment: fixed;
   color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Editorial display type for app headlines */
+h1, h2, h3 {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+  font-weight: 500;
 }
 
 button,
@@ -59,8 +83,8 @@ button:disabled {
 .bottom-nav {
   position: sticky;
   z-index: 10;
-  background: rgba(248, 246, 241, 0.92);
-  backdrop-filter: blur(16px);
+  background: rgba(8, 8, 10, 0.82);
+  backdrop-filter: blur(18px) saturate(160%);
 }
 
 .topbar {

@@ -4,14 +4,24 @@ export default function handler(request, response) {
   response.status(200).send(`window.ESTATEMOTION_ENV = ${JSON.stringify(publicEnv())};`);
 }
 
+// Auto-detection rule: if the real keys for a subsystem are present, mock mode
+// is OFF by default. An explicit MOCK_* env var still wins, so you can force
+// MOCK_RENDERING=true for staging tests even with keys present.
 function publicEnv() {
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || "";
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || "";
+  const openaiKeyPresent = Boolean(process.env.OPENAI_API_KEY);
+  const renderWorkerConfigured = Boolean(process.env.RENDER_WORKER_URL || process.env.RENDER_ENDPOINT);
+  const stripeConfigured = Boolean(process.env.STRIPE_SECRET_KEY || process.env.STRIPE_PUBLISHABLE_KEY);
+  const supabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+
   return {
-    MOCK_AI: readFlag("MOCK_AI", true),
-    MOCK_RENDERING: readFlag("MOCK_RENDERING", true),
-    MOCK_STRIPE: readFlag("MOCK_STRIPE", true),
-    MOCK_SUPABASE: readFlag("MOCK_SUPABASE", true),
-    SUPABASE_URL: process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || "",
-    SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || "",
+    MOCK_AI: readFlag("MOCK_AI", !openaiKeyPresent),
+    MOCK_RENDERING: readFlag("MOCK_RENDERING", !renderWorkerConfigured),
+    MOCK_STRIPE: readFlag("MOCK_STRIPE", !stripeConfigured),
+    MOCK_SUPABASE: readFlag("MOCK_SUPABASE", !supabaseConfigured),
+    SUPABASE_URL: supabaseUrl,
+    SUPABASE_ANON_KEY: supabaseAnonKey,
     LISTING_PHOTOS_BUCKET: process.env.LISTING_PHOTOS_BUCKET || process.env.SUPABASE_LISTING_PHOTOS_BUCKET || "listing-photos",
     SUPABASE_STORAGE_PRIVATE: readFlag("SUPABASE_STORAGE_PRIVATE", false),
     SUPABASE_SIGNED_URL_TTL_SECONDS: Number(process.env.SUPABASE_SIGNED_URL_TTL_SECONDS || 172800),

@@ -1,5 +1,17 @@
 import http from "node:http";
 import { renderEstateMotionJob } from "./src/render-job.mjs";
+import { renderRunwayJob } from "./src/runway-job.mjs";
+
+// Route to the correct render engine based on manifest.engine.
+// "remotion" (default) — existing Ken-Burns photo-animation pipeline.
+// "runway" — Runway Gen-3 Turbo image-to-video then FFmpeg stitch.
+async function dispatchRender(body, options = {}) {
+  const engine = String(body?.manifest?.engine || "remotion").toLowerCase();
+  if (engine === "runway") {
+    return renderRunwayJob(body, options);
+  }
+  return renderEstateMotionJob(body, options);
+}
 
 const port = Number(process.env.PORT || 8787);
 const maxBodyBytes = 25 * 1024 * 1024;
@@ -49,7 +61,7 @@ const server = http.createServer(async (request, response) => {
   try {
     const body = await readJsonBody(request);
     if (request.url === "/render/sync") {
-      const result = await renderEstateMotionJob(body);
+      const result = await dispatchRender(body);
       sendJson(response, 200, publishLocalAssetUrls(result));
       return;
     }
@@ -99,9 +111,10 @@ function sendJson(response, statusCode, payload) {
 }
 
 async function runRenderJob(jobId, body) {
-  updateJob(jobId, { status: "rendering", phase: "Rendering scenes", progress: 28 });
+  const engine = String(body?.manifest?.engine || "remotion").toLowerCase();
+  updateJob(jobId, { status: "rendering", phase: "Rendering scenes", progress: 12, engine });
   try {
-    const result = await renderEstateMotionJob(body, { jobId, onProgress: (patch) => updateJob(jobId, patch) });
+    const result = await dispatchRender(body, { jobId, onProgress: (patch) => updateJob(jobId, patch) });
     const publishedResult = publishLocalAssetUrls(result);
     updateJob(jobId, {
       ...publishedResult,

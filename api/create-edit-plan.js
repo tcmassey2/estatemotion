@@ -6,6 +6,46 @@ const OPENAI_PHOTO_LIMIT = 3;
 const ROOM_TYPES = ["exterior", "kitchen", "living", "bedroom", "bathroom", "outdoor", "amenity", "detail"];
 const CAMERA_MOTIONS = ["push_in", "pull_out", "lateral_pan", "vertical_reveal", "parallax_zoom", "detail_sweep"];
 const TRANSITIONS = ["crossfade", "blur_wipe", "whip_pan", "match_cut", "light_leak"];
+const RENDER_ENGINES = ["remotion", "runway"];
+
+// Runway Gen-3 Turbo image-to-video prompt templates. These map our internal
+// camera-motion taxonomy onto natural-language prompts that Runway responds well
+// to. Every template ENDS with a hallucination-blocking constraint clause —
+// real estate is one of the few AI-video use cases where any element morphing
+// or imagined feature is a legal liability, not just an aesthetic problem.
+const RUNWAY_MOTION_PROMPTS = {
+  push_in:
+    "Slow cinematic camera push toward the focal subject. Subtle 6-8% zoom. Smooth, deliberate motion.",
+  pull_out:
+    "Slow cinematic camera pull-back revealing the full space. Subtle 6-8% reverse zoom. Smooth motion.",
+  lateral_pan:
+    "Smooth horizontal camera pan from left to right across the space. No vertical drift. Steady pace.",
+  vertical_reveal:
+    "Slow vertical camera tilt from lower foreground upward, revealing the full space. Cinematic reveal.",
+  parallax_zoom:
+    "Cinematic parallax push with subtle depth separation between foreground and background elements. 6-8% zoom. Soft.",
+  detail_sweep:
+    "Slow detail-focused camera move across an architectural feature. Tight framing. Soft, deliberate motion."
+};
+
+// Universal anti-hallucination constraint appended to every Runway prompt.
+// Tested constraint phrasing: explicit "no" instructions work better than
+// positive constraints with Runway's prompt model.
+const RUNWAY_CONSTRAINT_CLAUSE =
+  "Preserve all architectural lines, textures, and proportions exactly as in the source image. " +
+  "No movement of furniture, fixtures, decor, or fabric. No new objects appear. No people appear or move. " +
+  "Lighting may shift subtly but no dramatic relighting. Photorealistic, professional real estate cinematography.";
+
+const RUNWAY_STYLE_PROMPTS = {
+  "Cinematic Luxury":
+    "Editorial luxury feel. Warm golden tones. Slow, deliberate, premium pacing.",
+  "Modern Social":
+    "Crisp, modern, social-ready energy. Clean color, slightly punched contrast.",
+  "MLS Clean":
+    "Neutral, accurate color. No stylization. Clean professional listing video aesthetic.",
+  "Investor Tour":
+    "Direct, factual cinematography. Neutral grade. Steady pacing without flourish."
+};
 
 export default async function handler(request, response) {
   setCorsHeaders(response);
@@ -34,6 +74,7 @@ export default async function handler(request, response) {
   const listingDetails = normalizeListingDetails(body.listingDetails || {});
   const selectedStyle = String(body.selectedStyle || "Cinematic Luxury");
   const exportFormat = String(body.exportFormat || "vertical");
+  const engine = RENDER_ENGINES.includes(String(body.engine || "")) ? String(body.engine) : "remotion";
 
   if (photos.length < 3) {
     const error = invalidPhotoUrls.length
@@ -59,7 +100,7 @@ export default async function handler(request, response) {
       status: "fallback",
       reason,
       errorCategory: "missing_openai_api_key",
-      editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat })
+      editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat, engine })
     });
     return;
   }
@@ -77,7 +118,7 @@ export default async function handler(request, response) {
         status: "fallback",
         reason,
         errorCategory: "inaccessible_image_url",
-        editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat })
+        editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat, engine })
       });
       return;
     }
@@ -110,7 +151,7 @@ export default async function handler(request, response) {
         reason,
         errorCategory: openaiError.category,
         requestId: openaiError.requestId,
-        editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat })
+        editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat, engine })
       });
       return;
     }
@@ -127,7 +168,7 @@ export default async function handler(request, response) {
         status: "fallback",
         reason: `Motion Director unavailable: schema validation failed. ${validation.error}`,
         errorCategory: "schema_validation",
-        editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat })
+        editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat, engine })
       });
       return;
     }
@@ -138,7 +179,7 @@ export default async function handler(request, response) {
     });
     response.status(200).json({
       status: "complete",
-      editPlan: normalizeEditPlan(parsed, photos, { listingDetails, selectedStyle, exportFormat })
+      editPlan: normalizeEditPlan(parsed, photos, { listingDetails, selectedStyle, exportFormat, engine })
     });
   } catch (error) {
     const category = error.name === "AbortError" ? "timeout" : "openai_exception";
@@ -152,7 +193,7 @@ export default async function handler(request, response) {
       status: "fallback",
       reason,
       errorCategory: category,
-      editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat })
+      editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat, engine })
     });
   }
 }
@@ -297,7 +338,7 @@ function editPlanSchema(photoIds) {
   };
 }
 
-function deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat }) {
+function deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat, engine = "remotion" }) {
   const ranked = photos
     .map((photo, index) => ({
       ...photo,
@@ -342,7 +383,7 @@ function deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFo
       subline: listingDetails.brokerage || listingDetails.cta || "Contact the listing agent"
     },
     scenes
-  }, photos, { listingDetails, selectedStyle, exportFormat });
+  }, photos, { listingDetails, selectedStyle, exportFormat, engine });
 }
 
 function validateEditPlan(plan, photos) {
@@ -382,10 +423,18 @@ function normalizeEditPlan(plan, photos, context) {
         subline: cleanText(scene.overlay?.subline || overlayFor(scene.roomType, context.listingDetails, index).subline, 90)
       }
     }));
+  const engine = RENDER_ENGINES.includes(context.engine) ? context.engine : "remotion";
+  const finalScenes = engine === "runway"
+    ? scenes.map((scene) => ({
+        ...scene,
+        runwayPrompt: buildRunwayPrompt(scene, photos, context)
+      }))
+    : scenes;
   return {
     id: `motion-director-${Date.now()}`,
     source: plan.source || context.source || "openai-motion-director",
-    heroPhotoId: photoIds.has(plan.heroPhotoId) ? plan.heroPhotoId : scenes[0]?.photoId,
+    engine,
+    heroPhotoId: photoIds.has(plan.heroPhotoId) ? plan.heroPhotoId : finalScenes[0]?.photoId,
     exportFormat: context.exportFormat || plan.exportFormat || "vertical",
     selectedStyle: context.selectedStyle || plan.selectedStyle || "Cinematic Luxury",
     musicMood: cleanText(plan.musicMood || musicMoodFor(context.selectedStyle), 80),
@@ -397,7 +446,60 @@ function normalizeEditPlan(plan, photos, context) {
       headline: cleanText(plan.outroCard?.headline || context.listingDetails.agentName || "Schedule a private tour", 80),
       subline: cleanText(plan.outroCard?.subline || context.listingDetails.brokerage || "", 100)
     },
-    scenes
+    runwayConfig: engine === "runway" ? defaultRunwayConfig(context.exportFormat) : null,
+    scenes: finalScenes
+  };
+}
+
+function buildRunwayPrompt(scene, photos, context = {}) {
+  const photo = photos.find((p) => p.id === scene.photoId) || {};
+  const motionClause = RUNWAY_MOTION_PROMPTS[scene.cameraMotion] || RUNWAY_MOTION_PROMPTS.push_in;
+  const styleClause = RUNWAY_STYLE_PROMPTS[context.selectedStyle] || RUNWAY_STYLE_PROMPTS["Cinematic Luxury"];
+
+  const subject = describeSubject(scene, photo);
+  const visibleClause = scene.visibleFeatures && scene.visibleFeatures.length
+    ? ` Visible elements include: ${scene.visibleFeatures.slice(0, 3).join(", ")}.`
+    : "";
+
+  // Order matters: motion first (most important to Runway), then subject,
+  // then visible elements (anchoring), then style, then constraints (last so
+  // they override style if conflict).
+  return [
+    motionClause,
+    `Subject: ${subject}.`,
+    visibleClause.trim(),
+    styleClause,
+    RUNWAY_CONSTRAINT_CLAUSE
+  ].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+}
+
+function describeSubject(scene, photo) {
+  const roomDescriptors = {
+    exterior: "the exterior of a residential property",
+    kitchen: "a residential kitchen",
+    living: "a residential living space",
+    bedroom: "a bedroom interior",
+    bathroom: "a bathroom interior",
+    outdoor: "an outdoor residential space",
+    amenity: "a residential amenity space",
+    detail: "an architectural detail"
+  };
+  return roomDescriptors[scene.roomType] || "a residential interior";
+}
+
+function defaultRunwayConfig(exportFormat) {
+  const format = String(exportFormat || "vertical").toLowerCase();
+  // Runway Gen-3 Turbo accepts these aspect ratios for image_to_video.
+  // Our worker translates these to the actual API ratio strings.
+  const ratio = format === "wide" || format === "16:9" ? "16:9"
+    : format === "square" || format === "1:1" ? "1:1"
+    : "9:16";
+  return {
+    model: process.env.RUNWAY_MODEL || "gen3a_turbo",
+    ratio,
+    duration: 5,
+    seed: null,
+    motionStrength: 0.4
   };
 }
 

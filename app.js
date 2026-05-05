@@ -4331,9 +4331,17 @@ async function startRealRender(jobs) {
       renderQueue: current.renderQueue.map((job) => job.status === "queued" ? { ...job, status: "rendering", updatedAt: new Date().toISOString() } : job)
     }));
 
+    // Attach Supabase JWT so /api/render can enforce per-user tier/quota.
+    const renderHeaders = { "Content-Type": "application/json" };
+    try {
+      const sess = await window.EstateMotionSupabase?.getSession?.();
+      const token = sess?.access_token || sess?.session?.access_token;
+      if (token) renderHeaders.Authorization = `Bearer ${token}`;
+    } catch {}
+
     const response = await fetch(renderApiEndpoint(), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: renderHeaders,
       body: JSON.stringify({ manifest, jobs, requestedFormat: "vertical" })
     });
     const payload = await response.json().catch(() => ({}));

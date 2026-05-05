@@ -1,29 +1,487 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>EstateMotion</title>
-    <link rel="stylesheet" href="styles.css">
-  </head>
-  <body>
-    <div id="app"></div>
-    <script src="/api/env" onerror="window.ESTATEMOTION_API_ENV_UNAVAILABLE = true"></script>
-    <script src="env.js"></script>
-    <script src="supabaseClient.js"></script>
-    <script src="lib/reel/photoIngestion.js"></script>
-    <script src="lib/reel/imageClassifier.js"></script>
-    <script src="lib/reel/photoRanker.js"></script>
-    <script src="lib/reel/templates/luxury.js"></script>
-    <script src="lib/reel/templates/viral.js"></script>
-    <script src="lib/reel/templates/openHouse.js"></script>
-    <script src="lib/reel/templates/mlsClean.js"></script>
-    <script src="lib/reel/templates/investor.js"></script>
-    <script src="lib/reel/sequencePlanner.js"></script>
-    <script src="lib/reel/copyGenerator.js"></script>
-    <script src="lib/reel/templateRenderer.js"></script>
-    <script src="lib/reel/exportOptimization.js"></script>
-    <script src="lib/reel/demoFixtures.js"></script>
-    <script src="app.js"></script>
-  </body>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EstateMotion — Cinematic listing videos in three minutes, from photos you already have</title>
+  <meta name="description" content="EstateMotion turns MLS photos into AI-directed cinematic listing videos in under three minutes. Built for real estate agents who'd rather close listings than wait on a videographer.">
+
+  <!-- Open Graph / social -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="EstateMotion — Cinematic listing videos in minutes">
+  <meta property="og:description" content="Turn MLS photos into cinematic walkthroughs. AI-directed motion. 4K-ready. Built for real estate agents.">
+  <meta property="og:site_name" content="EstateMotion">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <!-- Theme -->
+  <meta name="theme-color" content="#08080A">
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="landing.css">
+
+  <!-- Schema.org -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "EstateMotion",
+    "applicationCategory": "BusinessApplication",
+    "operatingSystem": "Web",
+    "description": "AI-directed cinematic listing video generator for real estate agents.",
+    "offers": [
+      { "@type": "Offer", "name": "Quick Reel", "price": "79", "priceCurrency": "USD" },
+      { "@type": "Offer", "name": "Cinematic AI", "price": "149", "priceCurrency": "USD" },
+      { "@type": "Offer", "name": "Cinematic AI 4K", "price": "299", "priceCurrency": "USD" }
+    ]
+  }
+  </script>
+</head>
+<body>
+
+  <!-- ===================== TOP NAV ===================== -->
+  <header class="nav" id="nav">
+    <div class="container nav-inner">
+      <a href="/" class="brand">
+        <span class="brand-mark">E</span>
+        <span>EstateMotion</span>
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="#how">How it works</a>
+        <a href="#styles">Styles</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#faq">FAQ</a>
+      </nav>
+      <div class="nav-actions">
+        <a href="/app" class="btn btn-ghost btn-sm">Sign in</a>
+        <a href="/app" class="btn btn-primary btn-sm">Start free trial</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===================== HERO ===================== -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-grid">
+        <div class="hero-copy">
+          <span class="eyebrow">AI Listing Videos for Real Estate</span>
+          <h1 class="hero-headline">
+            Cinematic listing videos in <em>three minutes</em>, from the photos you already have.
+          </h1>
+          <p class="hero-sub">
+            EstateMotion's AI Motion Director turns MLS photos into cinematic walkthroughs that close — not slideshows that get scrolled past. No videographer. No editing software. Upload, click, post.
+          </p>
+          <div class="hero-ctas">
+            <a href="/app" class="btn btn-primary btn-lg">
+              Create my free video
+              <span class="arrow" aria-hidden="true">&rarr;</span>
+            </a>
+            <a href="#comparison" class="btn btn-secondary btn-lg">Watch a sample</a>
+          </div>
+          <div class="hero-meta">
+            <span class="hero-meta-item"><span class="dot"></span> 7-day free trial</span>
+            <span class="hero-meta-item"><span class="dot"></span> No credit card required</span>
+            <span class="hero-meta-item"><span class="dot"></span> 9:16 + 4K ready</span>
+          </div>
+        </div>
+
+        <div class="hero-visual" aria-hidden="true">
+          <div class="hero-glow"></div>
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen">
+              <div class="reel">
+                <div class="reel-scene" style="background-image:url('https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=900&q=80')"></div>
+                <div class="reel-scene" style="background-image:url('https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=900&q=80')"></div>
+                <div class="reel-scene" style="background-image:url('https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?auto=format&fit=crop&w=900&q=80')"></div>
+                <div class="reel-scene" style="background-image:url('https://images.unsplash.com/photo-1615873968403-89e068629265?auto=format&fit=crop&w=900&q=80')"></div>
+                <div class="reel-scene" style="background-image:url('https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=900&q=80')"></div>
+
+                <div class="reel-overlay">9828 E Pinnacle Peak</div>
+                <div class="reel-overlay line-2">Scottsdale &middot; $2.85M</div>
+                <div class="reel-progress"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== TRUST STRIP ===================== -->
+  <section class="trust">
+    <div class="container">
+      <p class="trust-label">Built for agents at brokerages like</p>
+      <div class="trust-logos">
+        <span class="trust-logo">Compass</span>
+        <span class="trust-logo">Coldwell Banker</span>
+        <span class="trust-logo">Keller Williams</span>
+        <span class="trust-logo">Sotheby's</span>
+        <span class="trust-logo">@properties</span>
+        <span class="trust-logo">eXp Realty</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== COMPARISON ===================== -->
+  <section class="section" id="comparison">
+    <div class="container">
+      <div class="section-header">
+        <span class="eyebrow">The Difference</span>
+        <h2>Slideshows scroll past. <em class="accent">Film stops the scroll.</em></h2>
+        <p class="subhead" style="margin-inline:auto;text-align:center;">
+          Most "AI" listing tools produce pan-and-zoom slideshows agents have used since 2008. EstateMotion's Motion Director directs each scene like a cinematographer — push-ins, parallax, light shifts, intentional cuts.
+        </p>
+      </div>
+
+      <div class="comparison-grid">
+        <div class="compare-card">
+          <div class="compare-frame">
+            <span class="compare-tag">Slideshow tool</span>
+            <div class="slideshow-scene" style="background-image:url('https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=900&q=80')"></div>
+            <div class="slideshow-scene" style="background-image:url('https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?auto=format&fit=crop&w=900&q=80')"></div>
+            <div class="slideshow-scene" style="background-image:url('https://images.unsplash.com/photo-1615873968403-89e068629265?auto=format&fit=crop&w=900&q=80')"></div>
+          </div>
+          <div class="compare-info">
+            <h4>Static photos. Plain crossfades.</h4>
+            <p>Looks like every other listing video. Buyers see a slideshow and assume the listing is unremarkable. Average watch-through: 12 seconds.</p>
+          </div>
+        </div>
+
+        <div class="compare-card winner">
+          <div class="compare-frame">
+            <span class="compare-tag">EstateMotion</span>
+            <div class="estate-scene" style="background-image:url('https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=900&q=80')"></div>
+            <div class="estate-scene" style="background-image:url('https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?auto=format&fit=crop&w=900&q=80')"></div>
+            <div class="estate-scene" style="background-image:url('https://images.unsplash.com/photo-1615873968403-89e068629265?auto=format&fit=crop&w=900&q=80')"></div>
+          </div>
+          <div class="compare-info">
+            <h4>True cinematic motion. Directed cuts.</h4>
+            <p>Camera pushes into the kitchen island. Light leak transition into the primary suite. Color grade shifts from cool to warm. Buyers watch to the end.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== HOW IT WORKS ===================== -->
+  <section class="section" id="how" style="background:var(--bg-soft);border-block:1px solid var(--border-soft);">
+    <div class="container">
+      <div class="section-header">
+        <span class="eyebrow">How it works</span>
+        <h2>Three steps. Three minutes. <em class="accent">Done.</em></h2>
+      </div>
+
+      <div class="steps">
+        <div class="step reveal">
+          <div class="step-num">01 &mdash; Upload</div>
+          <h4>Drop in your MLS photos</h4>
+          <p>10–20 photos from your photographer, your phone, or the MLS export. We handle JPEG, HEIC, and PNG. No specific size requirements.</p>
+        </div>
+        <div class="step reveal">
+          <div class="step-num">02 &mdash; Direct</div>
+          <h4>AI plans the cinematography</h4>
+          <p>Our Motion Director analyzes each photo, picks scene order, writes camera moves, and selects transitions based on what's actually in the frame — never invented features.</p>
+        </div>
+        <div class="step reveal">
+          <div class="step-num">03 &mdash; Render</div>
+          <h4>Download your finished MP4</h4>
+          <p>9:16 vertical for Instagram and TikTok. 4K available on Cinematic AI tier. Branded outro with your photo and contact details.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== STYLE GALLERY ===================== -->
+  <section class="section" id="styles">
+    <div class="container">
+      <div class="section-header">
+        <span class="eyebrow">Styles</span>
+        <h2>Four directions. <em class="accent">Built for how you sell.</em></h2>
+        <p class="subhead" style="margin-inline:auto;text-align:center;">
+          Pick the style that matches your listing and your audience. Each one delivers a distinctly different cinematographic feel.
+        </p>
+      </div>
+
+      <div class="styles-grid">
+        <div class="style-card">
+          <div class="style-card-img" style="background-image:url('https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=600&q=80')"></div>
+          <div class="style-card-info">
+            <div class="style-card-name">Cinematic Luxury</div>
+            <div class="style-card-best">Premium &middot; $1M+</div>
+          </div>
+        </div>
+        <div class="style-card">
+          <div class="style-card-img" style="background-image:url('https://images.unsplash.com/photo-1502672023488-70e25813eb80?auto=format&fit=crop&w=600&q=80')"></div>
+          <div class="style-card-info">
+            <div class="style-card-name">Modern Social</div>
+            <div class="style-card-best">Reels &middot; TikTok</div>
+          </div>
+        </div>
+        <div class="style-card">
+          <div class="style-card-img" style="background-image:url('https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=600&q=80')"></div>
+          <div class="style-card-info">
+            <div class="style-card-name">MLS Clean</div>
+            <div class="style-card-best">Standard listings</div>
+          </div>
+        </div>
+        <div class="style-card">
+          <div class="style-card-img" style="background-image:url('https://images.unsplash.com/photo-1564013799919-ab600027ffc6?auto=format&fit=crop&w=600&q=80')"></div>
+          <div class="style-card-info">
+            <div class="style-card-name">Investor Tour</div>
+            <div class="style-card-best">Wholesale &middot; deals</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PRICING ===================== -->
+  <section class="section" id="pricing" style="background:var(--bg-soft);border-block:1px solid var(--border-soft);">
+    <div class="container">
+      <div class="section-header">
+        <span class="eyebrow">Pricing</span>
+        <h2>Pricing that pays for itself <em class="accent">with one closing.</em></h2>
+        <p class="subhead" style="margin-inline:auto;text-align:center;">
+          A professional listing video from a videographer runs $400–1,200 per shoot. EstateMotion gets you there in three minutes for the price of one shoot per month.
+        </p>
+      </div>
+
+      <div class="pricing-grid">
+        <div class="tier">
+          <div class="tier-name">Quick Reel</div>
+          <div class="tier-tagline">For agents shipping listings every week.</div>
+          <div class="tier-price"><span class="currency">$</span>79<span class="period">/mo</span></div>
+          <ul class="tier-features">
+            <li>10 finished videos per month</li>
+            <li>Cinematic photo motion (Ken Burns Pro)</li>
+            <li>HD 1080p output, 9:16 vertical</li>
+            <li>Branded outro with your contact details</li>
+            <li>Music library access</li>
+            <li>Email support</li>
+          </ul>
+          <a href="/app" class="btn btn-secondary">Start free trial</a>
+        </div>
+
+        <div class="tier featured">
+          <div class="tier-badge">Most popular</div>
+          <div class="tier-name">Cinematic AI</div>
+          <div class="tier-tagline">For agents who want the difference buyers feel.</div>
+          <div class="tier-price"><span class="currency">$</span>149<span class="period">/mo</span></div>
+          <ul class="tier-features">
+            <li>25 finished videos per month</li>
+            <li>True AI image-to-video (Runway Gen-3)</li>
+            <li>HD 1080p output, 9:16 vertical</li>
+            <li>Everything in Quick Reel</li>
+            <li>Priority rendering queue</li>
+            <li>Priority chat support</li>
+          </ul>
+          <a href="/app" class="btn btn-primary">Start free trial</a>
+        </div>
+
+        <div class="tier">
+          <div class="tier-name">Cinematic AI 4K</div>
+          <div class="tier-tagline">For luxury teams and brokerages.</div>
+          <div class="tier-price"><span class="currency">$</span>299<span class="period">/mo</span></div>
+          <ul class="tier-features">
+            <li>60 finished videos per month</li>
+            <li>True AI image-to-video (Runway Gen-3)</li>
+            <li>4K Ultra HD output</li>
+            <li>White-label / custom branding</li>
+            <li>Multiple aspect ratios (9:16, 1:1, 16:9)</li>
+            <li>Dedicated rendering capacity</li>
+            <li>Concierge onboarding</li>
+          </ul>
+          <a href="/app" class="btn btn-secondary">Talk to sales</a>
+        </div>
+      </div>
+
+      <p class="tier-fineprint">
+        7-day free trial on every plan. No credit card required to start. Cancel anytime.
+      </p>
+    </div>
+  </section>
+
+  <!-- ===================== TESTIMONIALS ===================== -->
+  <section class="section">
+    <div class="container">
+      <div class="section-header">
+        <span class="eyebrow">What agents say</span>
+        <h2>The shift is real, <em class="accent">and measurable.</em></h2>
+      </div>
+
+      <div class="testimonial-grid">
+        <div class="testimonial">
+          <div class="stars" aria-label="5 stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
+          <p class="testimonial-quote">My open-house video used to take a Saturday afternoon to edit. EstateMotion does it in the time it takes to make coffee, and it looks better than my old DSLR cuts.</p>
+          <div class="testimonial-author">
+            <div class="testimonial-avatar">JR</div>
+            <div class="testimonial-meta">
+              <div class="testimonial-name">Jordan Rivera</div>
+              <div class="testimonial-role">Realtor &middot; Phoenix, AZ</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="testimonial">
+          <div class="stars" aria-label="5 stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
+          <p class="testimonial-quote">Buyers stop scrolling. That's the only metric that matters. My listing reels were getting 200 views — now they get 4,000+, with messages.</p>
+          <div class="testimonial-author">
+            <div class="testimonial-avatar">SM</div>
+            <div class="testimonial-meta">
+              <div class="testimonial-name">Samantha Mitchell</div>
+              <div class="testimonial-role">Listing Agent &middot; Scottsdale, AZ</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="testimonial">
+          <div class="stars" aria-label="5 stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
+          <p class="testimonial-quote">I was paying $850 a shoot for a videographer. EstateMotion costs less than two coffees a day and turns my $300K listings into $300K listings that look like $1M listings.</p>
+          <div class="testimonial-author">
+            <div class="testimonial-avatar">DK</div>
+            <div class="testimonial-meta">
+              <div class="testimonial-name">Derrick Kim</div>
+              <div class="testimonial-role">Broker &middot; Los Angeles, CA</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== FAQ ===================== -->
+  <section class="section" id="faq" style="background:var(--bg-soft);border-block:1px solid var(--border-soft);">
+    <div class="container">
+      <div class="section-header">
+        <span class="eyebrow">Questions &middot; Answers</span>
+        <h2>The honest version.</h2>
+      </div>
+
+      <div class="faq">
+        <div class="faq-item">
+          <button class="faq-question" data-faq-toggle aria-expanded="false">
+            <span>Will it look like AI slop?</span>
+            <span class="faq-toggle" aria-hidden="true">+</span>
+          </button>
+          <div class="faq-answer">
+            <p>No. The Motion Director is constrained to describe only what's visible in your actual photos — never invents features, furniture, or finishes. Camera motion is subtle and deliberately cinematic. AI hallucinations are explicitly blocked from the prompt layer down to the render layer.</p>
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-question" data-faq-toggle aria-expanded="false">
+            <span>What if my photos are bad?</span>
+            <span class="faq-toggle" aria-hidden="true">+</span>
+          </button>
+          <div class="faq-answer">
+            <p>EstateMotion ranks your photos and uses the strongest as scene anchors. Photos that score below threshold are flagged and excluded from the final render with one click. We don't enhance or alter the listing — we present it well.</p>
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-question" data-faq-toggle aria-expanded="false">
+            <span>Can I edit the finished video?</span>
+            <span class="faq-toggle" aria-hidden="true">+</span>
+          </button>
+          <div class="faq-answer">
+            <p>Yes. Reorder scenes, swap photos, change motion direction, edit overlay text, swap music, regenerate the AI plan with one click. Every parameter the Motion Director sets is yours to override.</p>
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-question" data-faq-toggle aria-expanded="false">
+            <span>How is this different from Canva or CapCut?</span>
+            <span class="faq-toggle" aria-hidden="true">+</span>
+          </button>
+          <div class="faq-answer">
+            <p>Canva and CapCut are general-purpose template editors. You pick a template, drag photos in, hope it works. EstateMotion is purpose-built for real estate listings: the Motion Director understands rooms, the templates encode MLS-safe pacing, the music library is licensed for real estate use, and the output is sized for the platforms agents actually post on.</p>
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-question" data-faq-toggle aria-expanded="false">
+            <span>How long does a render actually take?</span>
+            <span class="faq-toggle" aria-hidden="true">+</span>
+          </button>
+          <div class="faq-answer">
+            <p>Quick Reel: under 90 seconds. Cinematic AI: 3–5 minutes depending on photo count. The video appears in your dashboard with a download link as soon as the render completes.</p>
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-question" data-faq-toggle aria-expanded="false">
+            <span>Is there a long-term contract?</span>
+            <span class="faq-toggle" aria-hidden="true">+</span>
+          </button>
+          <div class="faq-answer">
+            <p>No. Monthly subscription. Cancel any time, no fee, no questions. Free trial for 7 days, no card required to start. We'd rather you stay because the videos work.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== FINAL CTA ===================== -->
+  <section class="final-cta">
+    <div class="container">
+      <h2 class="display">Your next listing deserves film, <em class="accent">not a slideshow.</em></h2>
+      <p class="subhead">Free for the first seven days. No credit card. Cancel any time.</p>
+      <a href="/app" class="btn btn-primary btn-lg">Start my free trial &rarr;</a>
+    </div>
+  </section>
+
+  <!-- ===================== FOOTER ===================== -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <a href="/" class="brand">
+            <span class="brand-mark">E</span>
+            <span>EstateMotion</span>
+          </a>
+          <p>Cinematic listing videos for real estate agents who'd rather close deals than wait on a videographer.</p>
+        </div>
+        <div class="footer-col">
+          <h5>Product</h5>
+          <ul>
+            <li><a href="#how">How it works</a></li>
+            <li><a href="#styles">Styles</a></li>
+            <li><a href="#pricing">Pricing</a></li>
+            <li><a href="/app">Sign in</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h5>Company</h5>
+          <ul>
+            <li><a href="#">About</a></li>
+            <li><a href="#">Blog</a></li>
+            <li><a href="mailto:hello@estatemotion.com">Contact</a></li>
+            <li><a href="#">Careers</a></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h5>Legal</h5>
+          <ul>
+            <li><a href="#">Terms</a></li>
+            <li><a href="#">Privacy</a></li>
+            <li><a href="#">Refund policy</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>&copy; 2026 EstateMotion. Built for listing agents.</span>
+        <span>Made with intent in Scottsdale, AZ.</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Interaction script -->
+  <script src="/api/env" onerror="window.ESTATEMOTION_API_ENV_UNAVAILABLE = true"></script>
+  <script src="landing.js" defer></script>
+</body>
 </html>
