@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Global resets and font smoothing */
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  }
+
+  body {
+    background:
+      radial-gradient(ellipse 70% 40% at 50% -10%, rgba(199, 167, 108, 0.05), transparent 70%),
+      #0E0E10;
+    background-attachment: fixed;
+    color: theme("colors.ink.DEFAULT");
+  }
+
+  ::selection {
+    background: theme("colors.gold.DEFAULT");
+    color: #1A1208;
+  }
+
+  /* Scrollbar — quieter on dark surfaces */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: theme("colors.edge.DEFAULT");
+    border-radius: 5px;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: theme("colors.edge.strong"); }
+}
+
+@layer components {
+  /* Reusable spinner */
+  .spinner {
+    @apply inline-block w-4 h-4 border-2 border-edge border-t-gold rounded-full animate-spin;
+  }
+
+  /* Toast slide-in (no plugin dep) */
+  .toast {
+    animation: toast-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+}

@@ -1,0 +1,176 @@
+// EstateMotion — domain types
+
+export type RenderEngine = "remotion" | "runway";
+
+export type ExportFormat = "vertical" | "wide" | "square";
+
+export type RoomType =
+  | "exterior"
+  | "kitchen"
+  | "living"
+  | "bedroom"
+  | "bathroom"
+  | "outdoor"
+  | "amenity"
+  | "detail";
+
+export type CameraMotion =
+  | "push_in"
+  | "pull_out"
+  | "lateral_pan"
+  | "vertical_reveal"
+  | "parallax_zoom"
+  | "detail_sweep";
+
+export type Transition =
+  | "crossfade"
+  | "blur_wipe"
+  | "whip_pan"
+  | "match_cut"
+  | "light_leak";
+
+export type StyleId =
+  | "cinematic-luxury"
+  | "modern-social"
+  | "mls-clean"
+  | "investor-tour";
+
+export type Tier = "trial" | "quick_reel" | "cinematic_ai" | "cinematic_4k";
+
+export type SubscriptionStatus =
+  | "trialing"
+  | "active"
+  | "past_due"
+  | "canceled"
+  | "incomplete"
+  | "unpaid";
+
+export interface Photo {
+  id: string;
+  fileName: string;
+  publicUrl: string;       // From Supabase storage public URL
+  durableUrl: string;      // Same as publicUrl when bucket is public
+  storagePath: string;     // {userId}/projects/{projectId}/{file}
+  bucket: string;
+  width: number;
+  height: number;
+  size: number;
+  category?: RoomType;
+  caption?: string;
+  order: number;
+  uploadedAt: string;      // ISO
+}
+
+export interface ListingDetails {
+  address: string;
+  city: string;
+  price: string;
+  beds: string;
+  baths: string;
+  squareFeet: string;
+  hook: string;            // Marketing hook line
+}
+
+export interface AgentBranding {
+  fullName: string;
+  brokerage: string;
+  phone: string;
+  email: string;
+  headshotUrl?: string;
+}
+
+export interface SceneOverlay {
+  headline: string;
+  subline: string;
+}
+
+export interface SceneCard {
+  headline: string;
+  subline: string;
+}
+
+export interface EditPlanScene {
+  photoId: string;
+  order: number;
+  roomType: RoomType;
+  visibleFeatures: string[];
+  qualityScore: number;
+  duration: number;
+  cameraMotion: CameraMotion;
+  transition: Transition;
+  overlay: SceneOverlay;
+  runwayPrompt?: string;
+}
+
+export interface EditPlan {
+  id: string;
+  source: "openai-motion-director" | "deterministic-fallback";
+  engine: RenderEngine;
+  heroPhotoId: string;
+  exportFormat: ExportFormat;
+  selectedStyle: string;
+  musicMood: string;
+  introCard: SceneCard;
+  outroCard: SceneCard;
+  scenes: EditPlanScene[];
+  runwayConfig?: {
+    model: string;
+    ratio: string;
+    duration: number;
+    motionStrength: number;
+  } | null;
+}
+
+export interface Project {
+  id: string;
+  createdAt: string;
+  photos: Photo[];
+  listing: ListingDetails;
+  branding: AgentBranding;
+  selectedStyleId: StyleId;
+  renderEngine: RenderEngine;
+  editPlan: EditPlan | null;
+}
+
+export interface RenderJobStatus {
+  jobId: string;
+  status: "queued" | "rendering" | "completed" | "failed";
+  phase: string;
+  progress: number;
+  mp4Url?: string;
+  thumbnailUrl?: string;
+  error?: string;
+  engine?: RenderEngine;
+}
+
+export interface UserProfile {
+  user_id: string;
+  email: string;
+  tier: Tier;
+  monthly_video_quota: number;
+  videos_used_this_month: number;
+  subscription_status: SubscriptionStatus | null;
+  available_engines: RenderEngine[];
+  can_render: boolean;
+  reason: string | null;
+}
+
+export interface AppEnv {
+  MOCK_AI: boolean;
+  MOCK_RENDERING: boolean;
+  MOCK_SUPABASE: boolean;
+  MOCK_STRIPE: boolean;
+  SUPABASE_URL: string;
+  SUPABASE_ANON_KEY: string;
+  LISTING_PHOTOS_BUCKET: string;
+  CREATE_EDIT_PLAN_ENDPOINT: string;
+  RENDER_ENDPOINT: string;
+  STRIPE_PUBLISHABLE_KEY: string;
+}
+
+declare global {
+  interface Window {
+    ESTATEMOTION_ENV?: Partial<AppEnv>;
+    ESTATEMOTION_API_ENV_UNAVAILABLE?: boolean;
+  }
+}
