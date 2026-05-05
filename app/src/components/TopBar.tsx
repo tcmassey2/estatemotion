@@ -8,7 +8,11 @@ export default function TopBar() {
   const projectTitle = useStore((s) => s.projectTitle);
 
   const onSignOut = async () => {
-    await signOut();
+    try {
+      await signOut();
+    } catch {
+      window.location.href = "/";
+    }
   };
 
   return (
