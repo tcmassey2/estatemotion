@@ -29,10 +29,14 @@ export async function renderEstateMotionJob({ manifest, requestedFormat = "verti
   });
 
   options.onProgress?.({ phase: "Rendering scenes", progress: 34 });
+  // Default selectComposition timeout is 30s — too short when the
+  // composition mounts <Img> tags for 8-25 photos hosted on Supabase
+  // / Unsplash. Bump to 120s for the page-load step and 180s per-frame.
   const composition = await selectComposition({
     serveUrl: bundleLocation,
     id: compositionId,
-    inputProps
+    inputProps,
+    timeoutInMilliseconds: 120000
   });
 
   options.onProgress?.({ phase: "Rendering scenes", progress: 48 });
@@ -42,6 +46,8 @@ export async function renderEstateMotionJob({ manifest, requestedFormat = "verti
     codec: "h264",
     outputLocation: mp4Path,
     inputProps,
+    timeoutInMilliseconds: 180000,
+    concurrency: 1,
     chromiumOptions: {
       ignoreCertificateErrors: true
     }
@@ -53,7 +59,8 @@ export async function renderEstateMotionJob({ manifest, requestedFormat = "verti
     serveUrl: bundleLocation,
     output: thumbnailPath,
     frame: Math.min(45, Math.max(0, composition.durationInFrames - 1)),
-    inputProps
+    inputProps,
+    timeoutInMilliseconds: 60000
   });
 
   options.onProgress?.({ phase: "Uploading final MP4", progress: 92 });
