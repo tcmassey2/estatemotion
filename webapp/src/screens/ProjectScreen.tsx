@@ -12,10 +12,10 @@ const STYLES: Array<{
   bestFor: string;
   engineLabel: string;
 }> = [
-  { id: "cinematic-luxury", name: "Cinematic Luxury", tagline: "Slow, premium, editorial pacing", bestFor: "Premium / $1M+", engineLabel: "Cinematic Luxury" },
-  { id: "modern-social",   name: "Modern Social",    tagline: "Fast, punchy, social-ready",      bestFor: "Reels / TikTok",  engineLabel: "Modern Social" },
-  { id: "mls-clean",       name: "MLS Clean",        tagline: "Clean, neutral, listing-safe",   bestFor: "Standard listings", engineLabel: "MLS Clean" },
-  { id: "investor-tour",   name: "Investor Tour",    tagline: "Direct, factual, deal-focused",  bestFor: "Wholesale / deals",  engineLabel: "Investor Tour" }
+  { id: "cinematic-luxury", name: "Cinematic Luxury", tagline: "Slow camera moves, editorial tone, premium feel.",     bestFor: "Premium / $1M+",      engineLabel: "Cinematic Luxury" },
+  { id: "modern-social",    name: "Modern Social",    tagline: "Fast cuts and punchy pacing — built for Reels and TikTok.", bestFor: "Reels & TikTok",  engineLabel: "Modern Social" },
+  { id: "mls-clean",        name: "MLS Clean",        tagline: "Neutral, factual, broker-compliant.",                  bestFor: "Standard listings",   engineLabel: "MLS Clean" },
+  { id: "investor-tour",    name: "Investor Tour",    tagline: "Direct walkthroughs for wholesale and deal flow.",     bestFor: "Wholesale & deals",   engineLabel: "Investor Tour" }
 ];
 
 export default function ProjectScreen() {
@@ -46,7 +46,7 @@ export default function ProjectScreen() {
           className="bg-transparent border-0 outline-none text-3xl sm:text-4xl font-semibold tracking-tighter2 text-ink placeholder:text-ink-dim w-full"
         />
         <p className="text-sm text-ink-muted">
-          Add listing details, upload photos, pick a style, and render.
+          Listing details, photos, and a style — render takes about three minutes.
         </p>
       </header>
 
@@ -58,7 +58,7 @@ export default function ProjectScreen() {
       )}
 
       {/* Listing details — grouped by visual priority */}
-      <Section title="Listing details" subtitle="The facts that appear on the video.">
+      <Section title="Listing details" subtitle="The facts that appear on the finished video.">
         <div className="bg-surface border border-edge rounded-xl p-5 sm:p-6 flex flex-col gap-4">
           {/* Address — primary line, full width */}
           <Input
@@ -92,14 +92,16 @@ export default function ProjectScreen() {
 
       {/* Photos */}
       <Section
-        title="Listing photos"
-        subtitle={photos.length === 0 ? "Drop in 8–25 photos." : `${photos.length} ${photos.length === 1 ? "photo" : "photos"} uploaded.`}
+        title="Photos"
+        subtitle={photos.length === 0
+          ? "Drop in 8–25 listing photos. JPG, PNG, or WebP."
+          : `${photos.length} ${photos.length === 1 ? "photo" : "photos"} ready to direct.`}
       >
         <PhotosArea projectId={projectId} userId={session?.user?.id || ""} />
       </Section>
 
       {/* Style */}
-      <Section title="Style" subtitle="Pick the look that matches your audience.">
+      <Section title="Style" subtitle="The visual direction the cinematographer takes.">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {STYLES.map((s) => (
             <button
@@ -123,7 +125,7 @@ export default function ProjectScreen() {
       </Section>
 
       {/* Render */}
-      <Section title="Render" subtitle="Pick an engine and generate the final MP4.">
+      <Section title="Render" subtitle="Choose your speed, then generate the MP4.">
         <EngineToggle engine={renderEngine} onChange={setEngine} />
         <RenderControls />
         {renderJob && <RenderStatusPanel />}
@@ -273,8 +275,8 @@ function PhotosArea({ projectId, userId }: { projectId: string; userId: string }
             </>
           ) : (
             <>
-              <div className="text-sm font-medium">Drop listing photos here, or click to browse</div>
-              <div className="text-xs text-ink-muted">JPG, PNG, or WebP — 8 to 25 photos recommended</div>
+              <div className="text-sm font-medium">Drop your listing photos here</div>
+              <div className="text-xs text-ink-muted">Or click to browse · JPG, PNG, or WebP · 8–25 photos</div>
             </>
           )}
         </div>
@@ -338,16 +340,16 @@ function EngineToggle({ engine, onChange }: { engine: RenderEngine; onChange: (e
       <EngineCard
         active={engine === "remotion"}
         title="Quick Reel"
-        description="Cinematic photo motion. Fast, reliable, no AI artifacts."
-        meta="~90 second render • included with every plan"
+        description="Cinematic camera moves on your photos. Fast, reliable, zero AI artifacts."
+        meta="~90 seconds • included with every plan"
         onClick={() => onChange("remotion")}
       />
       <EngineCard
         active={engine === "runway"}
         title="Cinematic AI"
         proTag
-        description="True image-to-video motion via Runway Gen-3."
-        meta="3–5 minute render • Cinematic AI plan"
+        description="Real image-to-video motion. Light shifts, parallax depth, the works — powered by Runway."
+        meta="3–5 minutes • Cinematic AI plan or higher"
         onClick={() => onChange("runway")}
       />
     </div>
@@ -416,11 +418,11 @@ function RenderControls() {
   const canRender = photos.length >= 3 && !isRendering;
 
   const generate = async () => {
-    if (!session?.user) { setError("Session expired."); return; }
-    if (photos.length < 3) { setError("Add at least 3 photos before rendering."); return; }
+    if (!session?.user) { setError("Your session expired. Sign in again to keep going."); return; }
+    if (photos.length < 3) { setError("Add at least 3 photos before we can render."); return; }
 
     setError("");
-    setLoading("Sequencing your tour…");
+    setLoading("Directing your tour…");
 
     try {
       // 1. Get edit plan
@@ -433,12 +435,12 @@ function RenderControls() {
         engine: renderEngine
       });
       if (!planResult.editPlan) {
-        throw new Error(planResult.reason || "Could not create edit plan.");
+        throw new Error(planResult.reason || "We couldn't draft an edit plan. Try again in a moment.");
       }
       setEditPlan(planResult.editPlan);
 
       // 2. Build manifest
-      setLoading("Submitting render…");
+      setLoading("Sending the cut to the renderer…");
       const manifest: RenderManifest = {
         app: "EstateMotion",
         engine: renderEngine,
@@ -470,12 +472,12 @@ function RenderControls() {
       // 3. Submit
       const submitted = await submitRender(manifest);
       if (submitted.upgradeRequired) {
-        setError(`Upgrade required: ${submitted.error}`);
+        setError(submitted.error || "Cinematic AI needs the $149 plan or higher. Upgrade to unlock real AI motion.");
         setLoading("");
         return;
       }
       if (submitted.status === "failed") {
-        throw new Error(submitted.error || "Render submission failed.");
+        throw new Error(submitted.error || "The renderer turned us down. Try again.");
       }
       setRenderJob({
         jobId: submitted.jobId || "",
@@ -485,12 +487,14 @@ function RenderControls() {
         engine: renderEngine
       });
       setLoading("");
-      setToast("Render started — this takes 60–300 seconds");
+      setToast(renderEngine === "runway"
+        ? "Cinematic AI render started — this takes 3 to 5 minutes."
+        : "Quick Reel render started — under 90 seconds.");
 
       // 4. Poll
       if (submitted.jobId) pollUntilDone(submitted.jobId);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Render failed.";
+      const msg = err instanceof Error ? err.message : "Something blocked the render. Try once more.";
       setError(msg);
       setLoading("");
     }

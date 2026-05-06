@@ -24,12 +24,12 @@ export default function DashboardScreen() {
     <div className="max-w-5xl mx-auto px-6 py-12">
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-6 mb-10">
         <div>
-          <p className="text-xs uppercase tracking-wider text-gold mb-2 font-mono">Dashboard</p>
+          <p className="text-xs uppercase tracking-wider text-gold mb-2 font-mono">Your work</p>
           <h1 className="text-3xl sm:text-4xl font-semibold tracking-tighter2">
             Welcome back, {firstName}.
           </h1>
           <p className="text-ink-muted text-sm mt-2">
-            Start a new listing video, or pick up where you left off.
+            Start a new listing video — or pick up where you left off.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
@@ -56,9 +56,9 @@ export default function DashboardScreen() {
               <path d="M10 9l5 3-5 3V9z" fill="currentColor" stroke="none" />
             </svg>
           </div>
-          <h2 className="text-xl font-semibold mb-2">No videos yet</h2>
+          <h2 className="text-xl font-semibold mb-2">Nothing rendered yet</h2>
           <p className="text-ink-muted text-sm max-w-md mx-auto mb-6">
-            Upload a listing's photos and EstateMotion produces a cinematic walkthrough in under three minutes.
+            Upload a listing's photos. EstateMotion directs the cuts, motion, and pacing — and hands you a cinematic walkthrough in about three minutes.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <button

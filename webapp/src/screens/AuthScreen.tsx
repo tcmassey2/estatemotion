@@ -49,12 +49,12 @@ export default function AuthScreen() {
         <div className="w-full max-w-md">
           <div className="text-center mb-8">
             <h1 className="text-3xl font-semibold tracking-tighter2">
-              {mode === "signup" ? "Create your account" : "Welcome back"}
+              {mode === "signup" ? "Make your first listing video." : "Welcome back."}
             </h1>
             <p className="text-ink-muted text-sm mt-2">
               {mode === "signup"
-                ? "7-day free trial. No credit card required."
-                : "Sign in to continue your listing video."}
+                ? "Free 7-day trial. No credit card. Cancel anytime."
+                : "Pick up where you left off."}
             </p>
           </div>
 
