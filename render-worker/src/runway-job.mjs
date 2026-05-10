@@ -91,7 +91,7 @@ export async function renderRunwayJob(body, options = {}) {
   const finalMp4 = path.join(tempDir, `${jobId}.mp4`);
   const thumbnailPath = path.join(tempDir, `${jobId}.png`);
 
-  await stitchClipsAndOverlays(clipResults, manifest, finalMp4, thumbnailPath);
+  await stitchClipsAndOverlays(clipResults, manifest, finalMp4, thumbnailPath, options);
 
   // Voice narration — synthesize per-scene narration via ElevenLabs and mix
   // it into the master with music ducking. Wrapped in fail-soft try/catch
@@ -404,7 +404,7 @@ async function pollRunwayTask(taskId, sceneIndex) {
    FFmpeg stitching
    ================================================================= */
 
-async function stitchClipsAndOverlays(clipResults, manifest, outputPath, thumbnailPath) {
+async function stitchClipsAndOverlays(clipResults, manifest, outputPath, thumbnailPath, options = {}) {
   clipResults.sort((a, b) => a.sceneIndex - b.sceneIndex);
   const tempDir = path.dirname(outputPath);
   const dimensions = runwayDimensions(manifest);
