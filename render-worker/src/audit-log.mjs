@@ -14,8 +14,16 @@
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || "";
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
+// Process-level guard — once we've seen the table-not-found error, stop
+// trying. Without this we'd hammer Supabase REST on every render and clog
+// the worker's log with the same PGRST205 error, masking real issues.
+// Resets when the worker restarts (so re-running the migration takes
+// effect on next deploy).
+let auditTableMissing = false;
+
 export async function writeRenderAudit({ manifest, jobId, engine, upload, narration }) {
   if (!SUPABASE_URL || !SERVICE_ROLE_KEY) return;
+  if (auditTableMissing) return; // already determined the table doesn't exist
   const organizationId = manifest?.organizationId || null;
   const agentUserId = manifest?.project?.userId;
   if (!agentUserId) return; // anonymous renders don't get logged
@@ -51,7 +59,14 @@ export async function writeRenderAudit({ manifest, jobId, engine, upload, narrat
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      console.warn(`[EstateMotion audit-log] write failed (${res.status}):`, text.slice(0, 240));
+      // Detect "table does not exist" once and stop attempting future writes.
+      // The PostgREST code for missing-relation is PGRST205.
+      if (res.status === 404 && /PGRST205|Could not find the table/i.test(text)) {
+        auditTableMissing = true;
+        console.warn(`[EstateMotion audit-log] table 'render_audit_log' is missing — run supabase/migrations/04_brokerages.sql to enable. Skipping all future audit writes until worker restarts.`);
+      } else {
+        console.warn(`[EstateMotion audit-log] write failed (${res.status}):`, text.slice(0, 240));
+      }
     }
   } catch (err) {
     console.warn("[EstateMotion audit-log] write threw:", err.message || err);

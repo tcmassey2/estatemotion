@@ -1841,6 +1841,43 @@ function RenderStatusPanel() {
   const renderJob = useStore((s) => s.renderJob);
   if (!renderJob) return null;
 
+  // Render completed but no master MP4 URL — almost always a Supabase
+  // Storage size-limit rejection. Show actionable error rather than
+  // leaving the user staring at "in progress."
+  if (renderJob.status === "completed" && !renderJob.mp4Url) {
+    return (
+      <div className="bg-surface border border-amber-500/40 rounded-xl p-5 fade-up-in">
+        <div className="flex items-start gap-3">
+          <div className="grid place-items-center w-9 h-9 rounded-full bg-amber-500/15 text-amber-400 flex-shrink-0">
+            <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 8v4m0 4h.01M22 12a10 10 0 11-20 0 10 10 0 0120 0z" />
+            </svg>
+          </div>
+          <div className="flex-1">
+            <h3 className="text-sm font-semibold text-amber-400">Render finished, but upload was rejected</h3>
+            <p className="text-xs text-ink-soft mt-1.5 leading-relaxed">
+              Your video rendered successfully, but Supabase Storage rejected the master MP4 — usually because the bucket's file-size limit is too small. A 2-minute video is typically 80–150MB.
+            </p>
+            <div className="mt-3 p-3 bg-surface-input rounded-lg border border-edge text-xs leading-relaxed">
+              <strong className="text-ink">To fix it:</strong>
+              <ol className="text-ink-muted mt-2 ml-4 list-decimal space-y-1">
+                <li>Open Supabase dashboard → Storage → click <code className="text-gold font-mono">generated-videos</code> bucket</li>
+                <li>Click "Configuration" or the gear icon</li>
+                <li>Bump <strong>File Size Limit</strong> to <strong>500MB</strong> (or 1GB for headroom)</li>
+                <li>Save, then hit Generate again</li>
+              </ol>
+            </div>
+            {renderJob.thumbnailUrl && (
+              <div className="mt-3 text-xs text-ink-muted">
+                The thumbnail and short clips uploaded fine — only the main MP4 was over the limit.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (renderJob.status === "completed" && renderJob.mp4Url) {
     const formats = renderJob.formats || {};
     const verticalUrl = formats.vertical?.mp4Url || renderJob.mp4Url;
