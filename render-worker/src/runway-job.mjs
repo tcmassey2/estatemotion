@@ -27,6 +27,33 @@ const DEFAULT_CONCURRENCY = 4;
 const MAX_SCENES = 30;
 const NON_PHOTO_TYPES = new Set(["intro", "outro", "stat", "card", "title", "stats"]);
 
+/* =================================================================
+   Encode quality knobs — v18 (production clarity)
+   =================================================================
+   Tuned for visible clarity gains over the v17 defaults. The v17 chain
+   used preset=ultrafast + crf=21, which left noticeable softness on
+   detail-heavy frames (cabinetry edges, exterior textures, fine type
+   on the outro card). Bumping to preset=veryfast + crf=19 takes ~2×
+   longer per clip but the master is dramatically sharper.
+
+   ENCODE_PRESET — h264 preset. One step better than ultrafast.
+   ENCODE_CRF_MASTER — primary scene CRF. Lower = sharper.
+   ENCODE_CRF_DERIVED — variants/shorts CRF. One notch softer since
+                        the source is already encoded once.
+   COLOR_GRADE — eq + colorbalance for a unified cinematic look.
+                 Slightly warmer (0xC7A76C gold accents pop), slightly
+                 sharper contrast curve, gentle saturation pull.
+   UNSHARP — micro-sharpen applied after the grade. Real-estate
+             footage benefits from edge clarity (counters, trim,
+             window mullions). Conservative amount so it doesn't
+             ring on smooth gradients (sky, walls).
+*/
+const ENCODE_PRESET = "veryfast";
+const ENCODE_CRF_MASTER = "19";
+const ENCODE_CRF_DERIVED = "20";
+const COLOR_GRADE =
+  "eq=contrast=1.08:saturation=0.95:gamma=1.03,colorbalance=rs=0.05:bs=-0.025,unsharp=5:5:0.6:3:3:0.3";
+
 export async function renderRunwayJob(body, options = {}) {
   const { manifest, requestedFormat } = body || {};
   validateRunwayManifest(manifest);
@@ -408,11 +435,11 @@ export async function generateKenBurnsFallback(scene, manifest, tempDir, sceneIn
     "-vf", zoompanExpr,
     "-c:v", "libx264",
     "-pix_fmt", "yuv420p",
-    "-preset", "ultrafast",
-    "-crf", "22",
+    "-preset", ENCODE_PRESET,
+    "-crf", ENCODE_CRF_MASTER,
     "-r", "30",
     clipPath
-  ], { timeoutMs: 90000, label: `runway:fallback-scene-${sceneIndex + 1}` });
+  ], { timeoutMs: 120000, label: `runway:fallback-scene-${sceneIndex + 1}` });
 
   return {
     sceneIndex,
@@ -501,7 +528,7 @@ export async function stitchClipsAndOverlays(clipResults, manifest, outputPath, 
   // is what turns "AI-rendered footage" into "looks like one production
   // grading pass."
   const watermarkFilter = buildWatermarkDrawtext(brand, dimensions);
-  const colorGrade = "eq=contrast=1.06:saturation=0.93:gamma=1.04,colorbalance=rs=0.04:bs=-0.02";
+  const colorGrade = COLOR_GRADE;
   const normalizedClips = [];
   // Per-clip granular progress so the bar visibly moves through this step
   // instead of sitting at 76%. We split the 76→80 range across the clips.
@@ -524,11 +551,14 @@ export async function stitchClipsAndOverlays(clipResults, manifest, outputPath, 
       "-vf", filterChain,
       "-c:v", "libx264",
       "-pix_fmt", "yuv420p",
-      "-preset", "ultrafast",
-      "-crf", "21",
+      "-preset", ENCODE_PRESET,
+      "-crf", ENCODE_CRF_MASTER,
       "-an",
+      // 180s timeout (up from 90s) — veryfast + crf=19 is ~2× slower than
+      // the previous ultrafast/crf=21 baseline. Still well within the
+      // overall 18-min job ceiling.
       normalized
-    ], { timeoutMs: 90000, label: `runway:normalize-${clip.sceneIndex}` });
+    ], { timeoutMs: 180000, label: `runway:normalize-${clip.sceneIndex}` });
     normalizedClips.push({ ...clip, clipPath: normalized });
     options.onProgress?.({
       phase: `Polishing scene ${i + 1}/${clipResults.length}`,
@@ -702,8 +732,8 @@ async function stitchWithCrossfades({ clips, outroClip, output, crossfadeDuratio
     "-map", "[vout]",
     "-c:v", "libx264",
     "-pix_fmt", "yuv420p",
-    "-preset", "ultrafast",
-    "-crf", "21",
+    "-preset", ENCODE_PRESET,
+    "-crf", ENCODE_CRF_MASTER,
     "-r", "30",
     output
   ], { timeoutMs: 8 * 60 * 1000, label: `runway:xfade-${allClips.length}clips` });
@@ -1001,13 +1031,13 @@ async function buildBrandOutroClip(
     "-map", "[vout]",
     "-c:v", "libx264",
     "-pix_fmt", "yuv420p",
-    "-preset", "ultrafast",
-    "-crf", "21",
+    "-preset", ENCODE_PRESET,
+    "-crf", ENCODE_CRF_MASTER,
     "-r", "30",
     "-t", "5",
     "-an",
     outroPath
-  ], { timeoutMs: 60000, label: "runway:outro-card" });
+  ], { timeoutMs: 90000, label: "runway:outro-card" });
 
   // Free the asset PNGs now that the outro is on disk.
   if (headshotCirclePath) await fs.unlink(headshotCirclePath).catch(() => {});

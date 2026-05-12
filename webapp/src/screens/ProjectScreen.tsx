@@ -79,10 +79,11 @@ export default function ProjectScreen() {
         <PhotosArea projectId={projectId} userId={session?.user?.id || ""} />
       </Section>
 
-      {/* Agent brand kit — drives the outro card on every video */}
+      {/* Agent brand kit — drives the outro card on every video.
+          Persisted to Supabase so it follows you across browsers / logins. */}
       <Section
         title="Your branding"
-        subtitle="Appears on the closing card of every video. Saved between projects."
+        subtitle="Appears on the closing card of every video. Synced to your account."
       >
         <BrandKitArea userId={session?.user?.id || ""} />
       </Section>
@@ -117,8 +118,7 @@ export default function ProjectScreen() {
           <EngineToggle engine={renderEngine} onChange={setEngine} />
           <NarrationToggle />
           <CrossfadeToggle />
-          <ProtectHighRiskRoomsToggle />
-          <ComplianceModeToggle />
+          <RenderSafetyControl />
           <RenderControls />
           {renderJob && <RenderStatusPanel />}
         </div>
@@ -216,95 +216,79 @@ function CrossfadeToggle() {
   );
 }
 
-function ProtectHighRiskRoomsToggle() {
-  const enabled = useStore((s) => s.protectHighRiskRooms);
-  const setEnabled = useStore((s) => s.setProtectHighRiskRooms);
-  const complianceMode = useStore((s) => s.complianceMode);
-  // Greyed out (and irrelevant) when full Compliance Mode is on — that
-  // already routes EVERY scene through Ken Burns.
-  const disabled = complianceMode;
-  return (
-    <button
-      type="button"
-      onClick={() => !disabled && setEnabled(!enabled)}
-      disabled={disabled}
-      className={cn(
-        "card-press flex items-center gap-3 p-4 rounded-xl bg-surface border text-left transition-colors",
-        disabled ? "opacity-50 cursor-not-allowed border-edge" :
-        enabled ? "border-gold bg-surface-raised" : "border-edge hover:border-edge-strong"
-      )}
-    >
-      <div
-        className={cn(
-          "flex-shrink-0 w-10 h-6 rounded-full border transition-colors relative",
-          enabled && !disabled ? "bg-gold border-gold" : "bg-surface-input border-edge-strong"
-        )}
-      >
-        <div
-          className={cn(
-            "absolute top-0.5 w-5 h-5 rounded-full bg-paper transition-all",
-            enabled ? "left-[18px]" : "left-0.5"
-          )}
-        />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-sm font-semibold tracking-tightish flex items-center gap-2">
-          Protect kitchens &amp; bathrooms
-          {enabled && !disabled && (
-            <span className="text-[9px] font-bold tracking-widest px-1.5 py-0.5 rounded bg-gold text-paper">SMART</span>
-          )}
-        </div>
-        <div className="text-xs text-ink-muted mt-0.5">
-          {disabled
-            ? `Skipped — Compliance Mode already routes every scene through Ken Burns.`
-            : enabled
-            ? `Surgical fix: kitchens and bathrooms use Ken Burns (no hallucination risk) while every other room still gets full Cinematic AI motion. Recommended default.`
-            : `Every scene including kitchens uses Cinematic AI. Highest quality, highest hallucination risk on appliance-heavy rooms.`}
-        </div>
-      </div>
-    </button>
-  );
-}
+/* Render Safety — the only hallucination-protection control the user sees.
+   Replaces what used to be three overlapping toggles (Compliance Mode,
+   Protect High-Risk Rooms, and Hallucination Guard) with one three-way
+   segmented picker. The manifest builder maps the chosen level to the
+   worker's legacy fields so the rendering pipeline doesn't change. */
+function RenderSafetyControl() {
+  const level = useStore((s) => s.renderSafety);
+  const setLevel = useStore((s) => s.setRenderSafety);
 
-function ComplianceModeToggle() {
-  const enabled = useStore((s) => s.complianceMode);
-  const setEnabled = useStore((s) => s.setComplianceMode);
+  const options: Array<{
+    id: "off" | "smart" | "max";
+    label: string;
+    badge?: string;
+    description: string;
+  }> = [
+    {
+      id: "off",
+      label: "Full AI",
+      description:
+        "Cinematic AI motion on every scene. Highest impact, but kitchens and appliance-heavy rooms can hallucinate (split counters, phantom fans). Use when flair beats faithfulness."
+    },
+    {
+      id: "smart",
+      label: "Smart",
+      badge: "RECOMMENDED",
+      description:
+        "AI motion on safe rooms, Ken Burns photo motion on risky ones (kitchens, bathrooms, anywhere with appliances or parallel surfaces). Best balance for almost every listing."
+    },
+    {
+      id: "max",
+      label: "MLS-Safe",
+      description:
+        "Ken Burns photo motion on every scene. Zero AI hallucination, no Runway credits used, faster renders. The right choice for MLS-required compliance."
+    }
+  ];
+
+  const active = options.find((o) => o.id === level) ?? options[1];
+
   return (
-    <button
-      type="button"
-      onClick={() => setEnabled(!enabled)}
-      className={cn(
-        "card-press flex items-center gap-3 p-4 rounded-xl bg-surface border text-left transition-colors",
-        enabled ? "border-gold bg-surface-raised" : "border-edge hover:border-edge-strong"
-      )}
-    >
-      <div
-        className={cn(
-          "flex-shrink-0 w-10 h-6 rounded-full border transition-colors relative",
-          enabled ? "bg-gold border-gold" : "bg-surface-input border-edge-strong"
-        )}
-      >
-        <div
-          className={cn(
-            "absolute top-0.5 w-5 h-5 rounded-full bg-paper transition-all",
-            enabled ? "left-[18px]" : "left-0.5"
-          )}
-        />
+    <div className="flex flex-col gap-3 p-4 rounded-xl bg-surface border border-edge">
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-semibold tracking-tightish">Render safety</div>
+        <span className="text-[10px] uppercase tracking-widest text-ink-soft font-mono">
+          Hallucination control
+        </span>
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-sm font-semibold tracking-tightish flex items-center gap-2">
-          Compliance Mode
-          {enabled && (
-            <span className="text-[9px] font-bold tracking-widest px-1.5 py-0.5 rounded bg-gold text-paper">MLS-SAFE</span>
-          )}
-        </div>
-        <div className="text-xs text-ink-muted mt-0.5">
-          {enabled
-            ? `Bypasses Cinematic AI entirely. Every scene uses photo motion (Ken Burns) — guaranteed faithful to the source, zero hallucination risk, no Runway credits used. Faster renders.`
-            : `AI motion enabled. Cinematic but occasionally morphs object shapes. Switch on for MLS-required listings where faithfulness > flair.`}
-        </div>
+      <div className="grid grid-cols-3 gap-1 p-1 rounded-lg bg-surface-input border border-edge">
+        {options.map((opt) => {
+          const isActive = opt.id === level;
+          return (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => setLevel(opt.id)}
+              className={cn(
+                "card-press relative px-3 py-2 rounded text-xs font-semibold tracking-tightish transition-colors",
+                isActive
+                  ? "bg-gold text-paper shadow-sm"
+                  : "text-ink-muted hover:text-ink"
+              )}
+            >
+              {opt.label}
+              {isActive && opt.badge && (
+                <span className="absolute -top-1.5 -right-1 text-[8px] font-bold tracking-widest px-1 py-0.5 rounded bg-paper text-gold border border-gold">
+                  {opt.badge}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
-    </button>
+      <p className="text-xs text-ink-muted leading-relaxed">{active.description}</p>
+    </div>
   );
 }
 
@@ -650,32 +634,68 @@ function PhotosArea({ projectId, userId }: { projectId: string; userId: string }
             </>
           ) : isDragOver ? (
             <>
-              <div className="text-sm font-medium text-gold-light">Drop to upload</div>
+              <div className="text-base font-semibold text-gold-light tracking-tightish">Drop to upload</div>
               <div className="text-xs text-ink-muted">Up to {MAX_PHOTOS - photos.length} more photos</div>
             </>
           ) : isFull ? (
             <>
-              <div className="text-sm font-medium">All {MAX_PHOTOS} slots used</div>
+              <div className="text-base font-semibold tracking-tightish">All {MAX_PHOTOS} slots used</div>
               <div className="text-xs text-ink-muted">Remove a photo below to add another.</div>
+            </>
+          ) : photos.length === 0 ? (
+            <>
+              <div className="text-base font-semibold tracking-tightish">Drop your listing photos</div>
+              <div className="text-xs text-ink-muted max-w-md">
+                Or <span className="text-gold underline">click to browse</span>. 8–{MAX_PHOTOS} photos works best —
+                exterior, kitchen, living, primary bedroom, plus any standout details.
+              </div>
+              <div className="text-[10px] text-ink-dim font-mono uppercase tracking-widest mt-1">
+                JPG · PNG · WebP
+              </div>
             </>
           ) : (
             <>
-              <div className="text-sm font-medium">Drag photos here, or click to browse</div>
-              <div className="text-xs text-ink-muted">JPG, PNG, or WebP · {photos.length === 0 ? `8–${MAX_PHOTOS} recommended` : `${MAX_PHOTOS - photos.length} slots left`}</div>
+              <div className="text-sm font-semibold tracking-tightish">Add more photos</div>
+              <div className="text-xs text-ink-muted">
+                Drag here or click to browse · {MAX_PHOTOS - photos.length} {MAX_PHOTOS - photos.length === 1 ? "slot" : "slots"} left
+              </div>
             </>
           )}
         </div>
       </label>
 
-      {/* Photo count chip — visible above the grid for at-a-glance status */}
+      {/* Readiness bar — visual progress toward the recommended 8-photo
+          minimum, plus a status label that flips from "Need N more" to
+          "Ready to render" once the threshold is crossed. */}
       {photos.length > 0 && (
-        <div className="flex items-center justify-between text-[11px] text-ink-muted">
-          <span className="font-mono uppercase tracking-wider">
-            {photoCountLabel} photos · drag the corner controls to reorder
-          </span>
-          {photos.length < 8 && (
-            <span className="text-gold-light">Add {8 - photos.length} more for a fuller video.</span>
-          )}
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="font-mono uppercase tracking-wider text-ink-muted">
+              {photoCountLabel} photos
+            </span>
+            <span className={cn(
+              "font-semibold tracking-tightish",
+              photos.length >= 8 ? "text-gold" : "text-ink-muted"
+            )}>
+              {photos.length >= 8
+                ? "Ready to render"
+                : `${8 - photos.length} more for a full tour`}
+            </span>
+          </div>
+          <div className="h-1 bg-edge rounded-full overflow-hidden">
+            <div
+              className={cn(
+                "h-full rounded-full transition-all duration-300",
+                photos.length >= 8 ? "bg-gold" : "bg-gold/55"
+              )}
+              style={{
+                width: `${Math.min(100, (photos.length / 8) * 100)}%`
+              }}
+            />
+          </div>
+          <p className="text-[11px] text-ink-dim">
+            Photo 1 is your <span className="text-gold-light font-semibold">hero shot</span> — the AI opens the video on it. Drag the corner controls to reorder.
+          </p>
         </div>
       )}
 
@@ -684,12 +704,31 @@ function PhotosArea({ projectId, userId }: { projectId: string; userId: string }
           {photos.map((photo, idx) => (
             <div
               key={photo.id}
-              className="card-press group relative aspect-[4/3] rounded-lg overflow-hidden bg-surface-input border border-edge hover:border-edge-strong"
+              className={cn(
+                "card-press group relative aspect-[4/3] rounded-lg overflow-hidden bg-surface-input border transition-colors",
+                idx === 0 ? "border-gold ring-1 ring-gold/40" : "border-edge hover:border-edge-strong"
+              )}
             >
               <img src={photo.publicUrl} alt={photo.fileName} className="w-full h-full object-cover" loading="lazy" />
-              {/* Order pill */}
-              <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-paper/80 backdrop-blur-sm text-[10px] font-mono font-semibold text-gold-light border border-edge">
-                {String(idx + 1).padStart(2, "0")}
+              {/* Order pill — plus the HERO badge on photo 1 */}
+              <div className="absolute top-2 left-2 flex items-center gap-1">
+                <div className={cn(
+                  "px-1.5 py-0.5 rounded backdrop-blur-sm text-[10px] font-mono font-semibold border",
+                  idx === 0
+                    ? "bg-gold text-paper border-gold"
+                    : "bg-paper/80 text-gold-light border-edge"
+                )}>
+                  {String(idx + 1).padStart(2, "0")}
+                </div>
+                {idx === 0 && (
+                  <span className="px-1.5 py-0.5 rounded bg-paper/90 backdrop-blur-sm text-[9px] font-bold tracking-widest text-gold border border-gold/40 uppercase">
+                    Hero
+                  </span>
+                )}
+              </div>
+              {/* Filename caption — hover-revealed at bottom */}
+              <div className="absolute inset-x-0 bottom-0 px-2 py-1.5 bg-paper/85 backdrop-blur-sm text-[10px] text-ink-muted truncate opacity-0 group-hover:opacity-100 transition-opacity">
+                {photo.fileName}
               </div>
               {/* Reorder + remove controls — always visible on touch devices,
                   hover-to-reveal on devices that support hover. The
@@ -1741,8 +1780,7 @@ function RenderControls() {
   const renderEngine = useStore((s) => s.renderEngine);
   const narrationEnabled = useStore((s) => s.narrationEnabled);
   const crossfadesEnabled = useStore((s) => s.crossfadesEnabled);
-  const complianceMode = useStore((s) => s.complianceMode);
-  const protectHighRiskRooms = useStore((s) => s.protectHighRiskRooms);
+  const renderSafety = useStore((s) => s.renderSafety);
   const renderJob = useStore((s) => s.renderJob);
   const projectId = useStore((s) => s.projectId);
   const projectTitle = useStore((s) => s.projectTitle);
@@ -1853,8 +1891,17 @@ function RenderControls() {
         brandKit: branding,
         organizationId: organization?.id || null,
         skipNarration: !narrationEnabled,
-        complianceMode,
-        protectHighRiskRooms
+        // Translate the single "Render safety" picker into the worker's
+        // existing fields. Worker code is unchanged; only the UI consolidated.
+        //   off   → pure AI (no protection)
+        //   smart → balanced Hallucination Guard (default)
+        //   max   → Compliance Mode (every scene Ken Burns)
+        complianceMode: renderSafety === "max",
+        protectHighRiskRooms: renderSafety === "smart",
+        hallucinationGuard:
+          renderSafety === "off" ? "off" :
+          renderSafety === "max" ? "strict" :
+          "balanced"
       };
 
       // 3. Submit

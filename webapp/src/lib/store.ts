@@ -15,10 +15,15 @@ import type {
   StyleId,
   UserProfile
 } from "./types";
-import { onAuthChange, getSession } from "./supabase";
+import { onAuthChange, getSession, fetchBrandKit, saveBrandKit } from "./supabase";
 import { fetchOrganization } from "./api";
 
 export type Screen = "auth" | "dashboard" | "project" | "brokerage";
+
+// Render Safety levels — the only knob users have to think about for
+// hallucination control. The manifest builder maps these to the worker's
+// existing complianceMode + protectHighRiskRooms + hallucinationGuard fields.
+export type RenderSafety = "off" | "smart" | "max";
 
 export interface ProjectSummary {
   id: string;
@@ -59,14 +64,17 @@ interface AppState {
   // Default OFF — xfade crossfades require ~3-8 min of CPU on a 24-clip
   // render and OOM-killed Render Standard 2GB. Safe to enable on Pro 4GB+.
   crossfadesEnabled: boolean;
-  // Default OFF — compliance mode skips Runway and uses Ken Burns motion
-  // for every scene. Zero hallucination but no AI motion. Right choice
-  // for MLS-required listings where faithfulness > flair.
-  complianceMode: boolean;
-  // Default ON — surgical fallback for kitchens + bathrooms (Gen-4 Turbo's
-  // worst-case rooms because of parallel-edge appliance/cabinet/tile
-  // surfaces). Rest of the scenes still use full Cinematic AI motion.
-  protectHighRiskRooms: boolean;
+  // Render Safety — collapsed from the legacy trio (complianceMode,
+  // protectHighRiskRooms, hallucinationGuard) into one setting. The
+  // manifest builder translates this into the legacy fields the worker
+  // already understands, so nothing on the render side has to change.
+  //   "off"   — pure AI motion. Highest hallucination risk.
+  //   "smart" — DEFAULT. Auto-protects kitchens, bathrooms, and any
+  //             scene with appliances/parallel surfaces. AI everywhere
+  //             else. Best mix of cinematic feel + reliability.
+  //   "max"   — Ken Burns motion for every scene. Zero AI hallucination,
+  //             MLS-grade safe.
+  renderSafety: RenderSafety;
   editPlan: EditPlan | null;
   renderJob: RenderJobStatus | null;
 
@@ -77,6 +85,7 @@ interface AppState {
 
   // Actions
   init: () => Promise<void>;
+  hydrateBrandKit: () => Promise<void>;
   setSession: (s: Session | null) => void;
   setProfile: (p: UserProfile | null) => void;
   setOrganization: (org: Organization | null) => void;
@@ -97,8 +106,7 @@ interface AppState {
   setEngine: (e: RenderEngine) => void;
   setNarrationEnabled: (enabled: boolean) => void;
   setCrossfadesEnabled: (enabled: boolean) => void;
-  setComplianceMode: (enabled: boolean) => void;
-  setProtectHighRiskRooms: (enabled: boolean) => void;
+  setRenderSafety: (level: RenderSafety) => void;
   setEditPlan: (plan: EditPlan | null) => void;
   setRenderJob: (job: RenderJobStatus | null) => void;
   setLoading: (msg: string) => void;
@@ -118,26 +126,49 @@ const emptyListing: ListingDetails = {
   hook: ""
 };
 
-// Brand kit persists across projects via localStorage so the agent doesn't
-// have to retype it every render. Loaded lazily on first project open.
-const BRANDING_STORAGE_KEY = "estatemotion.brandkit.v1";
+// Brand kit persistence — TWO layers, in order of preference:
+//   1. Supabase brand_kits table (the source of truth, follows the user
+//      across browsers + devices). Hydrated on auth.
+//   2. localStorage (offline-friendly cache, used while waiting on the
+//      Supabase fetch and as fallback when Supabase isn't configured).
+//
+// Writes go to BOTH layers. localStorage is synchronous; the Supabase
+// write is debounced + fire-and-forget so typing in a brand kit field
+// never blocks the UI.
+
+const BRANDING_STORAGE_KEY = "estatemotion.brandkit.v2";
+
+const EMPTY_BRANDING: AgentBranding = {
+  fullName: "",
+  brokerage: "",
+  phone: "",
+  email: "",
+  headshotUrl: "",
+  brokerageLogoUrl: "",
+  licenseNumber: "",
+  voiceId: undefined,
+  voiceLabel: undefined
+};
 
 function loadStoredBranding(): AgentBranding {
-  const empty: AgentBranding = { fullName: "", brokerage: "", phone: "", email: "", headshotUrl: "" };
-  if (typeof window === "undefined") return empty;
+  if (typeof window === "undefined") return EMPTY_BRANDING;
   try {
     const raw = window.localStorage.getItem(BRANDING_STORAGE_KEY);
-    if (!raw) return empty;
+    if (!raw) return EMPTY_BRANDING;
     const parsed = JSON.parse(raw);
     return {
       fullName: String(parsed.fullName || ""),
       brokerage: String(parsed.brokerage || ""),
       phone: String(parsed.phone || ""),
       email: String(parsed.email || ""),
-      headshotUrl: String(parsed.headshotUrl || "")
+      headshotUrl: String(parsed.headshotUrl || ""),
+      brokerageLogoUrl: String(parsed.brokerageLogoUrl || ""),
+      licenseNumber: String(parsed.licenseNumber || ""),
+      voiceId: parsed.voiceId || undefined,
+      voiceLabel: parsed.voiceLabel || undefined
     };
   } catch {
-    return empty;
+    return EMPTY_BRANDING;
   }
 }
 
@@ -150,6 +181,16 @@ function persistBranding(branding: AgentBranding) {
   }
 }
 
+// Debounce the Supabase write so typing into "Phone" doesn't fire 10 PATCHes.
+let brandKitSaveTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleSupabaseBrandSave(userId: string, branding: AgentBranding) {
+  if (!userId) return;
+  if (brandKitSaveTimer) clearTimeout(brandKitSaveTimer);
+  brandKitSaveTimer = setTimeout(() => {
+    saveBrandKit(userId, branding).catch(() => {});
+  }, 600);
+}
+
 const emptyProject = () => ({
   projectId: newProjectId(),
   projectTitle: "Untitled listing",
@@ -160,8 +201,10 @@ const emptyProject = () => ({
   renderEngine: "remotion" as RenderEngine,
   narrationEnabled: false,
   crossfadesEnabled: false,
-  complianceMode: false,
-  protectHighRiskRooms: true, // default ON — surgical hallucination prevention
+  // Default "smart" — the right answer for 95% of renders. AI motion
+  // everywhere except scenes that score risky (kitchens with appliances,
+  // anywhere mentioning fans/parallel surfaces).
+  renderSafety: "smart" as RenderSafety,
   editPlan: null as EditPlan | null,
   renderJob: null as RenderJobStatus | null
 });
@@ -189,6 +232,9 @@ export const useStore = create<AppState>((set, get) => ({
     if (session) {
       // Fire-and-forget — UI doesn't block on org lookup
       get().refreshOrganization().catch(() => {});
+      // Hydrate brand kit from Supabase. If found, overwrite localStorage's
+      // cached copy so the cloud is the source of truth on this device too.
+      get().hydrateBrandKit().catch(() => {});
     }
     try {
       onAuthChange((s) => {
@@ -197,6 +243,8 @@ export const useStore = create<AppState>((set, get) => ({
         if (!prev && s) {
           set({ screen: "dashboard", error: "" });
           get().refreshOrganization().catch(() => {});
+          // Same brand-kit hydration on subsequent sign-ins.
+          get().hydrateBrandKit().catch(() => {});
         }
         if (prev && !s) set({
           ...emptyProject(),
@@ -211,6 +259,29 @@ export const useStore = create<AppState>((set, get) => ({
       // Supabase not configured — auth state changes won't fire, but the
       // app still renders. The user will see an error when they try to sign in.
     }
+  },
+
+  hydrateBrandKit: async () => {
+    const userId = get().session?.user?.id;
+    if (!userId) return;
+    const remote = await fetchBrandKit(userId);
+    if (!remote) return; // user has no saved kit yet — leave localStorage as is
+    // Merge remote into current state, preferring remote fields when set.
+    // (Empty strings in remote count as "set" — if the user explicitly
+    //  cleared a field, that clear should propagate to this device too.)
+    const next: AgentBranding = {
+      fullName: remote.fullName ?? get().branding.fullName,
+      brokerage: remote.brokerage ?? get().branding.brokerage,
+      phone: remote.phone ?? get().branding.phone,
+      email: remote.email ?? get().branding.email,
+      headshotUrl: remote.headshotUrl ?? get().branding.headshotUrl,
+      brokerageLogoUrl: remote.brokerageLogoUrl ?? get().branding.brokerageLogoUrl,
+      licenseNumber: remote.licenseNumber ?? get().branding.licenseNumber,
+      voiceId: remote.voiceId ?? get().branding.voiceId,
+      voiceLabel: remote.voiceLabel ?? get().branding.voiceLabel
+    };
+    persistBranding(next);
+    set({ branding: next });
   },
 
   setOrganization: (org) => set({ organization: org, organizationLoaded: true }),
@@ -247,6 +318,9 @@ export const useStore = create<AppState>((set, get) => ({
     const next = { ...get().branding, ...patch };
     persistBranding(next);
     set({ branding: next });
+    // Mirror to Supabase (debounced). No-op when signed out.
+    const userId = get().session?.user?.id;
+    if (userId) scheduleSupabaseBrandSave(userId, next);
   },
 
   addPhotos: (newOnes) => {
@@ -279,8 +353,7 @@ export const useStore = create<AppState>((set, get) => ({
   setEngine: (e) => set({ renderEngine: e, editPlan: null }),
   setNarrationEnabled: (enabled) => set({ narrationEnabled: enabled, editPlan: null }),
   setCrossfadesEnabled: (enabled) => set({ crossfadesEnabled: enabled }),
-  setComplianceMode: (enabled) => set({ complianceMode: enabled, editPlan: null }),
-  setProtectHighRiskRooms: (enabled) => set({ protectHighRiskRooms: enabled }),
+  setRenderSafety: (level) => set({ renderSafety: level, editPlan: null }),
   setEditPlan: (plan) => set({ editPlan: plan }),
   setRenderJob: (job) => set({ renderJob: job }),
   setLoading: (msg) => set({ loading: msg }),

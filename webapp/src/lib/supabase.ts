@@ -3,7 +3,7 @@
 
 import { createClient, type Session, type SupabaseClient } from "@supabase/supabase-js";
 import { env } from "./env";
-import type { Photo } from "./types";
+import type { AgentBranding, Photo } from "./types";
 
 let cachedClient: SupabaseClient | null = null;
 
@@ -148,6 +148,108 @@ async function uploadBrandAsset(
 
   const url = supabase().storage.from(bucket).getPublicUrl(storagePath).data.publicUrl;
   return { url, storagePath };
+}
+
+/* ============================================================
+   Brand kit persistence — survives logout/login across devices
+   ============================================================
+
+   The agent's brand kit (name, brokerage, headshot, logo, license, contact,
+   voice clone ID) was localStorage-only through v17 — invisible after a
+   browser switch or a fresh login. Now it persists to the `brand_kits`
+   table so it follows the user.
+
+   Strategy:
+   - fetchBrandKit(userId): one row per user (the "default" kit). Returns
+     null when the user has never saved one — fall back to localStorage.
+   - saveBrandKit(userId, branding): upsert by user_id. Debounced from the
+     store so we don't write on every keystroke.
+   - The table has more columns than AgentBranding (instagram_handle,
+     primary_color, etc.) — those are written as their schema defaults
+     and ignored by the app for now. Migration 06 added the four
+     app-specific columns (full_name, license_number, voice_id,
+     voice_label) so the round-trip is lossless.
+*/
+
+const BRAND_KIT_DEFAULT_NAME = "Default";
+
+export async function fetchBrandKit(userId: string): Promise<AgentBranding | null> {
+  if (!userId) return null;
+  try {
+    const { data, error } = await supabase()
+      .from("brand_kits")
+      .select(
+        "id, full_name, brokerage, phone, email, headshot_url, logo_url, license_number, voice_id, voice_label"
+      )
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    if (error) {
+      console.warn("[brand-kit] fetch failed:", error.message);
+      return null;
+    }
+    const row = Array.isArray(data) && data.length ? data[0] : null;
+    if (!row) return null;
+    return {
+      fullName: row.full_name || "",
+      brokerage: row.brokerage || "",
+      phone: row.phone || "",
+      email: row.email || "",
+      headshotUrl: row.headshot_url || "",
+      brokerageLogoUrl: row.logo_url || "",
+      licenseNumber: row.license_number || "",
+      voiceId: row.voice_id || undefined,
+      voiceLabel: row.voice_label || undefined
+    };
+  } catch (err) {
+    console.warn("[brand-kit] fetch threw:", err);
+    return null;
+  }
+}
+
+export async function saveBrandKit(userId: string, branding: AgentBranding): Promise<void> {
+  if (!userId) return;
+  try {
+    // Find existing row for this user so we update instead of inserting a
+    // new one every save. brand_kits has no unique constraint on user_id
+    // (multiple kits per user is allowed by the schema), so do an
+    // explicit lookup → update path with insert fallback.
+    const { data: existing } = await supabase()
+      .from("brand_kits")
+      .select("id")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    const row = {
+      user_id: userId,
+      name: BRAND_KIT_DEFAULT_NAME,
+      full_name: branding.fullName || "",
+      brokerage: branding.brokerage || "",
+      phone: branding.phone || "",
+      email: branding.email || "",
+      headshot_url: branding.headshotUrl || "",
+      logo_url: branding.brokerageLogoUrl || "",
+      license_number: branding.licenseNumber || "",
+      voice_id: branding.voiceId || null,
+      voice_label: branding.voiceLabel || null
+    };
+
+    if (Array.isArray(existing) && existing.length) {
+      const { error } = await supabase()
+        .from("brand_kits")
+        .update(row)
+        .eq("id", existing[0].id);
+      if (error) console.warn("[brand-kit] update failed:", error.message);
+    } else {
+      const { error } = await supabase()
+        .from("brand_kits")
+        .insert(row);
+      if (error) console.warn("[brand-kit] insert failed:", error.message);
+    }
+  } catch (err) {
+    console.warn("[brand-kit] save threw:", err);
+  }
 }
 
 /* ============================================================
