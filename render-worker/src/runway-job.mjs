@@ -738,15 +738,18 @@ export async function stitchClipsAndOverlays(clipResults, manifest, outputPath, 
   return { normalizedClips };
 }
 
-// Build a single ffmpeg filter_complex chain that crossfades through every
-// normalized clip in sequence, then crossfades into the optional outro card.
+// Crossfade-stitch all normalized clips together.
 //
-// xfade math: each xfade's `offset` is the timestamp (seconds) at which the
-// transition begins, measured from the start of the LEFT input. For a chain
-// of N clips with durations d0..d(N-1) and crossfade f, the offsets are:
-//   xfade_0 (clip0 → clip1): offset = d0 - f
-//   xfade_1 (v01 → clip2):   offset = d0 + d1 - 2f
-//   xfade_i: offset = sum(d0..di) - (i+1)*f
+// v22 — BATCHED to keep memory bounded. xfade with all clips in one
+// filter_complex opens N codec contexts simultaneously, peaking ~150-200
+// MB per input. At 24+ inputs that's 4 GB+ of decoder state alone, which
+// OOM-killed the 4 GB Render instance.
+//
+// Strategy: chunk the clips into batches of XFADE_BATCH_SIZE, run xfade
+// per batch (single filter_complex), then simple-concat the batch outputs.
+// Memory peak per batch = XFADE_BATCH_SIZE codec contexts ≈ 600-800 MB.
+// Hard cuts only occur at batch boundaries — for a 24-clip render at
+// batch=4 that's 5 hard cuts and 18 crossfades, visually fine.
 async function stitchWithCrossfades({ clips, outroClip, output, crossfadeDurationSec = 0.5 }) {
   const allClips = outroClip
     ? [...clips, { clipPath: outroClip, duration: 5, sceneIndex: 9999 }]
@@ -761,20 +764,87 @@ async function stitchWithCrossfades({ clips, outroClip, output, crossfadeDuratio
     return;
   }
 
+  // Batch threshold — at or below this many clips, do a single xfade pass
+  // (no boundary cuts). Above it, chunk.
+  const XFADE_BATCH_SIZE = 4;
+  if (allClips.length <= XFADE_BATCH_SIZE + 2) {
+    await xfadeSingleBatch(allClips, output, crossfadeDurationSec);
+    return;
+  }
+
+  // Chunked path. Build batches, xfade each into a temp file, then
+  // simple-concat the temp files into the final output.
+  const tempDir = path.dirname(output);
+  const batches = [];
+  for (let i = 0; i < allClips.length; i += XFADE_BATCH_SIZE) {
+    batches.push(allClips.slice(i, i + XFADE_BATCH_SIZE));
+  }
+  console.info(
+    `[runway:xfade] batched ${allClips.length} clips into ${batches.length} groups of ≤${XFADE_BATCH_SIZE} ` +
+    `(memory-safe: ~600-800 MB per batch instead of ~${Math.round(allClips.length * 175)} MB single-pass)`
+  );
+
+  const batchOutputs = [];
+  for (let bi = 0; bi < batches.length; bi++) {
+    const batch = batches[bi];
+    const batchOut = path.join(tempDir, `xfade-batch-${String(bi).padStart(2, "0")}.mp4`);
+    if (batch.length === 1) {
+      // Trailing single clip — just copy it; nothing to xfade against.
+      await runFFmpeg(
+        ["-y", "-threads", "1", "-i", batch[0].clipPath, "-c", "copy", batchOut],
+        { timeoutMs: 30000, label: `runway:xfade-batch-${bi}-passthrough` }
+      );
+    } else {
+      await xfadeSingleBatch(batch, batchOut, crossfadeDurationSec);
+    }
+    batchOutputs.push(batchOut);
+  }
+
+  // Concat the batch outputs. Use the demuxer (-f concat -c copy) — no
+  // re-encode, so this is a 1-2 second metadata pass.
+  const concatList = path.join(tempDir, "xfade-batch-concat.txt");
+  await fs.writeFile(
+    concatList,
+    batchOutputs.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join("\n")
+  );
+  await runFFmpeg([
+    "-y",
+    "-threads", "1",
+    "-f", "concat",
+    "-safe", "0",
+    "-i", concatList,
+    "-c", "copy",
+    output
+  ], { timeoutMs: 60000, label: "runway:xfade-batch-concat" });
+
+  // Cleanup
+  await fs.unlink(concatList).catch(() => {});
+  for (const p of batchOutputs) await fs.unlink(p).catch(() => {});
+}
+
+// Single-pass xfade for a small group of clips. Used directly for short
+// renders and as the inner step of the batched path.
+async function xfadeSingleBatch(clipsInBatch, output, crossfadeDurationSec) {
+  if (clipsInBatch.length === 1) {
+    await runFFmpeg(
+      ["-y", "-threads", "1", "-i", clipsInBatch[0].clipPath, "-c", "copy", output],
+      { timeoutMs: 30000, label: "runway:xfade-single" }
+    );
+    return;
+  }
   const f = crossfadeDurationSec;
   const inputs = [];
-  allClips.forEach((clip) => { inputs.push("-i", clip.clipPath); });
+  clipsInBatch.forEach((clip) => { inputs.push("-i", clip.clipPath); });
 
-  // Build the filter_complex graph. For 3 clips:
-  //   [0:v][1:v]xfade=fade:duration=0.5:offset=4.5[v01];
-  //   [v01][2:v]xfade=fade:duration=0.5:offset=8.5[vout]
+  // Build the xfade chain for this batch. Same offset math as before:
+  //   xfade_i offset = sum(d0..di) - (i+1)*f
   let cumulativeOffset = 0;
   const xfadeSteps = [];
   let lastLabel = "[0:v]";
-  for (let i = 1; i < allClips.length; i++) {
-    const prevDuration = Number(allClips[i - 1].duration || 5);
+  for (let i = 1; i < clipsInBatch.length; i++) {
+    const prevDuration = Number(clipsInBatch[i - 1].duration || 5);
     cumulativeOffset += prevDuration - f;
-    const isLast = i === allClips.length - 1;
+    const isLast = i === clipsInBatch.length - 1;
     const outLabel = isLast ? "[vout]" : `[v${String(i).padStart(2, "0")}]`;
     xfadeSteps.push(
       `${lastLabel}[${i}:v]xfade=transition=fade:duration=${f}:offset=${cumulativeOffset.toFixed(3)}${outLabel}`
@@ -783,8 +853,6 @@ async function stitchWithCrossfades({ clips, outroClip, output, crossfadeDuratio
   }
   const filterComplex = xfadeSteps.join(";");
 
-  // 8-minute timeout — xfade re-encodes through 24+ inputs sequentially,
-  // can take 3-5 min on Render Standard. 8 min gives 60% headroom.
   await runFFmpeg([
     "-y",
     "-threads", "1",
@@ -799,7 +867,7 @@ async function stitchWithCrossfades({ clips, outroClip, output, crossfadeDuratio
     "-bufsize", BUFSIZE,
     "-r", "30",
     output
-  ], { timeoutMs: 8 * 60 * 1000, label: `runway:xfade-${allClips.length}clips` });
+  ], { timeoutMs: 4 * 60 * 1000, label: `runway:xfade-batch-${clipsInBatch.length}clips` });
 }
 
 // Reliability fallback for stitchWithCrossfades. Uses ffmpeg's concat
