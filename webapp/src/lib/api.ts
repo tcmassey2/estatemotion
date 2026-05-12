@@ -194,7 +194,20 @@ export interface RenderManifest {
   // Surgical fallback — route only kitchens and bathrooms (the highest-
   // hallucination room types) through Ken Burns while letting the rest
   // use Cinematic AI. Cleaner than all-or-nothing Compliance Mode.
+  // (Legacy field — superseded by hallucinationGuard. Kept for back-compat:
+  // protectHighRiskRooms=true maps to hallucinationGuard="balanced",
+  // protectHighRiskRooms=false maps to "off".)
   protectHighRiskRooms?: boolean;
+  // Hallucination Guard — content-aware Runway-vs-Ken-Burns routing.
+  //   "off"      — pure Runway. Use only when you're willing to accept that
+  //                kitchens may have split countertops or phantom fans.
+  //   "balanced" — default. Kitchens + bathrooms (and any other scene whose
+  //                content scores risky) auto-route to Ken Burns; the rest
+  //                use Cinematic AI motion.
+  //   "strict"   — same as balanced but with a lower risk threshold. Locks
+  //                ALL kitchens regardless of features. Best for production-
+  //                grade reliability when an AI mishap would be a liability.
+  hallucinationGuard?: "off" | "balanced" | "strict";
   // Per-scene regenerate-only: skip ElevenLabs re-synthesis even if the
   // original render had narration. Saves ~30s per regen and avoids
   // resplicing voice tracks against a swapped scene's new timing.

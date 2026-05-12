@@ -63,13 +63,19 @@ const RUNWAY_CONSTRAINT_CLAUSE =
 // understanding. Keep each clause under ~180 chars so the total prompt
 // (motion + subject + visible + style + universal constraint + this)
 // stays under Runway's 1000-char limit.
+// Kitchen prompt names the specific Runway failure modes we keep seeing
+// (split counters, phantom fans, microwave-on-fridge, doubled cabinet
+// doors) so the model has explicit "do not" guidance. Gen-4 Turbo
+// responds noticeably better when failures are named directly than to
+// generic "preserve appliances" instructions. Kept under ~280 chars
+// so total prompt stays under Runway's 1000-char limit.
 const RUNWAY_ROOM_CONSTRAINTS = {
   kitchen:
-    "Kitchen anchoring: the refrigerator, oven, microwave, dishwasher, range, hood, sink, faucet, cabinets, drawers, and countertops keep their exact shape, door count, and position. Cabinet doors stay closed.",
+    "Kitchen: refrigerator, oven, microwave, dishwasher, range, hood, sink, faucet, cabinets, drawers, countertops keep exact shape and count. Do not split, divide, or duplicate any countertop or cabinet face. No ceiling fans, no fan blades. No microwave doors on the refrigerator.",
   bathroom:
-    "Bathroom anchoring: the shower head, faucets, toilet, vanity, mirror, towel rack, and any tile patterns stay exactly aligned and unchanged. No new tiles or fixtures appear.",
+    "Bathroom: shower head, faucets, toilet, vanity, mirror, towel rack, tile patterns stay aligned and unchanged. No new tiles, no new fixtures, no duplicated faucets, no extra mirrors.",
   bedroom:
-    "Bedroom anchoring: the bed, headboard, nightstands, lamps, art, and any closet doors keep their exact shape and position. Bedding stays still."
+    "Bedroom: bed, headboard, nightstands, lamps, art, closet doors keep their exact shape and position. Bedding stays still. No ceiling fans, no fan blades. No duplicated lamps or pillows."
 };
 
 const RUNWAY_STYLE_PROMPTS = {
