@@ -1182,17 +1182,26 @@ function pickMusicUrl(manifest) {
     slot = "luxury"; // default for "Cinematic Luxury" or unrecognized
   }
 
-  // 1. Check for a bundled local file. Worker repo ships with these in
-  //    /render-worker/music/{slot}.mp3. ffmpeg accepts file:// or absolute paths.
-  const localCandidates = [
-    path.join(path.dirname(new URL(import.meta.url).pathname), "..", "music", `${slot}.mp3`),
-    path.join(path.dirname(new URL(import.meta.url).pathname), "..", "music", `${slot}.m4a`)
+  // Resolve absolute paths for the bundled music directory.
+  const musicDir = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "music");
+  const candidate = (name) => [
+    path.join(musicDir, `${name}.mp3`),
+    path.join(musicDir, `${name}.m4a`)
   ];
-  for (const localPath of localCandidates) {
+
+  // 1. Slot-specific local file (luxury/social/mls/investor).
+  for (const localPath of candidate(slot)) {
     if (existsSync(localPath)) return localPath;
   }
 
-  // 2. Fall back to env-var-configured URLs (legacy path).
+  // 2. Fall through to a generic default.mp3 if the slot file isn't bundled
+  //    yet. Means every render gets music as long as ANY local track exists,
+  //    even if the agent only uploaded one of the four style tracks.
+  for (const localPath of candidate("default")) {
+    if (existsSync(localPath)) return localPath;
+  }
+
+  // 3. Env-var-configured URLs (legacy fallback path).
   const envSlotMap = {
     luxury: ["RUNWAY_MUSIC_LUXURY_URL", "MUSIC_LUXURY_URL"],
     social: ["RUNWAY_MUSIC_VIRAL_URL", "MUSIC_VIRAL_URL"],
@@ -1203,7 +1212,7 @@ function pickMusicUrl(manifest) {
     if (process.env[envName]) return process.env[envName];
   }
 
-  // 3. Last-resort default URL.
+  // 4. Last-resort default URL.
   return process.env.RUNWAY_MUSIC_DEFAULT_URL || "";
 }
 
