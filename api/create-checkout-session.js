@@ -12,6 +12,8 @@
 //   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY  - to fetch / update user profile
 //   APP_URL                              - your public site URL, e.g. https://estatemotion.vercel.app
 
+import { rateLimit } from "./_lib/rate-limit.js";
+
 const TIER_TO_PRICE_ENV = {
   quick_reel: "STRIPE_PRICE_QUICK_REEL",
   cinematic_ai: "STRIPE_PRICE_CINEMATIC_AI",
@@ -24,6 +26,16 @@ export default async function handler(request, response) {
   if (request.method !== "POST") {
     return response.status(405).json({ error: "Use POST." });
   }
+
+  // Cap checkout-session creation. Honest users hit this 1-2 times max
+  // per upgrade flow; an attacker spamming it would burn Stripe API quota
+  // and fill our customers list with junk records.
+  const limited = await rateLimit(request, response, {
+    bucket: "checkout",
+    max: 20,
+    windowMs: 60 * 60 * 1000
+  });
+  if (limited) return;
 
   if (!process.env.STRIPE_SECRET_KEY) {
     return response.status(503).json({ error: "Billing is not configured. Set STRIPE_SECRET_KEY on Vercel." });

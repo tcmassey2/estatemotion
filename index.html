@@ -522,9 +522,9 @@
         <div class="footer-col">
           <h5>Legal</h5>
           <ul>
-            <li><a href="#">Terms</a></li>
-            <li><a href="#">Privacy</a></li>
-            <li><a href="#">Refund policy</a></li>
+            <li><a href="/legal/terms.html">Terms</a></li>
+            <li><a href="/legal/privacy.html">Privacy</a></li>
+            <li><a href="mailto:support@estatemotion.ai?subject=Refund%20request">Refund policy</a></li>
           </ul>
         </div>
       </div>
@@ -534,6 +534,37 @@
       </div>
     </div>
   </footer>
+
+  <!-- Cookie consent banner — minimal, dismissible, EU-friendly. We don't
+       use ad/tracking cookies (just Supabase auth + optional Plausible
+       Analytics which is cookieless), so this is informational rather
+       than a true consent gate. Dismissed state stored in localStorage. -->
+  <div id="cookie-banner" class="cookie-banner" role="dialog" aria-label="Cookie notice" hidden>
+    <div class="cookie-banner-inner">
+      <p class="cookie-banner-text">
+        We use a small number of strictly-necessary cookies to keep you signed in
+        and remember your brand kit. We don't use advertising or cross-site
+        tracking. <a href="/legal/privacy.html">Read the privacy policy</a>.
+      </p>
+      <button id="cookie-banner-ok" class="cookie-banner-btn" type="button">Got it</button>
+    </div>
+  </div>
+  <script>
+    // Tiny inline script so the banner shows/hides before the main bundle loads.
+    (function() {
+      try {
+        var KEY = "estatemotion.cookie-notice.v1";
+        if (localStorage.getItem(KEY)) return;
+        var banner = document.getElementById("cookie-banner");
+        if (!banner) return;
+        banner.hidden = false;
+        document.getElementById("cookie-banner-ok").addEventListener("click", function() {
+          try { localStorage.setItem(KEY, "1"); } catch (e) {}
+          banner.hidden = true;
+        });
+      } catch (e) { /* private mode etc — banner just doesn't appear */ }
+    })();
+  </script>
 
   <!-- Interaction script -->
   <script src="/api/env" onerror="window.ESTATEMOTION_API_ENV_UNAVAILABLE = true"></script>

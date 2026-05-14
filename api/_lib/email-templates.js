@@ -1,0 +1,152 @@
+// Branded HTML for transactional emails (trial-ending, payment-failed,
+// render-complete). Same visual language as the Supabase auth templates
+// in supabase/email-templates/ so the entire EstateMotion email
+// experience feels consistent.
+//
+// Each template returns { subject, html }. The html is a self-contained
+// table-layout email that survives Gmail/Outlook/Apple Mail rendering.
+
+const APP_URL = process.env.APP_URL || "https://estatemotion.ai";
+
+function shell({ eyebrow, headline, body, ctaLabel, ctaUrl, footer }) {
+  return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#0E0E10;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#E8E2D6;-webkit-font-smoothing:antialiased;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#0E0E10;padding:40px 20px;">
+  <tr><td align="center">
+    <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background:#15151A;border:1px solid #2A2A30;border-radius:16px;overflow:hidden;">
+      <tr><td style="padding:32px 40px 24px 40px;border-bottom:1px solid #1F1F25;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td style="padding-right:10px;">
+              <div style="display:inline-block;width:32px;height:32px;border-radius:6px;background:linear-gradient(135deg,#D4B96A,#A8843D);text-align:center;line-height:32px;font-style:italic;font-weight:700;color:#0E0E10;font-size:18px;">E</div>
+            </td>
+            <td style="font-size:16px;font-weight:600;letter-spacing:-0.01em;color:#E8E2D6;">EstateMotion</td>
+          </tr>
+        </table>
+      </td></tr>
+      <tr><td style="padding:36px 40px 8px 40px;">
+        <p style="margin:0 0 8px 0;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#C7A76C;font-family:'JetBrains Mono','Menlo',monospace;">${escape(eyebrow)}</p>
+        <h1 style="margin:0 0 18px 0;font-size:26px;line-height:1.2;letter-spacing:-0.025em;font-weight:600;color:#F5F0E2;">${escape(headline)}</h1>
+        <div style="margin:0 0 24px 0;font-size:15px;line-height:1.55;color:#B5AC9A;">${body}</div>
+      </td></tr>
+      ${ctaUrl ? `<tr><td style="padding:0 40px 32px 40px;" align="center">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+          <tr><td bgcolor="#C7A76C" style="border-radius:10px;">
+            <a href="${escape(ctaUrl)}" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:600;color:#0E0E10;text-decoration:none;letter-spacing:-0.005em;">${escape(ctaLabel || "Open EstateMotion")}</a>
+          </td></tr>
+        </table>
+      </td></tr>` : ""}
+      ${footer ? `<tr><td style="padding:0 40px 28px 40px;border-top:1px solid #1F1F25;padding-top:20px;">
+        <p style="margin:0;font-size:12px;color:#7A7164;line-height:1.6;">${footer}</p>
+      </td></tr>` : ""}
+    </table>
+    <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;margin-top:20px;">
+      <tr><td style="padding:0 40px;font-size:11px;color:#5B5448;line-height:1.6;text-align:center;">
+        EstateMotion · Cinematic listing videos in three minutes.<br>
+        <a href="${APP_URL}/app/" style="color:#7A7164;text-decoration:underline;">Sign in</a>
+        &nbsp;·&nbsp;
+        <a href="${APP_URL}/help" style="color:#7A7164;text-decoration:underline;">Help</a>
+        &nbsp;·&nbsp;
+        <a href="${APP_URL}/legal/privacy.html" style="color:#7A7164;text-decoration:underline;">Privacy</a>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>`;
+}
+
+function escape(s) {
+  return String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+/* ============================================================
+   Trial — 3 days remaining
+   ============================================================ */
+export function trialEndingThreeDays({ email }) {
+  return {
+    subject: "Your EstateMotion trial ends in 3 days",
+    html: shell({
+      eyebrow: "Trial reminder",
+      headline: "Three days left in your trial.",
+      body: `Hi there,<p>Your EstateMotion free trial wraps up in <strong style="color:#E8E2D6;">three days</strong>. Pick a plan now and your work — brand kit, library, scene-by-scene fixes — keeps right on going without an interruption.</p>`,
+      ctaLabel: "Pick a plan",
+      ctaUrl: `${APP_URL}/app/#settings`,
+      footer: `Sent to ${escape(email)} because your trial is winding down. You can cancel auto-emails by deleting your account at any time.`
+    })
+  };
+}
+
+/* ============================================================
+   Trial — 1 day remaining (more urgent tone)
+   ============================================================ */
+export function trialEndingOneDay({ email }) {
+  return {
+    subject: "Last day of your EstateMotion trial",
+    html: shell({
+      eyebrow: "Final day",
+      headline: "Last day to lock in your plan.",
+      body: `Hi there,<p>Your EstateMotion free trial ends <strong style="color:#E8E2D6;">tomorrow</strong>. After that, the Generate button stops responding until you pick a plan.</p><p style="margin-top:14px;">It takes 30 seconds and the videos you've already rendered stay in your library either way.</p>`,
+      ctaLabel: "Choose a plan",
+      ctaUrl: `${APP_URL}/app/#settings`,
+      footer: `Sent to ${escape(email)} because your trial expires within 24 hours.`
+    })
+  };
+}
+
+/* ============================================================
+   Trial — expired
+   ============================================================ */
+export function trialExpired({ email }) {
+  return {
+    subject: "Your EstateMotion trial has ended",
+    html: shell({
+      eyebrow: "Trial ended",
+      headline: "Pick a plan when you're ready.",
+      body: `Hi there,<p>Your seven-day free trial has wrapped. Your library, brand kit, and rendered videos are safe in your account — pick a plan whenever you're ready and you can keep going from exactly where you left off.</p>`,
+      ctaLabel: "View plans",
+      ctaUrl: `${APP_URL}/app/#settings`,
+      footer: `Sent to ${escape(email)} on the day your trial ended. We won't keep emailing — but if you ever want a recap of what's new, just sign back in.`
+    })
+  };
+}
+
+/* ============================================================
+   Payment failed
+   ============================================================ */
+export function paymentFailed({ email, planLabel }) {
+  return {
+    subject: "Action needed: payment failed for EstateMotion",
+    html: shell({
+      eyebrow: "Payment failed",
+      headline: "We couldn't charge your card.",
+      body: `Hi there,<p>Stripe couldn't process the renewal payment for your <strong style="color:#E8E2D6;">${escape(planLabel || "EstateMotion")}</strong> subscription. Your account is in a grace period — renders are paused until the card is updated.</p><p style="margin-top:14px;">Common fixes: update an expired card, switch to a different card, or check that your bank isn't blocking the charge.</p>`,
+      ctaLabel: "Update payment method",
+      ctaUrl: `${APP_URL}/app/#settings`,
+      footer: `Sent to ${escape(email)} because Stripe reported a payment failure. If this is wrong, reply and we'll dig in.`
+    })
+  };
+}
+
+/* ============================================================
+   Render complete
+   ============================================================ */
+export function renderComplete({ email, listingTitle, mp4Url, thumbnailUrl, jobId }) {
+  const safeTitle = escape(listingTitle || "Your listing video");
+  const previewBlock = thumbnailUrl
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto 24px auto;border-radius:10px;overflow:hidden;">
+         <tr><td><a href="${escape(mp4Url)}"><img src="${escape(thumbnailUrl)}" alt="" width="280" style="display:block;max-width:280px;height:auto;border:1px solid #2A2A30;border-radius:10px;"></a></td></tr>
+       </table>`
+    : "";
+  return {
+    subject: `Your video is ready — ${safeTitle}`,
+    html: shell({
+      eyebrow: "Render complete",
+      headline: "Your video is ready.",
+      body: `${previewBlock}<p>The render for <strong style="color:#E8E2D6;">${safeTitle}</strong> just finished. Open it in EstateMotion to download every format (9:16, 1:1, 16:9) and the social shorts.</p><p style="margin-top:14px;font-size:12px;color:#7A7164;">Job ID: <span style="font-family:'JetBrains Mono','Menlo',monospace;">${escape(jobId)}</span></p>`,
+      ctaLabel: "Open the bundle",
+      ctaUrl: `${APP_URL}/app/`,
+      footer: `Sent to ${escape(email)} because a render you started just finished. You can disable these in Settings.`
+    })
+  };
+}

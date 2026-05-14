@@ -292,6 +292,33 @@ export async function fetchLibrary(args: { limit?: number; offset?: number } = {
 }
 
 /* ============================================================
+   /api/delete-account — GDPR/CCPA self-service account deletion
+   ============================================================ */
+
+export interface DeleteAccountResponse {
+  status?: "deleted";
+  deleted?: Record<string, unknown>;
+  warnings?: string[];
+  error?: string;
+  detail?: string;
+  note?: string;
+}
+
+export async function deleteAccount(confirmEmail: string): Promise<DeleteAccountResponse> {
+  const headers = await authHeaders();
+  const res = await fetch("/api/delete-account", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ confirmEmail })
+  });
+  const payload = await res.json().catch(() => ({} as DeleteAccountResponse));
+  if (!res.ok) {
+    return { error: payload.error || `Delete failed (${res.status}).`, detail: payload.detail };
+  }
+  return payload;
+}
+
+/* ============================================================
    /api/billing-portal — Stripe Customer Portal session
    ============================================================ */
 

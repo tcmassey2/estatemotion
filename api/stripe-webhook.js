@@ -127,7 +127,46 @@ async function onPaymentFailed(invoice) {
   const userId = await findUserByCustomer(invoice.customer);
   if (!userId) return;
   await updateProfile(userId, { subscription_status: "past_due" });
+
+  // Notify the user. Without this, they'd discover the failed charge by
+  // hitting Generate days later and getting "subscription past_due".
+  // Fire-and-forget — webhook ack to Stripe must NOT block on email.
+  notifyPaymentFailed(userId, invoice).catch((err) => {
+    console.warn("[stripe-webhook] payment-failed notify threw:", err.message);
+  });
 }
+
+async function notifyPaymentFailed(userId, invoice) {
+  const { sendTransactionalEmail } = await import("./_lib/email.js");
+  const { paymentFailed } = await import("./_lib/email-templates.js");
+  // Look up the user's email + tier label.
+  const supabaseUrl = process.env.SUPABASE_URL || "";
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  if (!supabaseUrl || !serviceKey) return;
+  const res = await fetch(
+    `${supabaseUrl}/rest/v1/profiles?user_id=eq.${encodeURIComponent(userId)}&select=email,tier`,
+    { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } }
+  );
+  if (!res.ok) return;
+  const rows = await res.json().catch(() => []);
+  const profile = Array.isArray(rows) && rows.length ? rows[0] : null;
+  if (!profile?.email) return;
+  const planLabel = TIER_LABELS[profile.tier] || "your EstateMotion subscription";
+  const tpl = paymentFailed({ email: profile.email, planLabel });
+  await sendTransactionalEmail({
+    to: profile.email,
+    subject: tpl.subject,
+    html: tpl.html,
+    tags: ["payment-failed"]
+  });
+}
+
+const TIER_LABELS = {
+  trial: "Free Trial",
+  quick_reel: "Quick Reel",
+  cinematic_ai: "Cinematic AI",
+  cinematic_4k: "Cinematic AI 4K"
+};
 
 /* -------------------- Stripe signature verification -------------------- */
 

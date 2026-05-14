@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useStore } from "../lib/store";
-import { fetchUsage, openBillingPortal } from "../lib/api";
+import { fetchUsage, openBillingPortal, deleteAccount } from "../lib/api";
 import { signOut, requestPasswordReset } from "../lib/supabase";
 import type { UserProfile } from "../lib/types";
 
@@ -189,7 +189,7 @@ export default function SettingsScreen() {
       </Section>
 
       {/* ============================================================
-          Sign out — destructive but recoverable, separated visually
+          Sign out — recoverable, separated from destructive zone below
           ============================================================ */}
       <div className="mt-12 pt-8 border-t border-edge-soft flex items-center justify-between">
         <div>
@@ -201,10 +201,125 @@ export default function SettingsScreen() {
         <button
           type="button"
           onClick={handleSignOut}
-          className="card-press h-10 px-4 rounded-lg text-sm font-semibold bg-surface-input border border-edge hover:border-red-500/40 text-ink hover:text-red-300 transition-colors"
+          className="card-press h-10 px-4 rounded-lg text-sm font-semibold bg-surface-input border border-edge hover:border-edge-strong text-ink transition-colors"
         >
           Sign out
         </button>
+      </div>
+
+      {/* ============================================================
+          Delete account — fully destructive, type-to-confirm guard
+          ============================================================ */}
+      <DangerZone email={email} />
+    </div>
+  );
+}
+
+function DangerZone({ email }: { email: string }) {
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const setToast = useStore((s) => s.setToast);
+
+  const ready = typed.trim().toLowerCase() === email.toLowerCase() && email.length > 0;
+
+  const handleDelete = async () => {
+    if (!ready || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const result = await deleteAccount(email);
+      if (result.error) {
+        setError(result.error + (result.detail ? ` — ${result.detail}` : ""));
+        return;
+      }
+      setToast("Your account has been deleted. Goodbye.");
+      // Sign out triggers store to route back to /auth.
+      await signOut();
+      // As a belt-and-suspenders, redirect to home in case the auth state
+      // change doesn't propagate (e.g., session was already invalid).
+      setTimeout(() => { window.location.href = "/"; }, 800);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Account deletion failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-12 pt-8 border-t border-red-500/15">
+      <div className="rounded-2xl border border-red-500/25 bg-red-500/[0.04] p-6 sm:p-8">
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+          <div>
+            <div className="text-sm font-semibold tracking-tightish text-red-300">
+              Delete account
+            </div>
+            <div className="text-xs text-ink-muted mt-1 max-w-md leading-relaxed">
+              Permanently removes your profile, brand kit, library, render audit log,
+              and all uploaded photos from EstateMotion. Stripe billing records are
+              retained as required by tax law. This cannot be undone.
+            </div>
+          </div>
+          {!open && (
+            <button
+              type="button"
+              onClick={() => { setOpen(true); setError(""); setTyped(""); }}
+              className="card-press h-10 px-4 rounded-lg text-sm font-semibold bg-surface-input border border-red-500/30 hover:border-red-500/60 text-red-300 transition-colors"
+            >
+              Delete my account
+            </button>
+          )}
+        </div>
+
+        {open && (
+          <div className="mt-4 flex flex-col gap-3">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs text-ink-muted">
+                Type <strong className="text-ink">{email}</strong> to confirm deletion
+              </span>
+              <input
+                type="text"
+                value={typed}
+                onChange={(e) => setTyped(e.target.value)}
+                placeholder={email}
+                autoComplete="off"
+                spellCheck={false}
+                className="h-11 px-3.5 bg-surface-input border border-edge rounded-lg text-ink placeholder:text-ink-dim focus:outline-none focus:border-red-500/60 focus:ring-2 focus:ring-red-500/20 transition-colors font-mono text-sm"
+              />
+            </label>
+
+            {error && (
+              <div className="px-3 py-2.5 rounded-lg border border-red-500/30 bg-red-500/10 text-sm text-red-300">
+                {error}
+              </div>
+            )}
+
+            <div className="flex gap-2 mt-1">
+              <button
+                type="button"
+                onClick={() => { setOpen(false); setTyped(""); setError(""); }}
+                disabled={busy}
+                className="card-press h-10 px-4 rounded-lg text-sm font-semibold bg-surface-input border border-edge hover:border-edge-strong text-ink transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={!ready || busy}
+                className={
+                  "card-press h-10 px-4 rounded-lg text-sm font-semibold transition-colors " +
+                  (ready
+                    ? "bg-red-500/90 hover:bg-red-500 text-paper"
+                    : "bg-surface-input border border-edge text-ink-dim cursor-not-allowed")
+                }
+              >
+                {busy ? "Deleting…" : "Delete forever"}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

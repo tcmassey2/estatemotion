@@ -15,6 +15,8 @@
 // returns 202 with `jobId` set to "<originalJobId>:regen:<sceneIndex>" — the
 // frontend polls /api/render?jobId=<progressKey> just like any other job.
 
+import { rateLimit } from "./_lib/rate-limit.js";
+
 const DEFAULT_TIMEOUT_MS = 1000 * 60 * 8;
 
 export default async function handler(request, response) {
@@ -32,6 +34,16 @@ export default async function handler(request, response) {
     });
     return;
   }
+
+  // Each AI regen burns one Runway credit (~$0.25). 20/hour caps the
+  // pathological case at $5/hour per user; honest users hit this 1-3
+  // times per project to fix individual hallucinations.
+  const limited = await rateLimit(request, response, {
+    bucket: "regen",
+    max: 20,
+    windowMs: 60 * 60 * 1000
+  });
+  if (limited) return;
 
   try {
     const body = parseBody(request.body);

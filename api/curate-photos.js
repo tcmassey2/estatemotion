@@ -27,6 +27,8 @@
 //   - Keeps the cost gate clear: curation is one Vision call; edit-plan is
 //     another. Each can be metered independently if we add quotas.
 
+import { rateLimit } from "./_lib/rate-limit.js";
+
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const DEFAULT_MODEL = "gpt-4.1-mini";
 const DEFAULT_TIMEOUT_MS = 45000;
@@ -73,6 +75,16 @@ export default async function handler(request, response) {
     response.status(405).json({ status: "failed", error: "Use POST /api/curate-photos." });
     return;
   }
+
+  // Each curate call is one OpenAI Vision request (~$0.10). 30/hour caps
+  // the worst-case spend at $3/hour per user; honest users never need
+  // more than 2-3 per project.
+  const limited = await rateLimit(request, response, {
+    bucket: "curate",
+    max: 30,
+    windowMs: 60 * 60 * 1000
+  });
+  if (limited) return;
 
   const body = parseBody(request.body);
   const rawPhotos = Array.isArray(body.photos) ? body.photos : [];

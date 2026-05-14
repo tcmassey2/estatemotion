@@ -1,11 +1,26 @@
 const DEFAULT_TIMEOUT_MS = 1000 * 60 * 8;
 
+import { rateLimit } from "./_lib/rate-limit.js";
+
 export default async function handler(request, response) {
   setCorsHeaders(response);
 
   if (request.method === "OPTIONS") {
     response.status(204).end();
     return;
+  }
+
+  // Rate-limit the POST submit path. 10 renders per hour per user is well
+  // above any honest workflow (a 24-scene Cinematic AI render takes 3-5 min,
+  // so 10 in an hour means hammering Generate constantly) but a reasonable
+  // ceiling against credit-burning abuse. GET status polls bypass.
+  if (request.method === "POST") {
+    const limited = await rateLimit(request, response, {
+      bucket: "render",
+      max: 10,
+      windowMs: 60 * 60 * 1000
+    });
+    if (limited) return;
   }
 
   if (request.method === "GET") {
