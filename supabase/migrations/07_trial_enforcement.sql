@@ -67,6 +67,13 @@ end $$;
 --   - tier = 'trial' AND now() > trial_ends_at, OR
 --   - tier = 'trial' AND trial_renders_used >= trial_render_cap, OR
 --   - any of the existing checks (quota / past_due / canceled)
+--
+-- DROP FIRST: this migration changes the RETURN TABLE shape of an
+-- existing function (adds 5 new columns). Postgres won't let you do that
+-- with CREATE OR REPLACE alone — error: "cannot change return type of
+-- existing function". Drop explicitly so the new shape can be created.
+drop function if exists public.get_user_tier_state(uuid);
+
 create or replace function public.get_user_tier_state(p_user_id uuid)
 returns table (
   tier text,
