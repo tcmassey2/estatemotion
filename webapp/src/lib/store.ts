@@ -18,7 +18,7 @@ import type {
 import { onAuthChange, getSession, fetchBrandKit, saveBrandKit } from "./supabase";
 import { fetchOrganization, curatePhotos } from "./api";
 
-export type Screen = "auth" | "dashboard" | "project" | "brokerage";
+export type Screen = "auth" | "dashboard" | "project" | "brokerage" | "settings";
 
 // Render Safety levels — the only knob users have to think about for
 // hallucination control. The manifest builder maps these to the worker's
@@ -82,6 +82,10 @@ interface AppState {
   loading: string;
   error: string;
   toast: string;
+  // Counter the dashboard's PlanStatusBanner watches. Bumping this triggers
+  // a re-fetch of /api/usage so the meter reflects the latest tier state
+  // (e.g., right after a successful render that consumed a quota slot).
+  usageRefresh: number;
 
   // Actions
   init: () => Promise<void>;
@@ -121,6 +125,7 @@ interface AppState {
   setLoading: (msg: string) => void;
   setError: (msg: string) => void;
   setToast: (msg: string) => void;
+  bumpUsageRefresh: () => void;
 }
 
 const newProjectId = () => `project-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -268,6 +273,7 @@ export const useStore = create<AppState>((set, get) => ({
   loading: "",
   error: "",
   toast: "",
+  usageRefresh: 0,
 
   init: async () => {
     const session = await getSession();
@@ -455,5 +461,6 @@ export const useStore = create<AppState>((set, get) => ({
   setToast: (msg) => {
     set({ toast: msg });
     if (msg) setTimeout(() => set((cur) => (cur.toast === msg ? { toast: "" } : {})), 3500);
-  }
+  },
+  bumpUsageRefresh: () => set((s) => ({ usageRefresh: s.usageRefresh + 1 }))
 }));

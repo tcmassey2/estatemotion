@@ -292,6 +292,31 @@ export async function fetchLibrary(args: { limit?: number; offset?: number } = {
 }
 
 /* ============================================================
+   /api/billing-portal — Stripe Customer Portal session
+   ============================================================ */
+
+export interface BillingPortalResponse {
+  url?: string;
+  error?: string;
+  needsCheckout?: boolean;
+}
+
+export async function openBillingPortal(): Promise<BillingPortalResponse> {
+  const headers = await authHeaders();
+  const res = await fetch("/api/billing-portal", { method: "POST", headers });
+  if (res.status === 404) {
+    const payload = await res.json().catch(() => ({}));
+    return { needsCheckout: true, error: payload.error || "No paid plan yet." };
+  }
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({}));
+    return { error: payload.error || `Billing portal request failed (${res.status}).` };
+  }
+  const payload = await res.json().catch(() => ({}));
+  return { url: payload.url };
+}
+
+/* ============================================================
    /api/curate-photos — AI picks the best 24 in tour order
    ============================================================ */
 

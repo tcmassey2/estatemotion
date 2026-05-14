@@ -2094,7 +2094,14 @@ function RenderControls() {
           phase: safePhase
         });
 
-        if (status.status === "completed" || status.status === "failed") return;
+        if (status.status === "completed" || status.status === "failed") {
+          // Bump the dashboard's usage counter so PlanStatusBanner re-fetches
+          // and the meter / trial countdown reflects the just-finished render.
+          if (status.status === "completed") {
+            useStore.getState().bumpUsageRefresh();
+          }
+          return;
+        }
 
         // Stuck detection — fire ONCE when threshold first crossed.
         const stuckMs = Date.now() - lastProgressMovedAt;

@@ -196,6 +196,12 @@ export interface UserProfile {
   available_engines: RenderEngine[];
   can_render: boolean;
   reason: string | null;
+  // Trial enforcement (migration 07). All four are set to NULL/0 for
+  // non-trial tiers — UI should only surface the countdown when tier=='trial'.
+  trial_ends_at: string | null;       // ISO timestamp
+  trial_renders_used: number;
+  trial_render_cap: number;
+  current_period_end: string | null;  // ISO timestamp for paid users' billing cycle
 }
 
 /* ============================================================

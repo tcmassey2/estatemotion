@@ -4,6 +4,7 @@ import { fetchLibrary } from "../lib/api";
 import { buildSamplePhotos, SAMPLE_LISTING, SAMPLE_PROJECT_TITLE } from "../lib/samples";
 import type { LibraryEntry } from "../lib/types";
 import LibraryDetailModal from "./LibraryDetailModal";
+import PlanStatusBanner from "../components/PlanStatusBanner";
 
 export default function DashboardScreen() {
   const newProject = useStore((s) => s.newProject);
@@ -97,6 +98,10 @@ export default function DashboardScreen() {
           </button>
         </div>
       </div>
+
+      {/* Plan / trial status — surfaces tier, quota, and trial countdown.
+          On expired trial, this becomes the primary upgrade prompt. */}
+      <PlanStatusBanner />
 
       {/* Loading state */}
       {libraryLoading && (

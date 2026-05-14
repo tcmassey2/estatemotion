@@ -61,8 +61,19 @@ export default function TopBar() {
               </span>
             )}
           </button>
+          <button
+            onClick={() => goToScreen("settings")}
+            className={`btn-press text-xs px-3 py-1.5 rounded-md transition-colors inline-flex items-center gap-1.5 ${
+              screen === "settings"
+                ? "text-ink bg-surface-input border border-edge-strong"
+                : "text-ink-muted hover:text-ink border border-transparent"
+            }`}
+            title="Account & billing"
+          >
+            Settings
+          </button>
           {session?.user?.email && (
-            <span className="hidden lg:inline text-xs text-ink-muted ml-2">{session.user.email}</span>
+            <span className="hidden lg:inline text-xs text-ink-muted ml-1">{session.user.email}</span>
           )}
           <button
             onClick={onSignOut}

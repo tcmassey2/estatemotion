@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  EstateMotion — Magic Link email template
+  Install at: Supabase Dashboard → Authentication → Email Templates → "Magic Link"
+  Subject:    Your EstateMotion sign-in link
+  (We don't currently expose magic-link sign-in in the UI, but Supabase
+  will send this email if anyone hits the magic link API directly. The
+  branded version keeps the experience consistent if/when we enable it.)
+-->
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your EstateMotion sign-in link</title>
+</head>
+<body style="margin:0;padding:0;background:#0E0E10;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#E8E2D6;-webkit-font-smoothing:antialiased;">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#0E0E10;">
+    Your EstateMotion sign-in link — expires in 1 hour.
+  </div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#0E0E10;padding:40px 20px;">
+    <tr><td align="center">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background:#15151A;border:1px solid #2A2A30;border-radius:16px;overflow:hidden;">
+        <tr><td style="padding:32px 40px 24px 40px;border-bottom:1px solid #1F1F25;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td style="padding-right:10px;">
+                <div style="display:inline-block;width:32px;height:32px;border-radius:6px;background:linear-gradient(135deg,#D4B96A,#A8843D);text-align:center;line-height:32px;font-style:italic;font-weight:700;color:#0E0E10;font-size:18px;">E</div>
+              </td>
+              <td style="font-size:16px;font-weight:600;letter-spacing:-0.01em;color:#E8E2D6;">EstateMotion</td>
+            </tr>
+          </table>
+        </td></tr>
+        <tr><td style="padding:36px 40px 8px 40px;">
+          <p style="margin:0 0 8px 0;font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#C7A76C;font-family:'JetBrains Mono','Menlo',monospace;">Sign-in link</p>
+          <h1 style="margin:0 0 18px 0;font-size:26px;line-height:1.2;letter-spacing:-0.025em;font-weight:600;color:#F5F0E2;">One click signs you in.</h1>
+          <p style="margin:0 0 24px 0;font-size:15px;line-height:1.55;color:#B5AC9A;">
+            Click below to sign in to <strong style="color:#E8E2D6;">{{ .Email }}</strong>.
+          </p>
+        </td></tr>
+        <tr><td style="padding:0 40px 32px 40px;" align="center">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+            <tr><td bgcolor="#C7A76C" style="border-radius:10px;">
+              <a href="{{ .ConfirmationURL }}" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:600;color:#0E0E10;text-decoration:none;letter-spacing:-0.005em;">Sign me in</a>
+            </td></tr>
+          </table>
+          <p style="margin:14px 0 0 0;font-size:11px;color:#7A7164;line-height:1.5;">This link expires in 1 hour.</p>
+        </td></tr>
+        <tr><td style="padding:0 40px 28px 40px;">
+          <p style="margin:0;font-size:11px;color:#7A7164;line-height:1.5;">
+            Didn't request this? Ignore the email — no one can sign in without clicking the link.
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>

@@ -4,6 +4,7 @@ import AuthScreen from "./screens/AuthScreen";
 import DashboardScreen from "./screens/DashboardScreen";
 import ProjectScreen from "./screens/ProjectScreen";
 import BrokerageScreen from "./screens/BrokerageScreen";
+import SettingsScreen from "./screens/SettingsScreen";
 import TopBar from "./components/TopBar";
 import Toast from "./components/Toast";
 
@@ -70,6 +71,7 @@ export default function App() {
         {screen === "dashboard" && <DashboardScreen />}
         {screen === "project" && <ProjectScreen />}
         {screen === "brokerage" && <BrokerageScreen />}
+        {screen === "settings" && <SettingsScreen />}
       </main>
       <Toast />
     </ErrorBoundary>

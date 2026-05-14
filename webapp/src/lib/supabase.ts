@@ -50,6 +50,40 @@ export async function signOut() {
   await supabase().auth.signOut();
 }
 
+/* ============================================================
+   Password reset + email confirmation resend
+   ============================================================ */
+
+// Sends a Supabase password-reset email. The reset link Supabase sends back
+// to the inbox routes to /auth/reset (configured in Supabase dashboard →
+// Authentication → URL Configuration). For now we route it to / and the
+// app picks up the recovery token from the URL hash automatically.
+export async function requestPasswordReset(email: string) {
+  const redirectTo =
+    typeof window !== "undefined" ? `${window.location.origin}/app/` : undefined;
+  const { error } = await supabase().auth.resetPasswordForEmail(email, {
+    redirectTo
+  });
+  if (error) throw error;
+}
+
+// Update the signed-in user's password (requires an active session, which
+// the recovery-email link establishes when the user clicks through).
+export async function updatePassword(newPassword: string) {
+  const { error } = await supabase().auth.updateUser({ password: newPassword });
+  if (error) throw error;
+}
+
+// Re-send the email-confirmation message for an unconfirmed signup. Useful
+// when the original mail got buried, expired, or never arrived.
+export async function resendConfirmationEmail(email: string) {
+  const { error } = await supabase().auth.resend({
+    type: "signup",
+    email
+  });
+  if (error) throw error;
+}
+
 export function onAuthChange(cb: (session: Session | null) => void) {
   const { data } = supabase().auth.onAuthStateChange((_event, session) => cb(session));
   return () => data.subscription.unsubscribe();

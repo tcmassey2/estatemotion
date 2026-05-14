@@ -113,6 +113,16 @@ export default async function handler(request, response) {
     const text = await workerResponse.text();
     const payload = parseBody(text);
 
+    // Bump the trial-renders counter for users on the trial tier as soon
+    // as the worker accepts the job. Fire-and-forget — a counter increment
+    // failure must NOT block the render. The next /api/usage call surfaces
+    // the new count to the dashboard banner.
+    if (workerResponse.ok && tierGuard.userId && tierGuard.state?.tier === "trial") {
+      bumpTrialCounter(tierGuard.userId).catch((err) => {
+        console.warn("[render] trial counter increment failed:", err.message || err);
+      });
+    }
+
     response.status(workerResponse.status).json(payload || {
       status: workerResponse.ok ? "queued" : "failed",
       message: text
@@ -303,4 +313,27 @@ async function enforceTierGuard(request, manifest) {
   }
 
   return { ok: true, userId, state };
+}
+
+// Bump the trial-renders counter via the increment_trial_render RPC.
+// No-op server-side if the user isn't on tier='trial' (the SQL function
+// has its own WHERE clause). Service role required because the function
+// updates a tier/quota field that RLS blocks for normal users.
+async function bumpTrialCounter(userId) {
+  const supabaseUrl = process.env.SUPABASE_URL || "";
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  if (!supabaseUrl || !serviceKey || !userId) return;
+  const res = await fetch(`${supabaseUrl}/rest/v1/rpc/increment_trial_render`, {
+    method: "POST",
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ p_user_id: userId })
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`increment_trial_render failed (${res.status}): ${body.slice(0, 200)}`);
+  }
 }
