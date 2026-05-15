@@ -636,6 +636,10 @@ function PhotosArea({ projectId, userId }: { projectId: string; userId: string }
     setError("");
     try {
       const result = await curatePhotosWithAI();
+      // v23 diagnostics: log full result so debugging post-deploy doesn't
+      // require a network-tab dive. Visible in DevTools console.
+      console.info("[ai-curate] result:", result);
+
       if (result.status === "ok") {
         setToast(
           result.removedCount > 0
@@ -643,14 +647,22 @@ function PhotosArea({ projectId, userId }: { projectId: string; userId: string }
             : `AI re-arranged ${result.keptCount} photos in tour order.`
         );
       } else if (result.status === "fallback") {
-        setToast(result.reason || "AI fell back to upload order.");
+        // v23: was a 3s blip toast, now a sticky error alert because
+        // "AI fell back to upload order" usually means OpenAI hit a real
+        // problem (rate limit, partial response, content moderation) and
+        // the user needs to know — not a happy path.
+        setError(
+          (result.reason || "AI curation fell back to upload order.") +
+          " (Check console for the full response.)"
+        );
       } else if (result.status === "skipped") {
         setToast(result.reason || "Not enough photos to curate.");
       } else {
-        setError(result.reason || "AI curation failed.");
+        setError(result.reason || "AI curation failed. Check console for details.");
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "AI curation failed.";
+      console.error("[ai-curate] threw:", err);
       setError(msg);
     } finally {
       setCurating(false);
