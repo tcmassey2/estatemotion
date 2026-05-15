@@ -367,10 +367,14 @@ export async function renderRunwayJob(body, options = {}) {
       const outroSec = 5; // composited outro card duration (see buildBrandOutroClip)
       return sceneSec + cardSec + outroSec;
     })();
+    // v23 hotfix: `dimensions` was a local inside stitchClipsAndOverlays —
+    // doesn't exist in this scope. Recompute from manifest via the pure
+    // runwayDimensions() helper (same source the stitcher used).
+    const validateDims = runwayDimensions(manifest);
     await validateMasterMp4({
       filePath: variants.vertical?.path || finalMp4,
       expectedDurationSec: expectedSec,
-      expectedDimensions: dimensions,
+      expectedDimensions: validateDims,
       label: "runway"
     });
   } catch (err) {
