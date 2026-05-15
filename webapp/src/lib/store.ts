@@ -67,6 +67,11 @@ interface AppState {
   // v23: Day-to-Dusk twilight conversion on the hero photo. Premium tier
   // only — costs ~$0.04 per render in Replicate compute. Default OFF.
   twilightHero: boolean;
+  // v23.1: 4K Ultra HD output. Cinematic AI 4K tier ($299) only. Defaults
+  // ON for 4K subscribers (they paid for it) but can be toggled OFF to
+  // save render time on quick previews. Worker reads this as
+  // manifest.export4K and upscales master + variants accordingly.
+  export4K: boolean;
   // Render Safety — collapsed from the legacy trio (complianceMode,
   // protectHighRiskRooms, hallucinationGuard) into one setting. The
   // manifest builder translates this into the legacy fields the worker
@@ -123,6 +128,7 @@ interface AppState {
   setNarrationEnabled: (enabled: boolean) => void;
   setCrossfadesEnabled: (enabled: boolean) => void;
   setTwilightHero: (enabled: boolean) => void;
+  setExport4K: (enabled: boolean) => void;
   setRenderSafety: (level: RenderSafety) => void;
   setEditPlan: (plan: EditPlan | null) => void;
   setRenderJob: (job: RenderJobStatus | null) => void;
@@ -258,6 +264,10 @@ const emptyProject = () => ({
   narrationEnabled: false,
   crossfadesEnabled: false,
   twilightHero: false,
+  // Default ON — 4K-tier subscribers paid for 4K, give them 4K out of the
+  // box. The RenderQualityPanel renders this as a toggleable switch only
+  // for tier === cinematic_4k; other tiers see it locked at 1080p.
+  export4K: true,
   // Default "smart" — the right answer for 95% of renders. AI motion
   // everywhere except scenes that score risky (kitchens with appliances,
   // anywhere mentioning fans/parallel surfaces).
@@ -459,6 +469,7 @@ export const useStore = create<AppState>((set, get) => ({
   setNarrationEnabled: (enabled) => set({ narrationEnabled: enabled, editPlan: null }),
   setCrossfadesEnabled: (enabled) => set({ crossfadesEnabled: enabled }),
   setTwilightHero: (enabled) => set({ twilightHero: enabled }),
+  setExport4K: (enabled) => set({ export4K: enabled }),
   setRenderSafety: (level) => set({ renderSafety: level, editPlan: null }),
   setEditPlan: (plan) => set({ editPlan: plan }),
   setRenderJob: (job) => set({ renderJob: job }),

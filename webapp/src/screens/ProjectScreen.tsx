@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type DragEvent, type ReactNode, type RefObject } from "react";
 import { useStore } from "../lib/store";
 import { uploadListingPhoto, photoFromUpload, readImageDimensions, uploadAgentHeadshot, uploadBrokerageLogo } from "../lib/supabase";
-import { createEditPlan, submitRender, pollRender, lookupProperty, fetchLibrary, RenderJobMissingError, type RenderManifest } from "../lib/api";
+import { createEditPlan, submitRender, pollRender, lookupProperty, fetchLibrary, fetchUsage, RenderJobMissingError, type RenderManifest } from "../lib/api";
 import { events, track } from "../lib/analytics";
 import type { Photo, RenderEngine, StyleId } from "../lib/types";
 import { cn } from "../lib/cn";
@@ -117,6 +117,7 @@ export default function ProjectScreen() {
       <Section title="Render" subtitle="Pick your engine, hit Generate.">
         <div className="flex flex-col gap-5">
           <EngineToggle engine={renderEngine} onChange={setEngine} />
+          <RenderQualityPanel />
           <NarrationToggle />
           <TwilightToggle />
           <CrossfadeToggle />
@@ -173,6 +174,173 @@ function NarrationToggle() {
         </div>
       </div>
     </button>
+  );
+}
+
+/* v23.1: Render Quality Panel — single source of truth for which AI engine
+   and resolution this render will use. Tier-aware:
+
+     - Cinematic AI 4K ($299): Gen-4.5 + 4K (with togglable 4K)
+     - Cinematic AI ($149):    Gen-4 Turbo + 1080p (locked)
+     - Quick Reel ($79):       Ken Burns motion + 1080p (locked)
+     - Trial:                  Same as Quick Reel + clear upgrade CTA
+
+   Replaces the implicit-config approach where users had no idea which
+   model their render was using. Now everyone sees explicitly what they
+   get for their tier, and 4K-tier subscribers get a single toggle to
+   downgrade resolution for faster preview renders.
+*/
+function RenderQualityPanel() {
+  const renderEngine = useStore((s) => s.renderEngine);
+  const export4K = useStore((s) => s.export4K);
+  const setExport4K = useStore((s) => s.setExport4K);
+  const [tier, setTier] = useState<string>("trial");
+  const [tierLoading, setTierLoading] = useState(true);
+
+  // Fetch the user's tier on mount. Cached for the panel's lifetime —
+  // the tier only changes via Stripe checkout which navigates away.
+  useEffect(() => {
+    let alive = true;
+    fetchUsage()
+      .then((u) => { if (alive && u?.tier) setTier(String(u.tier)); })
+      .catch(() => { /* keep default 'trial' */ })
+      .finally(() => { if (alive) setTierLoading(false); });
+    return () => { alive = false; };
+  }, []);
+
+  if (tierLoading) {
+    return (
+      <div className="rounded-xl border border-edge-soft bg-surface-input p-4 animate-pulse">
+        <div className="h-4 w-32 bg-edge rounded mb-2" />
+        <div className="h-3 w-48 bg-edge rounded" />
+      </div>
+    );
+  }
+
+  // Resolve what THIS render will actually use — mirrors the worker's
+  // resolveRunwayModel() logic so the user can trust what they see.
+  const isQuickReel = renderEngine === "remotion";
+  const is4KTier = tier === "cinematic_4k";
+  const isCinematicTier = tier === "cinematic_ai" || tier === "cinematic_4k";
+
+  const engineLabel = isQuickReel
+    ? "Ken Burns motion (Quick Reel)"
+    : is4KTier
+      ? "Runway Gen-4.5"
+      : "Runway Gen-4 Turbo";
+
+  const engineSublabel = isQuickReel
+    ? "Cinematic camera moves applied to your photos. Fastest, no AI hallucinations."
+    : is4KTier
+      ? "Premium image-to-video model — best architectural fidelity in the industry."
+      : "Image-to-video AI. Strong, fast, with content-aware safety guards.";
+
+  // Resolution: 4K available + togglable on 4K tier; locked at 1080p elsewhere.
+  const resolutionEnabled = is4KTier && export4K;
+  const resolutionLabel = isQuickReel
+    ? "1080p HD (vertical 9:16)"
+    : is4KTier && export4K
+      ? "4K Ultra HD (3840×2160)"
+      : "1080p HD (vertical 9:16)";
+
+  return (
+    <div className="rounded-xl border border-edge bg-surface p-4 flex flex-col gap-3">
+      <div className="flex items-baseline justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold tracking-tightish">Render quality</div>
+          <div className="text-xs text-ink-muted mt-0.5">
+            What this render will actually use, based on your plan.
+          </div>
+        </div>
+        <span className={cn(
+          "text-[9px] font-bold tracking-widest px-2 py-0.5 rounded uppercase",
+          is4KTier
+            ? "bg-gold text-paper"
+            : isCinematicTier
+              ? "bg-gold/20 text-gold-light border border-gold/40"
+              : "bg-surface-input text-ink-muted border border-edge"
+        )}>
+          {is4KTier ? "Cinematic 4K" : isCinematicTier ? "Cinematic AI" : tier === "quick_reel" ? "Quick Reel" : "Trial"}
+        </span>
+      </div>
+
+      {/* AI engine row */}
+      <div className="rounded-lg border border-edge-soft bg-surface-input p-3 flex items-start gap-3">
+        <div className="text-lg" aria-hidden>{isQuickReel ? "🎞️" : "✨"}</div>
+        <div className="flex-1 min-w-0">
+          <div className="text-xs uppercase tracking-widest text-ink-dim font-mono mb-1">
+            AI Engine
+          </div>
+          <div className="text-sm font-semibold tracking-tightish flex items-center gap-2 flex-wrap">
+            {engineLabel}
+            {is4KTier && !isQuickReel && (
+              <span className="text-[9px] font-bold tracking-widest px-1.5 py-0.5 rounded bg-gold text-paper">
+                PREMIUM
+              </span>
+            )}
+          </div>
+          <div className="text-xs text-ink-muted mt-1 leading-relaxed">{engineSublabel}</div>
+        </div>
+      </div>
+
+      {/* Resolution row — toggle if 4K-tier, otherwise locked badge */}
+      <div className="rounded-lg border border-edge-soft bg-surface-input p-3 flex items-center gap-3">
+        <div className="text-lg" aria-hidden>{resolutionEnabled ? "📺" : "🖥️"}</div>
+        <div className="flex-1 min-w-0">
+          <div className="text-xs uppercase tracking-widest text-ink-dim font-mono mb-1">
+            Output resolution
+          </div>
+          <div className="text-sm font-semibold tracking-tightish flex items-center gap-2 flex-wrap">
+            {resolutionLabel}
+            {resolutionEnabled && (
+              <span className="text-[9px] font-bold tracking-widest px-1.5 py-0.5 rounded bg-gold text-paper">
+                4K
+              </span>
+            )}
+          </div>
+          {is4KTier && !isQuickReel ? (
+            <div className="text-xs text-ink-muted mt-1 leading-relaxed">
+              {export4K
+                ? "4K master + 1080p variants. Adds 3-5 min to render — turn off for faster preview cuts."
+                : "Toggle on for full 4K Ultra HD. Off saves 3-5 min per render."}
+            </div>
+          ) : (
+            <div className="text-xs text-ink-muted mt-1 leading-relaxed">
+              4K Ultra HD requires Cinematic AI 4K plan.
+            </div>
+          )}
+        </div>
+        {is4KTier && !isQuickReel && (
+          <button
+            type="button"
+            onClick={() => setExport4K(!export4K)}
+            className="flex-shrink-0"
+            aria-label={export4K ? "Disable 4K output" : "Enable 4K output"}
+          >
+            <div className={cn(
+              "w-10 h-6 rounded-full border transition-colors relative",
+              export4K ? "bg-gold border-gold" : "bg-surface border-edge-strong"
+            )}>
+              <div className={cn(
+                "absolute top-0.5 w-5 h-5 rounded-full bg-paper transition-all",
+                export4K ? "left-[18px]" : "left-0.5"
+              )} />
+            </div>
+          </button>
+        )}
+      </div>
+
+      {/* Upgrade CTA — only for non-4K tiers viewing the Cinematic AI engine */}
+      {!is4KTier && !isQuickReel && (
+        <div className="text-[11px] text-ink-dim leading-relaxed pt-1">
+          Want Gen-4.5 + 4K Ultra HD?{" "}
+          <a href="/app/#settings" className="text-gold-light hover:text-gold underline underline-offset-2">
+            Upgrade to Cinematic AI 4K
+          </a>{" "}
+          for the highest-fidelity AI engine and 4K output.
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1905,6 +2073,7 @@ function RenderControls() {
   const narrationEnabled = useStore((s) => s.narrationEnabled);
   const crossfadesEnabled = useStore((s) => s.crossfadesEnabled);
   const twilightHero = useStore((s) => s.twilightHero);
+  const export4K = useStore((s) => s.export4K);
   const renderSafety = useStore((s) => s.renderSafety);
   const renderJob = useStore((s) => s.renderJob);
   const projectId = useStore((s) => s.projectId);
@@ -2020,6 +2189,11 @@ function RenderControls() {
         brandKit: branding,
         organizationId: organization?.id || null,
         skipNarration: !narrationEnabled,
+        // v23.1: 4K Ultra HD output. Worker tier-gates this — non-4K-tier
+        // requests fall back to 1080p regardless. Default true so 4K-tier
+        // users get 4K out of the box; the RenderQualityPanel toggle lets
+        // them disable for faster preview cuts.
+        export4K,
         // v23: Day-to-Dusk twilight conversion on the hero shot. Worker
         // checks tier eligibility + Replicate token before actually running.
         creative: {
