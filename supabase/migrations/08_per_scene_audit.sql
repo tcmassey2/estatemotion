@@ -24,11 +24,23 @@
 -- ============================================================
 -- 0. New columns on render_audit_log
 -- ============================================================
+-- scenes          — per-scene metadata array. Originally added by migration
+--                   05_per_scene_regen.sql; included here too so this
+--                   migration is self-sufficient on databases where 05
+--                   was never applied.
 -- prompt_version  — value of PROMPT_VERSION at render time (e.g. "v23.0")
 -- render_config   — snapshot of toggles + style + tier used for this render
 alter table public.render_audit_log
+  add column if not exists scenes jsonb default '[]'::jsonb,
   add column if not exists prompt_version text,
   add column if not exists render_config jsonb;
+
+-- Backfill any pre-existing rows so the breakdown view doesn't choke on
+-- nulls. add column with `default` only applies to new rows on some
+-- Postgres versions — be defensive.
+update public.render_audit_log
+  set scenes = '[]'::jsonb
+  where scenes is null;
 
 -- Index on prompt_version so we can pull "all renders on v22 vs v23"
 -- comparisons quickly when tuning.
