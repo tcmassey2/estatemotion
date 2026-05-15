@@ -44,7 +44,25 @@ export async function writeRenderAudit({ manifest, jobId, engine, upload, narrat
     narration_applied: Boolean(narration?.applied),
     narration_voice_id: narration?.voiceId || null,
     status: "completed",
+    // v23: prompt version stamp — propagated from create-edit-plan.js's
+    // PROMPT_VERSION constant onto the manifest. Lets us correlate quality
+    // complaints with specific prompt revisions when tuning later.
+    prompt_version: manifest?.promptVersion || manifest?.editPlan?.promptVersion || null,
+    // v23: render config snapshot — captures the toggle state used for this
+    // render so we can replay or diff against future renders. JSONB column.
+    render_config: {
+      selectedStyle: manifest?.selectedStyle || null,
+      complianceMode: Boolean(manifest?.complianceMode),
+      hallucinationGuard: manifest?.hallucinationGuard || null,
+      protectHighRiskRooms: Boolean(manifest?.protectHighRiskRooms),
+      twilightHero: Boolean(manifest?.creative?.twilightHero),
+      injectBroll: manifest?.creative?.injectBroll !== false,
+      disableAddressCard: Boolean(manifest?.disableAddressCard),
+      userTier: manifest?.userTier || null
+    },
     // Per-scene metadata for regenerate-scene flow. JSONB column.
+    // v23: per-scene now includes engineUsed / fallbackReason / guardRisk
+    // / guardLevel / runwayTaskId / durationMs (added in 11. above).
     scenes: Array.isArray(scenes) ? scenes : []
   };
 

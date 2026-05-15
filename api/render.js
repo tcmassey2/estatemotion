@@ -111,6 +111,17 @@ export default async function handler(request, response) {
       return;
     }
 
+    // v23: stamp the resolved tier onto the manifest so downstream worker
+    // code (photo-preprocess upscale gate, future tier-gated features) can
+    // make pricing decisions without re-querying Supabase.
+    if (tierGuard.state?.tier) {
+      manifest.userTier = tierGuard.state.tier;
+    }
+    if (tierGuard.userId) {
+      manifest.project = manifest.project || {};
+      manifest.project.userId = manifest.project.userId || tierGuard.userId;
+    }
+
     if (readFlag("MOCK_RENDERING", true)) {
       response.status(503).json({
         status: "failed",

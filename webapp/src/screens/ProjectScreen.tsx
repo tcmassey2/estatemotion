@@ -118,6 +118,7 @@ export default function ProjectScreen() {
         <div className="flex flex-col gap-5">
           <EngineToggle engine={renderEngine} onChange={setEngine} />
           <NarrationToggle />
+          <TwilightToggle />
           <CrossfadeToggle />
           <RenderSafetyControl />
           <RenderControls />
@@ -169,6 +170,49 @@ function NarrationToggle() {
               ? `Will narrate in your cloned voice. Adds ~30s to render time.`
               : `Will narrate using a stock professional voice. Clone your own in Branding for the upgrade.`
             : `Skip narration — render finishes faster, ships with music only.`}
+        </div>
+      </div>
+    </button>
+  );
+}
+
+/* v23: Day-to-Dusk twilight conversion. Premium tier feature — runs the
+   first photo through SDXL with a curated dusk prompt before render.
+   Adds ~$0.04 per render and 30-90s for the Replicate inference. */
+function TwilightToggle() {
+  const enabled = useStore((s) => s.twilightHero);
+  const setEnabled = useStore((s) => s.setTwilightHero);
+  return (
+    <button
+      type="button"
+      onClick={() => setEnabled(!enabled)}
+      className={cn(
+        "card-press flex items-center gap-3 p-4 rounded-xl bg-surface border text-left transition-colors",
+        enabled ? "border-gold bg-surface-raised" : "border-edge hover:border-edge-strong"
+      )}
+    >
+      <div
+        className={cn(
+          "flex-shrink-0 w-10 h-6 rounded-full border transition-colors relative",
+          enabled ? "bg-gold border-gold" : "bg-surface-input border-edge-strong"
+        )}
+      >
+        <div
+          className={cn(
+            "absolute top-0.5 w-5 h-5 rounded-full bg-paper transition-all",
+            enabled ? "left-[18px]" : "left-0.5"
+          )}
+        />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-semibold tracking-tightish flex items-center gap-2">
+          Twilight Magic
+          <span className="text-[9px] font-bold tracking-widest px-1.5 py-0.5 rounded bg-gold text-paper">PREMIUM</span>
+        </div>
+        <div className="text-xs text-ink-muted mt-0.5">
+          {enabled
+            ? `Hero shot converted to a warm twilight scene with glowing windows. Adds ~30-60s to render.`
+            : `Convert your daytime hero photo to a cinematic dusk scene — the most engaging shot in real estate.`}
         </div>
       </div>
     </button>
@@ -1848,6 +1892,7 @@ function RenderControls() {
   const renderEngine = useStore((s) => s.renderEngine);
   const narrationEnabled = useStore((s) => s.narrationEnabled);
   const crossfadesEnabled = useStore((s) => s.crossfadesEnabled);
+  const twilightHero = useStore((s) => s.twilightHero);
   const renderSafety = useStore((s) => s.renderSafety);
   const renderJob = useStore((s) => s.renderJob);
   const projectId = useStore((s) => s.projectId);
@@ -1942,6 +1987,10 @@ function RenderControls() {
           };
         }),
         orderedPhotos: photos,
+        // v23: prompt version stamp — flows from /api/create-edit-plan
+        // (PROMPT_VERSION constant) → editPlan → manifest → audit_log so
+        // we can correlate quality complaints with specific prompt revisions.
+        promptVersion: (planResult.editPlan as any).promptVersion || null,
         introCard: planResult.editPlan.introCard,
         outroCard: planResult.editPlan.outroCard,
         musicMood: planResult.editPlan.musicMood,
@@ -1959,6 +2008,12 @@ function RenderControls() {
         brandKit: branding,
         organizationId: organization?.id || null,
         skipNarration: !narrationEnabled,
+        // v23: Day-to-Dusk twilight conversion on the hero shot. Worker
+        // checks tier eligibility + Replicate token before actually running.
+        creative: {
+          ...((planResult.editPlan as any).creative || {}),
+          twilightHero
+        },
         // Translate the single "Render safety" picker into the worker's
         // existing fields. Worker code is unchanged; only the UI consolidated.
         //   off   → pure AI (no protection)

@@ -16,8 +16,15 @@ import { spawn } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
 import { deriveAspectVariants, buildSocialShorts } from "./aspect-variants.mjs";
 import { applyVoiceNarration } from "./voice-mixer.mjs";
+import { applyTransitionSfx } from "./sfx-mixer.mjs";
+import { buildAddressCardClip } from "./address-card.mjs";
+import { getBrollSuggestions, prepareBrollClips } from "./broll-library.mjs";
+import { getBpmForMusic, beatGridFromBpm, snapScenesToBeats } from "./beat-detect.mjs";
+import { validateMasterMp4 } from "./output-validator.mjs";
 import { writeRenderAudit } from "./audit-log.mjs";
 import { runFFmpeg, timed } from "./ffmpeg-runner.mjs";
+import { buildColorGradeFilter, describeColorGrade } from "./color-grade.mjs";
+import { preprocessPhotosForRender } from "./photo-preprocess.mjs";
 
 const RUNWAY_API_BASE = process.env.RUNWAY_API_BASE || "https://api.dev.runwayml.com/v1";
 const RUNWAY_API_VERSION = process.env.RUNWAY_API_VERSION || "2024-11-06";
@@ -49,18 +56,21 @@ const NON_PHOTO_TYPES = new Set(["intro", "outro", "stat", "card", "title", "sta
                  for short cinematic clips.
    BUFSIZE_MB — bitrate buffer cap. ffmpeg defaults to unbounded which
                 under high-detail-frame stress can grow indefinitely.
-   COLOR_GRADE — unchanged from v18.
+
+   v23 — color grade moved to per-style 3D LUTs. See ./color-grade.mjs.
 */
 const ENCODE_PRESET = "superfast";
 const ENCODE_CRF_MASTER = "19";
 const ENCODE_CRF_DERIVED = "20";
 const X264_PARAMS = "rc-lookahead=10:ref=2:bframes=2:keyint=60:scenecut=0";
 const BUFSIZE = "2M";
-const COLOR_GRADE =
-  "eq=contrast=1.08:saturation=0.95:gamma=1.03,colorbalance=rs=0.05:bs=-0.025,unsharp=5:5:0.6:3:3:0.3";
 
 export async function renderRunwayJob(body, options = {}) {
-  const { manifest, requestedFormat } = body || {};
+  // `manifest` is `let` (not const) because the photo-preprocess pass below
+  // returns a mutated version with normalized photo URLs that downstream
+  // code (photoScenes filter, generateClip, generateKenBurnsFallback) needs
+  // to see.
+  let { manifest, requestedFormat } = body || {};
   validateRunwayManifest(manifest);
 
   if (!process.env.RUNWAY_API_KEY) {
@@ -69,6 +79,47 @@ export async function renderRunwayJob(body, options = {}) {
 
   const jobId = options.jobId || createJobId(manifest);
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "estatemotion-runway-"));
+
+  // v23: photo preprocessing pass (gray-world WB + gentle exposure).
+  // Skipped automatically for regenerate-scene calls — those reuse the
+  // original render's already-preprocessed photo URLs from Supabase, so
+  // re-processing would compound the corrections AND waste 30-60s of
+  // download/process/upload. The skip is detected by whether the manifest
+  // already carries a photoPreprocess marker from a prior pass.
+  const isRegenCall = Boolean(manifest?.photoPreprocess?.processed);
+  if (!isRegenCall) {
+    options.onProgress?.({ phase: "Normalizing photos", progress: 4, scenesTotal: 0 });
+    const preprocessResult = await preprocessPhotosForRender({ manifest, jobId });
+    manifest = preprocessResult.manifest;
+  }
+
+  // v23: beat-aware Viral pacing. Snaps photo scene durations to a beat
+  // grid derived from the music's BPM. Only fires for selectedStyle="viral"
+  // — Luxury/MLS/Investor stay smooth.
+  try {
+    const styleSlug = String(manifest?.selectedStyle || manifest?.template?.style || "").toLowerCase();
+    if (styleSlug === "viral") {
+      const musicSlot = String(manifest?.musicMood || manifest?.selectedStyle || "").toLowerCase();
+      const bpm = getBpmForMusic({
+        musicUrl: manifest?.music?.url,
+        musicSlot,
+        manifest
+      });
+      // Estimate total duration from current scene durations
+      const estimatedTotal = (manifest.scenes || []).reduce((acc, s) => acc + (Number(s.duration) || 3), 0) + 8;
+      const beats = beatGridFromBpm(bpm, estimatedTotal);
+      manifest.scenes = snapScenesToBeats({
+        scenes: manifest.scenes,
+        beats,
+        styleSlug: "viral",
+        beatsPerScene: 2 // 2 beats per scene at 122 BPM ≈ 0.98s/scene — punchy
+      });
+      console.info(`[runway] beat-aware Viral pacing applied (bpm=${bpm}, beatsPerScene=2)`);
+    }
+  } catch (err) {
+    console.warn(`[runway] beat-snap failed (${err.message}). Using original scene durations.`);
+  }
+
   const photoScenes = manifest.scenes
     .filter((scene) => !NON_PHOTO_TYPES.has(String(scene.type || "photo").toLowerCase()))
     .slice(0, MAX_SCENES);
@@ -118,6 +169,12 @@ export async function renderRunwayJob(body, options = {}) {
     photoScenes,
     async (scene, index) => {
       let result;
+      // v23: per-scene engine + reason tracking. Stamped onto the result
+      // object so uploadPerSceneClips can persist it to the audit log.
+      let engineUsed = "cinematic_ai";
+      let fallbackReason = null;
+      const sceneStartedAt = Date.now();
+
       // The Hallucination Guard decision is logged with reasoning so we can
       // tune thresholds based on real-world data. Every Ken-Burns-by-design
       // scene gets a line in the logs explaining WHY.
@@ -130,19 +187,34 @@ export async function renderRunwayJob(body, options = {}) {
             `[runway] guard:${guardLevel} scene ${index + 1} (${scene.roomType || "unknown"}) ` +
             `→ Ken Burns. risk=${guardDecision.risk}/100, reason="${guardDecision.reason}"`
           );
+          engineUsed = "ken_burns";
+          fallbackReason = `hallucination_guard:${guardDecision.reason}`;
+        } else if (complianceMode) {
+          engineUsed = "ken_burns";
+          fallbackReason = "compliance_mode";
         }
         // Skip Runway entirely for this scene — guaranteed shape preservation.
         result = await generateKenBurnsFallback(scene, manifest, tempDir, index);
       } else {
         try {
           result = await generateClip(scene, manifest, tempDir, index);
+          engineUsed = "cinematic_ai";
         } catch (error) {
           if (error.code === "RUNWAY_DAILY_CAP") throw error; // surface to user
           console.warn(`[runway] scene ${index + 1} failed (${error.message}). Falling back to Ken Burns.`);
           result = await generateKenBurnsFallback(scene, manifest, tempDir, index);
           fallbackCount++;
+          engineUsed = "ken_burns";
+          fallbackReason = `runway_error:${(error.message || "unknown").slice(0, 120)}`;
         }
       }
+      // Stamp the per-scene metadata onto the result so the audit-log path
+      // can persist it. uploadPerSceneClips reads these fields.
+      result.engineUsed = engineUsed;
+      result.fallbackReason = fallbackReason;
+      result.guardRisk = guardDecision.risk ?? null;
+      result.guardLevel = guardLevel;
+      result.durationMs = Date.now() - sceneStartedAt;
       scenesCompleted++;
       const phaseText = complianceMode
         ? `MLS-safe render: scene ${scenesCompleted}/${photoScenes.length}`
@@ -194,8 +266,11 @@ export async function renderRunwayJob(body, options = {}) {
           masterMp4: finalMp4,
           scenes: manifest.scenes,
           brandKit: manifest.brandKit || {},
+          manifest,
           tempDir,
           jobId,
+          // v23: 3.5s pre-roll shift if address card was prepended.
+          preRollSeconds: addressCardPath ? 3.5 : 0,
           onProgress: (info) => {
             options.onProgress?.({ phase: info.phase, progress: 80 + Math.floor((info.fraction || 0) * 4) });
           }
@@ -211,7 +286,29 @@ export async function renderRunwayJob(body, options = {}) {
   }
   // If narration was applied, the mixed file replaces our master going
   // forward. Otherwise the original (silent or music-only) master is used.
-  const masterForVariants = narration.narrationApplied ? narration.masterMp4 : finalMp4;
+  const postNarrationMaster = narration.narrationApplied ? narration.masterMp4 : finalMp4;
+
+  // v23: transition SFX layered on top of (music + narration) at -18dB.
+  // Fail-soft: if SFX mixing fails, use the post-narration master untouched.
+  options.onProgress?.({ phase: "Adding transition SFX", progress: 84 });
+  let sfxResult = { masterMp4: postNarrationMaster, applied: false };
+  try {
+    sfxResult = await applyTransitionSfx({
+      masterMp4: postNarrationMaster,
+      scenes: manifest.scenes,
+      tempDir,
+      jobId,
+      manifest,
+      preRollSeconds: addressCardPath ? 3.5 : 0
+    });
+    if (sfxResult.applied) {
+      console.info(`[runway] transition SFX applied (${sfxResult.sfxCount} cues)`);
+    }
+  } catch (err) {
+    console.warn(`[runway] SFX step failed (${err.message}). Continuing without SFX.`);
+    sfxResult = { masterMp4: postNarrationMaster, applied: false, reason: err.message };
+  }
+  const masterForVariants = sfxResult.masterMp4;
 
   options.onProgress?.({ phase: "Deriving aspect variants", progress: 86 });
   const wants4K = Boolean(
@@ -250,6 +347,36 @@ export async function renderRunwayJob(body, options = {}) {
   } catch (err) {
     console.warn(`[runway] social shorts failed entirely (${err.message}). Continuing without shorts.`);
     shorts = [];
+  }
+
+  // v23: validation gate — ffprobe the master before upload. Catches
+  // "rendered successfully but file is corrupt" failures so we never
+  // ship a broken video to the user. Throws on hard fail with code
+  // OUTPUT_VALIDATION_FAILED, which the caller surfaces as a job failure.
+  options.onProgress?.({ phase: "Validating final video", progress: 92 });
+  try {
+    const expectedSec = (() => {
+      const sceneSec = (manifest.scenes || [])
+        .filter((s) => String(s.type || "photo").toLowerCase() === "photo")
+        .reduce((acc, s) => acc + Number(s.duration || 5), 0);
+      const cardSec = addressCardPath ? 3.5 : 0;
+      const outroSec = 5; // composited outro card duration (see buildBrandOutroClip)
+      return sceneSec + cardSec + outroSec;
+    })();
+    await validateMasterMp4({
+      filePath: variants.vertical?.path || finalMp4,
+      expectedDurationSec: expectedSec,
+      expectedDimensions: dimensions,
+      label: "runway"
+    });
+  } catch (err) {
+    if (err.code === "OUTPUT_VALIDATION_FAILED") {
+      // Mark this as a structured job failure so the API can return a
+      // distinct status to the client.
+      err.jobPhase = "validation";
+      throw err;
+    }
+    throw err;
   }
 
   options.onProgress?.({ phase: "Uploading deliverables", progress: 94 });
@@ -558,7 +685,10 @@ export async function stitchClipsAndOverlays(clipResults, manifest, outputPath, 
   // tipped Render Standard's 2GB ceiling. Per-clip overlay is ~50MB peak
   // and runs serially, never accumulating.
   const watermarkFilter = buildWatermarkDrawtext(brand, dimensions);
-  const colorGrade = COLOR_GRADE;
+  // v23: per-style 3D LUTs (Kodak 2383 / teal-orange / Rec.709 / desat film).
+  // Falls back to the legacy math grade if the style's .cube is missing.
+  const colorGrade = buildColorGradeFilter(manifest, { verboseLog: true });
+  console.info(`[runway] color grade: ${describeColorGrade(manifest)}`);
   // Pre-render the small corner headshot ONCE. Reused as a 2nd input on
   // every normalize call below. Falls back to null if the user has no
   // headshot URL or the pre-render fails — in that case we use -vf and
@@ -676,6 +806,126 @@ export async function stitchClipsAndOverlays(clipResults, manifest, outputPath, 
     logoMaxHeight
   });
 
+  // v23: address opener card. Generated as a normalized clip and prepended
+  // to the array before stitch. Uses the first photo as the slow-zoomed
+  // backdrop with animated address + price + stats overlays. Skipped if
+  // manifest.disableAddressCard is true, or if hero image fails to download.
+  let addressCardPath = null;
+  try {
+    const heroScene = clipResults.find((c) => c.photoId);
+    const heroSceneObj = heroScene ? manifest.scenes.find((s) => s.photoId === heroScene.photoId) : null;
+    const heroPhoto = heroScene ? (manifest.orderedPhotos || []).find((p) => p.id === heroScene.photoId) : null;
+    const heroUrl = heroSceneObj && heroPhoto ? pickImageUrl(heroSceneObj, heroPhoto) : null;
+    if (heroUrl) {
+      // Download hero locally — drawtext + zoompan need a local file path
+      // for reliable rendering across ffmpeg builds.
+      const heroLocalPath = path.join(tempDir, "address-card-hero.jpg");
+      await downloadFile(heroUrl, heroLocalPath);
+      const accentColor =
+        manifest?.template?.accentColor ||
+        manifest?.brandKit?.accentColor ||
+        "#C7A76C";
+      addressCardPath = await buildAddressCardClip({
+        project: manifest.project || {},
+        brandKit: manifest.brandKit || {},
+        manifest,
+        dimensions,
+        heroImage: heroLocalPath,
+        tempDir,
+        accentColor,
+        encodeOptions: {
+          preset: ENCODE_PRESET,
+          crf: ENCODE_CRF_MASTER,
+          x264Params: X264_PARAMS,
+          bufsize: BUFSIZE
+        }
+      });
+      // Cleanup hero copy after use
+      await fs.unlink(heroLocalPath).catch(() => {});
+    }
+  } catch (err) {
+    console.warn(`[runway] address card generation failed (${err.message}). Continuing without it.`);
+    addressCardPath = null;
+  }
+
+  // v23: B-roll lifestyle cutaways from Pexels.
+  // Inject 1-3 normalized B-roll clips evenly through the timeline.
+  // Skipped if PEXELS_API_KEY missing or manifest.disableBroll set.
+  // Failures fall back gracefully to the photo-only stitch.
+  let brollPrepared = [];
+  try {
+    if (manifest?.creative?.injectBroll !== false) {
+      const brollCount = Math.min(3, Math.max(1, Math.floor(normalizedClips.length / 8)));
+      if (brollCount > 0) {
+        options.onProgress?.({ phase: "Fetching B-roll cutaways", progress: 80 });
+        const suggestions = await getBrollSuggestions({ manifest, count: brollCount });
+        if (suggestions.length > 0) {
+          brollPrepared = await prepareBrollClips({
+            brollSuggestions: suggestions,
+            dimensions,
+            tempDir,
+            encodeOptions: {
+              preset: ENCODE_PRESET,
+              crf: ENCODE_CRF_MASTER,
+              x264Params: X264_PARAMS,
+              bufsize: BUFSIZE
+            },
+            durationSec: 4.0,
+            runFFmpeg
+          });
+          if (brollPrepared.length > 0) {
+            console.info(`[runway] B-roll prepared: ${brollPrepared.length} clips`);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`[runway] B-roll injection failed (${err.message}). Continuing without B-roll.`);
+    brollPrepared = [];
+  }
+
+  // If we got an address card, prepend it to the normalized clips so the
+  // stitch step concatenates: [address-card, scene-1, scene-2, ..., scene-N].
+  // Outro is added by the stitch functions themselves.
+  let stitchClips = addressCardPath
+    ? [{ clipPath: addressCardPath, sceneIndex: -1, duration: 3.5, transition: "fade", isAddressCard: true }, ...normalizedClips]
+    : [...normalizedClips];
+
+  // v23: splice B-roll into stitchClips at evenly distributed indices.
+  // E.g. 3 B-roll into 24 photos → insert at positions 6, 12, 18.
+  if (brollPrepared.length > 0) {
+    const photoStart = addressCardPath ? 1 : 0;
+    const photoCount = stitchClips.length - photoStart;
+    const augmented = [];
+    let brollIdx = 0;
+    for (let i = 0; i < stitchClips.length; i++) {
+      augmented.push(stitchClips[i]);
+      // After every floor(photoCount / (brollPrepared.length+1))-th photo, insert one B-roll
+      const offset = i - photoStart + 1;
+      const interval = Math.floor(photoCount / (brollPrepared.length + 1));
+      if (
+        i >= photoStart &&
+        brollIdx < brollPrepared.length &&
+        interval > 0 &&
+        offset % interval === 0 &&
+        offset < photoCount
+      ) {
+        const bclip = brollPrepared[brollIdx];
+        augmented.push({
+          clipPath: bclip.clipPath,
+          sceneIndex: -2 - brollIdx,
+          duration: bclip.durationSec,
+          transition: "fade",
+          isBroll: true,
+          brollCategory: bclip.suggestion?.categorySlug,
+          brollAttribution: bclip.suggestion?.attribution
+        });
+        brollIdx++;
+      }
+    }
+    stitchClips = augmented;
+  }
+
   // Step 3: stitch.
   // ============================================================================
   // CRITICAL DESIGN DECISION: simple concat is the DEFAULT, not the fallback.
@@ -699,7 +949,7 @@ export async function stitchClipsAndOverlays(clipResults, manifest, outputPath, 
   if (useCrossfades) {
     try {
       await stitchWithCrossfades({
-        clips: normalizedClips,
+        clips: stitchClips,
         outroClip,
         output: stitched,
         crossfadeDurationSec: 0.5
@@ -707,7 +957,7 @@ export async function stitchClipsAndOverlays(clipResults, manifest, outputPath, 
     } catch (err) {
       console.warn(`[runway] xfade stitch failed (${err.message}). Falling back to simple concat.`);
       await stitchWithSimpleConcat({
-        clips: normalizedClips,
+        clips: stitchClips,
         outroClip,
         output: stitched,
         tempDir
@@ -715,7 +965,7 @@ export async function stitchClipsAndOverlays(clipResults, manifest, outputPath, 
     }
   } else {
     await stitchWithSimpleConcat({
-      clips: normalizedClips,
+      clips: stitchClips,
       outroClip,
       output: stitched,
       tempDir
@@ -1289,7 +1539,16 @@ export async function uploadPerSceneClips({ manifest, jobId, normalizedClips, cl
       cameraMotion: original.cameraMotion || "",
       duration: Number(clip.duration || original.duration || 5),
       runwayPrompt: original.runwayPrompt || "",
-      wasFallback: Boolean(original.fallback)
+      wasFallback: Boolean(original.fallback),
+      // v23: per-scene engine + reason tracking. Surfaced in the UI as
+      // "X of Y scenes used cinematic AI" + per-scene drill-down. Also
+      // powers offline Hallucination Guard tuning.
+      engineUsed: original.engineUsed || (original.fallback ? "ken_burns" : "cinematic_ai"),
+      fallbackReason: original.fallbackReason || null,
+      guardRisk: original.guardRisk ?? null,
+      guardLevel: original.guardLevel || null,
+      runwayTaskId: original.runwayTaskId || null,
+      durationMs: original.durationMs ?? null
     });
   }
   return sceneMeta;

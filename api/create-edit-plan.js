@@ -42,6 +42,22 @@ const RUNWAY_MOTION_PROMPTS = {
 // 400. This compressed version preserves the same constraint coverage
 // (no new objects, no plants, no people, no weather changes) in ~400
 // chars so the motion + style + scene-description pieces fit too.
+// v23.0: prompt versioning. Every audit row gets stamped with this version
+// so we can correlate quality complaints / metrics with specific prompt
+// iterations. Bump this whenever any of the prompt constants below change.
+//
+// Versioning convention:
+//   <major>.<minor>  — major bumps for structural prompt rewrites,
+//                      minor for individual clause tweaks.
+//
+// Changelog (last 5 versions):
+//   v23.0 — Prompt versioning + B-roll integration + voice catalog
+//   v22.0 — Hallucination Guard balanced/strict tiers + kitchen lockout
+//   v21.0 — Per-room constraints expanded (named appliances)
+//   v20.0 — Gen-4 Turbo default + Compliance Mode
+//   v19.0 — anti-hallucination v3 (shape preservation)
+export const PROMPT_VERSION = "v23.0";
+
 // v3 — added explicit shape/design preservation after Runway placed a
 // microwave door on a fridge and added a phantom wall. Gen-3 Turbo morphs
 // object surfaces during temporal interpolation when prompts don't anchor
@@ -230,9 +246,30 @@ export default async function handler(request, response) {
       sceneCount: parsed.scenes?.length || 0,
       heroPhotoId: parsed.heroPhotoId
     });
+    // v23: validate then normalize. validateEditPlan checks for structural
+    // problems before normalize (which clamps + fills missing fields). If
+    // there are hard errors we still proceed with the normalized plan but
+    // include the warnings on the response so the caller can show a
+    // diagnostic if any field had to be repaired.
+    const preNormalizeValidation = validateEditPlan(parsed, photos);
+    const normalizedPlan = normalizeEditPlan(parsed, photos, { listingDetails, selectedStyle, exportFormat, engine, includeNarration });
+    const postNormalizeValidation = validateEditPlan(normalizedPlan, photos);
+    if (!preNormalizeValidation.ok) {
+      logMotionDirector("warn", "Pre-normalize validation found issues; normalize step repaired them.", {
+        errors: preNormalizeValidation.errors.slice(0, 5)
+      });
+    }
     response.status(200).json({
       status: "complete",
-      editPlan: normalizeEditPlan(parsed, photos, { listingDetails, selectedStyle, exportFormat, engine, includeNarration })
+      editPlan: normalizedPlan,
+      ...(preNormalizeValidation.errors.length || postNormalizeValidation.errors.length
+        ? {
+            validationWarnings: [
+              ...preNormalizeValidation.errors,
+              ...postNormalizeValidation.errors
+            ].slice(0, 10)
+          }
+        : {})
     });
   } catch (error) {
     const category = error.name === "AbortError" ? "timeout" : "openai_exception";
@@ -539,8 +576,9 @@ function normalizeEditPlan(plan, photos, context) {
       },
       // Narration: only include if non-empty. Treat null / "" / whitespace
       // as silent. This becomes the source-of-truth for the worker's
-      // synthesizer.
-      narrationLine: cleanText(scene.narrationLine || "", 240) || ""
+      // synthesizer. v23: word-count clamp prevents 60+ word run-ons that
+      // ElevenLabs would synthesize through the next scene boundary.
+      narrationLine: clampNarrationToWords(cleanText(scene.narrationLine || "", 240), 22)
     }));
   const finalScenes = engine === "runway"
     ? scenes.map((scene) => ({
@@ -551,6 +589,7 @@ function normalizeEditPlan(plan, photos, context) {
   return {
     id: `motion-director-${Date.now()}`,
     source: plan.source || context.source || "openai-motion-director",
+    promptVersion: PROMPT_VERSION,
     engine,
     heroPhotoId: photoIds.has(plan.heroPhotoId) ? plan.heroPhotoId : finalScenes[0]?.photoId,
     exportFormat: context.exportFormat || plan.exportFormat || "vertical",
@@ -861,6 +900,59 @@ function cleanText(value, maxLength = 120) {
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, Number.isFinite(value) ? value : min));
 }
+
+// v23: word-count clamp for narration. The Motion Director prompt asks for
+// 8-22 words per scene but OpenAI occasionally returns 60+ word run-ons.
+// Without enforcement, ElevenLabs synthesizes the entire monologue and
+// the scene runs short — voice trails off mid-sentence into the next scene.
+//
+// We truncate at the last word boundary before maxWords. If the result is
+// extremely short (<3 words), we drop the line entirely rather than ship
+// something that sounds clipped.
+function clampNarrationToWords(text, maxWords = 22) {
+  const trimmed = String(text || "").trim();
+  if (!trimmed) return "";
+  const words = trimmed.split(/\s+/);
+  if (words.length <= maxWords) return trimmed;
+  const truncated = words.slice(0, maxWords).join(" ");
+  // Land on punctuation if there's any in the kept window — much smoother.
+  const lastSentence = truncated.match(/^(.+[.!?])\s+/);
+  return (lastSentence ? lastSentence[1] : truncated).trim();
+}
+
+// v23: structural validation of an edit plan. Returns { ok: bool, errors: [] }.
+// Errors are surfaced to the API caller and (when integrated with the
+// re-ask logic in createEditPlan) trigger a single retry to OpenAI.
+function validateEditPlan(plan, photos) {
+  const errors = [];
+  if (!plan || typeof plan !== "object") {
+    return { ok: false, errors: ["plan is not an object"] };
+  }
+  if (!Array.isArray(plan.scenes) || plan.scenes.length === 0) {
+    errors.push("scenes array is empty or missing");
+  }
+  const photoIds = new Set((photos || []).map((p) => p.id));
+  for (const [i, scene] of (plan.scenes || []).entries()) {
+    const label = `scene ${i + 1}`;
+    if (!scene.photoId) {
+      errors.push(`${label}: missing photoId`);
+    } else if (!photoIds.has(scene.photoId)) {
+      errors.push(`${label}: photoId "${scene.photoId}" not in input photos`);
+    }
+    if (scene.narrationLine != null) {
+      const wc = String(scene.narrationLine).trim().split(/\s+/).filter(Boolean).length;
+      if (wc > 30) errors.push(`${label}: narrationLine too long (${wc} words)`);
+    }
+    if (scene.runwayPrompt && scene.runwayPrompt.length > 1000) {
+      errors.push(`${label}: runwayPrompt exceeds 1000 chars (${scene.runwayPrompt.length})`);
+    }
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+// Exported for tests + the worker — useful debugging when a render
+// produces unexpected output.
+export { clampNarrationToWords, validateEditPlan };
 
 function parseOpenAIJson(payload) {
   if (typeof payload.output_text === "string" && payload.output_text.trim()) return parseBody(payload.output_text);

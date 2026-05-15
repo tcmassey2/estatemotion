@@ -212,6 +212,31 @@ export interface RenderManifest {
   // original render had narration. Saves ~30s per regen and avoids
   // resplicing voice tracks against a swapped scene's new timing.
   regenSkipNarration?: boolean;
+  // v23: Prompt version stamp from /api/create-edit-plan. Flows through to
+  // render_audit_log.prompt_version for offline tuning correlation.
+  promptVersion?: string | null;
+  // v23: Creative-direction flags grouped under one bag.
+  creative?: {
+    // Twilight Magic — converts the hero (first) photo to a warm dusk
+    // scene with glowing windows via SDXL on Replicate before render.
+    // Premium-tier gated; worker checks before calling.
+    twilightHero?: boolean;
+    // Inject Pexels lifestyle B-roll cutaways. Default true; set false
+    // to opt out per-render. PEXELS_API_KEY required server-side.
+    injectBroll?: boolean;
+    // Override the music track BPM if known (otherwise the worker uses a
+    // curated table by music slot, falling back to 100 BPM).
+    musicBpm?: number;
+    // Allow forwarding extra creative fields without breaking the type.
+    [key: string]: unknown;
+  };
+  // v23: Skip the 3.5s animated address card opener. Default false (card
+  // shows on every render). Worker honors this in both engines.
+  disableAddressCard?: boolean;
+  // v23: User's resolved tier — stamped server-side from get_user_tier_state
+  // so the worker can gate paid features (upscale, day-to-dusk) without
+  // a second Supabase round-trip.
+  userTier?: string;
 }
 
 export interface SubmitRenderResult {

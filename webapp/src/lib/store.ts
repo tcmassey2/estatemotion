@@ -64,6 +64,9 @@ interface AppState {
   // Default OFF — xfade crossfades require ~3-8 min of CPU on a 24-clip
   // render and OOM-killed Render Standard 2GB. Safe to enable on Pro 4GB+.
   crossfadesEnabled: boolean;
+  // v23: Day-to-Dusk twilight conversion on the hero photo. Premium tier
+  // only — costs ~$0.04 per render in Replicate compute. Default OFF.
+  twilightHero: boolean;
   // Render Safety — collapsed from the legacy trio (complianceMode,
   // protectHighRiskRooms, hallucinationGuard) into one setting. The
   // manifest builder translates this into the legacy fields the worker
@@ -119,6 +122,7 @@ interface AppState {
   setEngine: (e: RenderEngine) => void;
   setNarrationEnabled: (enabled: boolean) => void;
   setCrossfadesEnabled: (enabled: boolean) => void;
+  setTwilightHero: (enabled: boolean) => void;
   setRenderSafety: (level: RenderSafety) => void;
   setEditPlan: (plan: EditPlan | null) => void;
   setRenderJob: (job: RenderJobStatus | null) => void;
@@ -253,6 +257,7 @@ const emptyProject = () => ({
   renderEngine: "remotion" as RenderEngine,
   narrationEnabled: false,
   crossfadesEnabled: false,
+  twilightHero: false,
   // Default "smart" — the right answer for 95% of renders. AI motion
   // everywhere except scenes that score risky (kitchens with appliances,
   // anywhere mentioning fans/parallel surfaces).
@@ -453,6 +458,7 @@ export const useStore = create<AppState>((set, get) => ({
   setEngine: (e) => set({ renderEngine: e, editPlan: null }),
   setNarrationEnabled: (enabled) => set({ narrationEnabled: enabled, editPlan: null }),
   setCrossfadesEnabled: (enabled) => set({ crossfadesEnabled: enabled }),
+  setTwilightHero: (enabled) => set({ twilightHero: enabled }),
   setRenderSafety: (level) => set({ renderSafety: level, editPlan: null }),
   setEditPlan: (plan) => set({ editPlan: plan }),
   setRenderJob: (job) => set({ renderJob: job }),

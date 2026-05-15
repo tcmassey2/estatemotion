@@ -99,6 +99,15 @@ export default function LibraryDetailModal({
           />
         </div>
 
+        {/* v23: Engine breakdown badge — honest disclosure of which scenes
+            ran on Cinematic AI vs Ken Burns fallback. Shown for Runway
+            renders that have per-scene engine data. */}
+        {isRunwayRender && hasScenes && (
+          <div className="px-6 sm:px-8 mt-4">
+            <EngineBreakdownBadge scenes={entry.scenes as any[]} />
+          </div>
+        )}
+
         {/* Format bundle */}
         <div className="px-6 sm:px-8 mt-6">
           <div className="flex items-baseline justify-between mb-2.5">
@@ -196,6 +205,107 @@ export default function LibraryDetailModal({
       </div>
     </div>
   );
+}
+
+/* v23: EngineBreakdownBadge — honest disclosure of how each scene was
+   actually rendered. Cinematic AI users paying for Runway should know
+   when scenes fell back to Ken Burns (motion-only) so they can trust
+   what they're getting. Click to expand for the per-scene reasons. */
+function EngineBreakdownBadge({ scenes }: { scenes: any[] }) {
+  const [expanded, setExpanded] = useState(false);
+
+  // Tally engines used.
+  const total = scenes.length;
+  const cinematic = scenes.filter((s) => (s.engineUsed || (s.wasFallback ? "ken_burns" : "cinematic_ai")) === "cinematic_ai").length;
+  const kenBurns = total - cinematic;
+  const allCinematic = kenBurns === 0;
+
+  // Group fallback reasons for the expanded view.
+  const fallbacks = scenes
+    .filter((s) => (s.engineUsed || (s.wasFallback ? "ken_burns" : "cinematic_ai")) === "ken_burns")
+    .map((s) => ({
+      sceneIndex: s.sceneIndex,
+      roomType: s.roomType || "scene",
+      reason: s.fallbackReason || (s.wasFallback ? "fallback" : "")
+    }));
+
+  return (
+    <div className={
+      "rounded-lg border " +
+      (allCinematic
+        ? "border-gold/30 bg-gold/5"
+        : "border-edge-soft bg-surface-input")
+    }>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full text-left px-4 py-3 flex items-center justify-between gap-3"
+      >
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className={
+            "w-7 h-7 rounded-full grid place-items-center text-[11px] font-bold flex-shrink-0 " +
+            (allCinematic
+              ? "bg-gold text-paper"
+              : "bg-surface text-ink-muted border border-edge")
+          }>
+            {allCinematic ? "✓" : `${kenBurns}`}
+          </div>
+          <div className="min-w-0">
+            <div className="text-sm font-semibold tracking-tightish">
+              {allCinematic
+                ? `All ${total} scenes used Cinematic AI`
+                : `${cinematic} of ${total} scenes used Cinematic AI`}
+            </div>
+            <div className="text-xs text-ink-muted mt-0.5 truncate">
+              {allCinematic
+                ? "Every scene rendered with the AI engine."
+                : `${kenBurns} scene${kenBurns === 1 ? "" : "s"} rendered with motion-only fallback. Tap to see which.`}
+            </div>
+          </div>
+        </div>
+        {!allCinematic && (
+          <span className="text-ink-muted text-sm flex-shrink-0">
+            {expanded ? "↑" : "↓"}
+          </span>
+        )}
+      </button>
+      {expanded && fallbacks.length > 0 && (
+        <div className="border-t border-edge-soft px-4 py-3">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-ink-dim mb-2">
+            Fallback details
+          </div>
+          <ul className="flex flex-col gap-1.5">
+            {fallbacks.map((f) => (
+              <li key={f.sceneIndex} className="text-xs flex items-start gap-2">
+                <span className="font-mono text-ink-dim flex-shrink-0">
+                  Scene {(f.sceneIndex ?? 0) + 1}
+                </span>
+                <span className="text-ink-muted">
+                  {formatRoomLabel(f.roomType)}
+                  {f.reason && (
+                    <span className="text-ink-dim"> — {humanizeReason(f.reason)}</span>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="text-[11px] text-ink-dim mt-3 leading-relaxed">
+            Motion-only scenes look polished but use a slow zoom/pan instead of AI motion.
+            We use them to protect against AI hallucinations on tricky scenes (kitchens,
+            mirrored bathrooms) and to recover when the AI service has an issue.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Map machine reasons to readable phrases.
+function humanizeReason(reason: string): string {
+  if (reason.startsWith("hallucination_guard")) return "AI safety check (kitchen/detail risk)";
+  if (reason.startsWith("compliance_mode")) return "MLS-compliance mode";
+  if (reason.startsWith("runway_error")) return "AI service timed out, used motion fallback";
+  return reason;
 }
 
 function DeliverablePill({ label, sublabel, url }: { label: string; sublabel: string; url: string }) {

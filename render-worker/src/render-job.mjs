@@ -6,10 +6,16 @@ import { bundle } from "@remotion/bundler";
 import { renderMedia, renderStill, selectComposition } from "@remotion/renderer";
 import { deriveAspectVariants, buildSocialShorts } from "./aspect-variants.mjs";
 import { applyVoiceNarration } from "./voice-mixer.mjs";
+import { applyTransitionSfx } from "./sfx-mixer.mjs";
 import { writeRenderAudit } from "./audit-log.mjs";
 // uploadDeliverables is shared between both engines — defined alongside the
 // Runway pipeline since it was the first to need multi-format upload.
 import { uploadDeliverables } from "./runway-job.mjs";
+import { buildColorGradeFilter, describeColorGrade, resolveLUTPath } from "./color-grade.mjs";
+import { runFFmpeg } from "./ffmpeg-runner.mjs";
+import { preprocessPhotosForRender } from "./photo-preprocess.mjs";
+import { getBpmForMusic, beatGridFromBpm, snapScenesToBeats } from "./beat-detect.mjs";
+import { validateMasterMp4 } from "./output-validator.mjs";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const compositionId = "EstateMotionRender";
@@ -21,6 +27,41 @@ export async function renderEstateMotionJob({ manifest, requestedFormat = "verti
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "estatemotion-"));
   const mp4Path = path.join(tempDir, `${jobId}.mp4`);
   const thumbnailPath = path.join(tempDir, `${jobId}.png`);
+
+  // v23: photo preprocessing pass. Normalizes white balance + exposure
+  // across the entire reel so kitchens shot at 3200K don't read as
+  // jaundiced next to bedrooms shot at 5600K. Replaces every photo URL
+  // in the manifest with the processed Supabase URL. Failures fall back
+  // to the original URL on a per-photo basis (render still ships).
+  options.onProgress?.({ phase: "Normalizing photos", progress: 6 });
+  const preprocessResult = await preprocessPhotosForRender({ manifest, jobId });
+  manifest = preprocessResult.manifest;
+
+  // v23: beat-aware Viral pacing — same logic as Runway side. Only fires
+  // for selectedStyle="viral"; other styles keep their natural pacing.
+  try {
+    const styleSlug = String(manifest?.selectedStyle || manifest?.template?.style || "").toLowerCase();
+    if (styleSlug === "viral") {
+      const musicSlot = String(manifest?.musicMood || manifest?.selectedStyle || "").toLowerCase();
+      const bpm = getBpmForMusic({
+        musicUrl: manifest?.music?.url,
+        musicSlot,
+        manifest
+      });
+      const estimatedTotal = (manifest.scenes || []).reduce((acc, s) => acc + (Number(s.duration) || 3), 0) + 8;
+      const beats = beatGridFromBpm(bpm, estimatedTotal);
+      manifest.scenes = snapScenesToBeats({
+        scenes: manifest.scenes,
+        beats,
+        styleSlug: "viral",
+        beatsPerScene: 2
+      });
+      console.info(`[remotion] beat-aware Viral pacing applied (bpm=${bpm})`);
+    }
+  } catch (err) {
+    console.warn(`[remotion] beat-snap failed (${err.message}). Using original scene durations.`);
+  }
+
   const inputProps = {
     manifest,
     format: normalizeFormat(requestedFormat)
@@ -57,6 +98,27 @@ export async function renderEstateMotionJob({ manifest, requestedFormat = "verti
       ignoreCertificateErrors: true
     }
   });
+
+  // v23: per-style 3D LUT applied as a post-render pass on the master MP4.
+  // The Remotion composition outputs a "neutral" graded master (CSS filters
+  // in JSX are subtle on purpose); the LUT then bakes the style's signature
+  // look in. Thumbnail + aspect variants + shorts all inherit it because
+  // they're derived from this graded master.
+  //
+  // This is a fail-soft step — if grading fails for any reason, we keep
+  // the ungraded master so the render still ships. Worst case a customer
+  // gets an "OK" looking video instead of a "premium" looking one.
+  options.onProgress?.({ phase: "Applying color grade", progress: 70 });
+  if (resolveLUTPath(manifest)) {
+    try {
+      await applyColorGradeLUT(mp4Path, manifest);
+      console.info(`[remotion] color grade applied: ${describeColorGrade(manifest)}`);
+    } catch (err) {
+      console.warn(`[remotion] color grade failed (${err.message}). Shipping ungraded master.`);
+    }
+  } else {
+    console.info(`[remotion] color grade: ${describeColorGrade(manifest)} (no-op)`);
+  }
 
   options.onProgress?.({ phase: "Finalizing MP4", progress: 78 });
   // Thumbnail render via Remotion's renderStill, with ffmpeg-based frame
@@ -96,8 +158,13 @@ export async function renderEstateMotionJob({ manifest, requestedFormat = "verti
           masterMp4: mp4Path,
           scenes: manifest.scenes,
           brandKit: manifest.brandKit || {},
+          manifest,
           tempDir,
           jobId,
+          // v23: Remotion bakes a 3.5s address card BEFORE scene 1 unless
+          // disabled. Voice narration must shift forward by that pre-roll
+          // so it lands on scene 1, not on the address card.
+          preRollSeconds: manifest?.disableAddressCard ? 0 : 3.5,
           onProgress: (info) => {
             options.onProgress?.({ phase: info.phase, progress: 80 + Math.floor((info.fraction || 0) * 4) });
           }
@@ -111,7 +178,30 @@ export async function renderEstateMotionJob({ manifest, requestedFormat = "verti
       narration = { narrationApplied: false, reason: err.message || "narration_failed" };
     }
   }
-  const masterForVariants = narration.narrationApplied ? narration.masterMp4 : mp4Path;
+  const postNarrationMaster = narration.narrationApplied ? narration.masterMp4 : mp4Path;
+
+  // v23: transition SFX layered on top of (music + narration) at -18dB.
+  // Per-scene SFX selected from scene.transition + active style pack.
+  // Fail-soft — keeps the post-narration master if anything errors.
+  options.onProgress?.({ phase: "Adding transition SFX", progress: 84 });
+  let sfxResult = { masterMp4: postNarrationMaster, applied: false };
+  try {
+    sfxResult = await applyTransitionSfx({
+      masterMp4: postNarrationMaster,
+      scenes: manifest.scenes,
+      tempDir,
+      jobId,
+      manifest,
+      preRollSeconds: manifest?.disableAddressCard ? 0 : 3.5
+    });
+    if (sfxResult.applied) {
+      console.info(`[remotion] transition SFX applied (${sfxResult.sfxCount} cues)`);
+    }
+  } catch (err) {
+    console.warn(`[remotion] SFX step failed (${err.message}). Continuing without SFX.`);
+    sfxResult = { masterMp4: postNarrationMaster, applied: false, reason: err.message };
+  }
+  const masterForVariants = sfxResult.masterMp4;
 
   options.onProgress?.({ phase: "Deriving aspect variants", progress: 86 });
   const wants4K = Boolean(manifest?.export4K || String(manifest?.exportFormat || "").toLowerCase().includes("4k"));
@@ -147,6 +237,37 @@ export async function renderEstateMotionJob({ manifest, requestedFormat = "verti
     shorts = [];
   }
 
+  // v23: ffprobe validation gate — same as Runway path. Throws on hard
+  // failure with code OUTPUT_VALIDATION_FAILED so the job is marked failed
+  // instead of shipping a broken master.
+  options.onProgress?.({ phase: "Validating final video", progress: 92 });
+  try {
+    const expectedSec = (() => {
+      const sceneSec = (manifest.scenes || [])
+        .filter((s) => String(s.type || "photo").toLowerCase() === "photo")
+        .reduce((acc, s) => acc + Number(s.duration || 3), 0);
+      const cardSec = manifest?.disableAddressCard ? 0 : 3.5;
+      // Outro duration comes from the style pack's outroDuration field
+      // (typically 5s) — best-effort estimate. Validation tolerance covers
+      // up to 0.6s of drift.
+      const outroSec = 5;
+      return sceneSec + cardSec + outroSec;
+    })();
+    const expectedDimensions = (variants.vertical?.dimensions) || { width: 1080, height: 1920 };
+    await validateMasterMp4({
+      filePath: variants.vertical?.path || mp4Path,
+      expectedDurationSec: expectedSec,
+      expectedDimensions,
+      label: "remotion"
+    });
+  } catch (err) {
+    if (err.code === "OUTPUT_VALIDATION_FAILED") {
+      err.jobPhase = "validation";
+      throw err;
+    }
+    throw err;
+  }
+
   options.onProgress?.({ phase: "Uploading deliverables", progress: 94 });
   // Per-file upload progress so the bar advances 94 → 99 as each file
   // finishes. Without this the bar sits at ~99% for the entire upload.
@@ -165,13 +286,31 @@ export async function renderEstateMotionJob({ manifest, requestedFormat = "verti
     }
   });
 
+  // v23: per-scene engine breakdown for the Remotion path. Quick Reel
+  // doesn't have engine fallback — every scene is "remotion" — but we
+  // still emit a uniform per-scene array so the UI can render its
+  // breakdown widget consistently across both engines.
+  const remotionSceneMeta = (manifest.scenes || [])
+    .filter((s) => String(s.type || "photo").toLowerCase() === "photo")
+    .map((s, i) => ({
+      sceneIndex: i,
+      photoId: s.photoId || "",
+      photoUrl: s.durableUrl || s.durable_url || s.publicUrl || s.public_url || s.imageUrl || "",
+      roomType: s.roomType || "",
+      cameraMotion: s.cameraMotion || "",
+      duration: Number(s.duration || 3),
+      engineUsed: "remotion",
+      fallbackReason: null
+    }));
+
   // Audit log — TRULY fire-and-forget (no await). Cannot block completion.
   writeRenderAudit({
     manifest,
     jobId,
     engine: "remotion",
     upload,
-    narration
+    narration,
+    scenes: remotionSceneMeta
   }).catch(() => {});
 
   return {
@@ -249,9 +388,6 @@ function slug(value) {
 // Delegates to the shared timeout-aware ffmpeg runner so a hung thumbnail
 // extract can't lock up the render.
 async function extractFrameWithFFmpeg(mp4Path, outputPath, timestampSec) {
-  // Lazy import — render-job.mjs already imports this module at the top
-  // (or we can import directly).
-  const { runFFmpeg } = await import("./ffmpeg-runner.mjs");
   return runFFmpeg([
     "-y",
     "-threads", "1",
@@ -261,4 +397,44 @@ async function extractFrameWithFFmpeg(mp4Path, outputPath, timestampSec) {
     "-q:v", "3",
     outputPath
   ], { timeoutMs: 30000, label: "remotion:thumbnail-fallback" });
+}
+
+/* ----------------------------------------------------------------
+   applyColorGradeLUT
+   ----------------------------------------------------------------
+   Post-Remotion-render pass: applies the style's 3D LUT to the master
+   MP4 in-place. Writes to <mp4Path>.tmp first, then renames over the
+   original — that way any partial failure leaves the original intact.
+
+   Encoding settings mirror the Runway pipeline's normalize step
+   (superfast preset, CRF 19, capped x264 params) for consistent
+   visual quality + memory ceiling across both engines.
+
+   Memory profile: ffmpeg with lut3d on a 1080×1920 H.264 input runs at
+   ~120-160MB peak — well under Render Standard's 2GB ceiling even when
+   stacked with the rest of the render-worker process.
+*/
+async function applyColorGradeLUT(mp4Path, manifest) {
+  const filter = buildColorGradeFilter(manifest, { verboseLog: true });
+  const tmpPath = `${mp4Path}.graded.tmp.mp4`;
+  await runFFmpeg(
+    [
+      "-y",
+      "-threads", "1",
+      "-i", mp4Path,
+      "-vf", filter,
+      "-c:v", "libx264",
+      "-pix_fmt", "yuv420p",
+      "-preset", "superfast",
+      "-crf", "19",
+      "-x264-params", "rc-lookahead=10:ref=2:bframes=2:keyint=60:scenecut=0",
+      "-bufsize", "2M",
+      "-c:a", "copy", // preserve any audio track Remotion already encoded
+      tmpPath
+    ],
+    { timeoutMs: 240000, label: "remotion:color-grade-lut" }
+  );
+  // Atomic rename: tmp → original. If anything failed above, the original
+  // is still on disk and the render continues with the ungraded master.
+  await fs.rename(tmpPath, mp4Path);
 }

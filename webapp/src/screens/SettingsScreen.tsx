@@ -4,6 +4,7 @@ import { fetchUsage, openBillingPortal, deleteAccount } from "../lib/api";
 import { signOut, requestPasswordReset } from "../lib/supabase";
 import type { UserProfile } from "../lib/types";
 import TwoFactorSection from "../components/TwoFactorSection";
+import VoiceSection from "../components/VoiceSection";
 
 /**
  * SettingsScreen — account + subscription management.
@@ -184,6 +185,15 @@ export default function SettingsScreen() {
           ============================================================ */}
       <Section title="Security" subtitle="Stronger account protection.">
         <TwoFactorSection />
+      </Section>
+
+      {/* ============================================================
+          v23: Narrator voice — picks the ElevenLabs voice that runs
+          on every render. Stored in branding.voiceId, resolved server-
+          side by render-worker/src/voices.mjs.
+          ============================================================ */}
+      <Section title="Narrator voice" subtitle="Pick the voice that reads every video.">
+        <VoiceSection />
       </Section>
 
       {/* ============================================================
