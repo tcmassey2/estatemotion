@@ -69,11 +69,15 @@ export async function signOut() {
 // to the inbox routes to /auth/reset (configured in Supabase dashboard →
 // Authentication → URL Configuration). For now we route it to / and the
 // app picks up the recovery token from the URL hash automatically.
-export async function requestPasswordReset(email: string) {
+export async function requestPasswordReset(email: string, captchaToken?: string) {
   const redirectTo =
     typeof window !== "undefined" ? `${window.location.origin}/app/` : undefined;
+  // Supabase requires captchaToken on this endpoint too when hCaptcha is
+  // enabled in Auth settings — otherwise it returns "captcha protection:
+  // request disallowed (no captcha_token found)".
   const { error } = await supabase().auth.resetPasswordForEmail(email, {
-    redirectTo
+    redirectTo,
+    ...(captchaToken ? { captchaToken } : {})
   });
   if (error) throw error;
 }
@@ -87,10 +91,11 @@ export async function updatePassword(newPassword: string) {
 
 // Re-send the email-confirmation message for an unconfirmed signup. Useful
 // when the original mail got buried, expired, or never arrived.
-export async function resendConfirmationEmail(email: string) {
+export async function resendConfirmationEmail(email: string, captchaToken?: string) {
   const { error } = await supabase().auth.resend({
     type: "signup",
-    email
+    email,
+    options: captchaToken ? { captchaToken } : undefined
   });
   if (error) throw error;
 }

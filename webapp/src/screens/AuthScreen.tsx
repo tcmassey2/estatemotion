@@ -75,6 +75,12 @@ export default function AuthScreen() {
         setInfo("Check your email to confirm. We've sent the link to " + email + ".");
         setMode("signin");
       } else if (mode === "signin") {
+        // Captcha is required on sign-in too when Supabase has bot protection
+        // enabled (which we do, project-wide). Without a token Supabase
+        // rejects with "captcha protection: request disallowed".
+        if (captchaRequired && !captchaToken) {
+          throw new Error("Please complete the CAPTCHA below to continue.");
+        }
         await signIn(email, password, captchaToken || undefined);
         setCaptchaToken("");
         // Check whether this account has 2FA enrolled. If so, the session
@@ -100,7 +106,11 @@ export default function AuthScreen() {
         // store.init's onAuthChange will route to dashboard now that
         // the session is at aal2.
       } else if (mode === "forgot") {
-        await requestPasswordReset(email);
+        if (captchaRequired && !captchaToken) {
+          throw new Error("Please complete the CAPTCHA below to continue.");
+        }
+        await requestPasswordReset(email, captchaToken || undefined);
+        setCaptchaToken("");
         setInfo(
           "If an account exists for " + email + ", a password-reset link is on its way. Check your inbox."
         );
@@ -124,9 +134,14 @@ export default function AuthScreen() {
     if (!pendingConfirmEmail) return;
     setError("");
     setInfo("");
+    if (captchaRequired && !captchaToken) {
+      setError("Please complete the CAPTCHA below before requesting another email.");
+      return;
+    }
     setBusy(true);
     try {
-      await resendConfirmationEmail(pendingConfirmEmail);
+      await resendConfirmationEmail(pendingConfirmEmail, captchaToken || undefined);
+      setCaptchaToken("");
       setInfo("Confirmation email re-sent to " + pendingConfirmEmail + ".");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Resend failed.";
@@ -266,10 +281,13 @@ export default function AuthScreen() {
                 </label>
               )}
 
-              {/* hCaptcha — only renders on signup mode (the highest abuse
-                  surface) and only when a site key is configured. */}
-              {mode === "signup" && captchaRequired && (
+              {/* hCaptcha — required for every Supabase auth flow when
+                  bot protection is enabled (signup, signin, password reset,
+                  email-confirm resend). The widget remounts when mode changes,
+                  which forces a fresh challenge each time. */}
+              {captchaRequired && (mode === "signup" || mode === "signin" || mode === "forgot") && (
                 <HCaptcha
+                  key={mode} // remount on mode switch → fresh challenge
                   onVerify={(token) => setCaptchaToken(token)}
                   onExpire={() => setCaptchaToken("")}
                 />
@@ -288,7 +306,7 @@ export default function AuthScreen() {
 
               <button
                 type="submit"
-                disabled={busy || (mode === "signup" && captchaRequired && !captchaToken)}
+                disabled={busy || (captchaRequired && !captchaToken && (mode === "signup" || mode === "signin" || mode === "forgot"))}
                 className="btn-primary-em h-11 mt-2 rounded-lg disabled:opacity-50"
               >
                 {busy ? (

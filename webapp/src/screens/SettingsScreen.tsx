@@ -6,6 +6,8 @@ import type { UserProfile } from "../lib/types";
 import TwoFactorSection from "../components/TwoFactorSection";
 import VoiceSection from "../components/VoiceSection";
 import PricingModal from "../components/PricingModal";
+import HCaptcha from "../components/HCaptcha";
+import { env } from "../lib/env";
 
 /**
  * SettingsScreen — account + subscription management.
@@ -29,6 +31,11 @@ export default function SettingsScreen() {
   const [portalLoading, setPortalLoading] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
   const [pricingOpen, setPricingOpen] = useState(false);
+  // v23 captcha-on-signed-in-reset: when Supabase has bot protection
+  // enabled, even authenticated users need a captcha token to request a
+  // password reset. We show the widget inline next to the reset button.
+  const captchaRequired = Boolean(env().HCAPTCHA_SITE_KEY);
+  const [resetCaptchaToken, setResetCaptchaToken] = useState("");
 
   const email = session?.user?.email || "";
 
@@ -65,10 +72,15 @@ export default function SettingsScreen() {
 
   const handlePasswordReset = async () => {
     if (!email) return;
+    if (captchaRequired && !resetCaptchaToken) {
+      setError("Complete the CAPTCHA below before sending the reset email.");
+      return;
+    }
     setResetLoading(true);
     setError("");
     try {
-      await requestPasswordReset(email);
+      await requestPasswordReset(email, resetCaptchaToken || undefined);
+      setResetCaptchaToken(""); // single-use; force re-challenge on retry
       setToast(`Password reset email sent to ${email}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't send reset email.");
@@ -165,18 +177,26 @@ export default function SettingsScreen() {
           </Field>
 
           <Field label="Password">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-xs text-ink-muted">
-                We'll send a reset link to your email.
-              </span>
-              <button
-                type="button"
-                onClick={handlePasswordReset}
-                disabled={resetLoading || !email}
-                className="card-press h-8 px-3 rounded-md text-xs font-semibold bg-surface-input border border-edge hover:border-gold text-ink hover:text-gold transition-colors disabled:opacity-50"
-              >
-                {resetLoading ? "Sending…" : "Send reset link"}
-              </button>
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs text-ink-muted">
+                  We'll send a reset link to your email.
+                </span>
+                <button
+                  type="button"
+                  onClick={handlePasswordReset}
+                  disabled={resetLoading || !email || (captchaRequired && !resetCaptchaToken)}
+                  className="card-press h-8 px-3 rounded-md text-xs font-semibold bg-surface-input border border-edge hover:border-gold text-ink hover:text-gold transition-colors disabled:opacity-50"
+                >
+                  {resetLoading ? "Sending…" : "Send reset link"}
+                </button>
+              </div>
+              {captchaRequired && (
+                <HCaptcha
+                  onVerify={(token) => setResetCaptchaToken(token)}
+                  onExpire={() => setResetCaptchaToken("")}
+                />
+              )}
             </div>
           </Field>
         </div>
