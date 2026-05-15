@@ -722,6 +722,10 @@ function PhotosArea({ projectId, userId }: { projectId: string; userId: string }
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({ done: 0, total: 0 });
   const [isDragOver, setIsDragOver] = useState(false);
+  // v23.2: drag-and-drop reorder. Tracks which photo is being dragged
+  // and which position it's hovering over for the drop indicator.
+  const [draggedPhotoIdx, setDraggedPhotoIdx] = useState<number | null>(null);
+  const [dropTargetIdx, setDropTargetIdx] = useState<number | null>(null);
   const [curating, setCurating] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -809,6 +813,25 @@ function PhotosArea({ projectId, userId }: { projectId: string; userId: string }
     const next = idx + dir;
     if (next < 0 || next >= ids.length) return;
     [ids[idx], ids[next]] = [ids[next], ids[idx]];
+    reorderPhotos(ids);
+  };
+
+  // v23.2 drag-and-drop reorder. Splices the dragged photo into the
+  // target index and updates the store. Edge cases handled:
+  //   - dropping on the same index (no-op)
+  //   - dropping after the source position (target index decremented
+  //     so the move lands where the user expects, since removing the
+  //     source first shifts everything left by one)
+  const reorderViaDrop = (fromIdx: number, toIdx: number) => {
+    if (fromIdx === toIdx) return;
+    const ids = photos.map((p) => p.id);
+    if (fromIdx < 0 || fromIdx >= ids.length) return;
+    if (toIdx < 0 || toIdx > ids.length) return;
+    const [moved] = ids.splice(fromIdx, 1);
+    // After splice, target may have shifted. If dragging downward,
+    // toIdx is now one greater than what the user pointed at — adjust.
+    const adjustedTo = fromIdx < toIdx ? toIdx - 1 : toIdx;
+    ids.splice(adjustedTo, 0, moved);
     reorderPhotos(ids);
   };
 
@@ -1007,17 +1030,61 @@ function PhotosArea({ projectId, userId }: { projectId: string; userId: string }
 
       {photos.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          {photos.map((photo, idx) => (
+          {photos.map((photo, idx) => {
+            const isBeingDragged = draggedPhotoIdx === idx;
+            const isDropTarget = dropTargetIdx === idx && draggedPhotoIdx !== null && draggedPhotoIdx !== idx;
+            return (
             <div
               key={photo.id}
+              draggable
+              onDragStart={(e) => {
+                setDraggedPhotoIdx(idx);
+                // Required for drag to work on Firefox; data also provides
+                // a fallback for cross-window drops (we ignore it on drop).
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData("text/plain", String(idx));
+              }}
+              onDragEnter={(e) => {
+                e.preventDefault();
+                if (draggedPhotoIdx !== null && draggedPhotoIdx !== idx) {
+                  setDropTargetIdx(idx);
+                }
+              }}
+              onDragOver={(e) => {
+                // Required to allow a drop on this element.
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+              }}
+              onDragLeave={(e) => {
+                // Only clear if leaving the actual element bounds (not
+                // children) — checking relatedTarget avoids flicker.
+                const next = e.relatedTarget as Node | null;
+                if (!e.currentTarget.contains(next)) {
+                  setDropTargetIdx((cur) => (cur === idx ? null : cur));
+                }
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (draggedPhotoIdx !== null && draggedPhotoIdx !== idx) {
+                  reorderViaDrop(draggedPhotoIdx, idx);
+                }
+                setDraggedPhotoIdx(null);
+                setDropTargetIdx(null);
+              }}
+              onDragEnd={() => {
+                setDraggedPhotoIdx(null);
+                setDropTargetIdx(null);
+              }}
               className={cn(
-                "card-press group relative aspect-[4/3] rounded-lg overflow-hidden bg-surface-input border transition-colors",
-                idx === 0 ? "border-gold ring-1 ring-gold/40" : "border-edge hover:border-edge-strong"
+                "card-press group relative aspect-[4/3] rounded-lg overflow-hidden bg-surface-input border cursor-grab active:cursor-grabbing transition-all",
+                isBeingDragged && "opacity-40 scale-95",
+                isDropTarget && "ring-2 ring-gold scale-[1.02]",
+                idx === 0 && !isDropTarget ? "border-gold ring-1 ring-gold/40" : "border-edge hover:border-edge-strong"
               )}
             >
-              <img src={photo.publicUrl} alt={photo.fileName} className="w-full h-full object-cover" loading="lazy" />
+              <img src={photo.publicUrl} alt={photo.fileName} className="w-full h-full object-cover pointer-events-none" loading="lazy" draggable={false} />
               {/* Order pill — plus the HERO badge on photo 1 */}
-              <div className="absolute top-2 left-2 flex items-center gap-1">
+              <div className="absolute top-2 left-2 flex items-center gap-1 pointer-events-none">
                 <div className={cn(
                   "px-1.5 py-0.5 rounded backdrop-blur-sm text-[10px] font-mono font-semibold border",
                   idx === 0
@@ -1032,13 +1099,20 @@ function PhotosArea({ projectId, userId }: { projectId: string; userId: string }
                   </span>
                 )}
               </div>
-              {/* Filename caption — hover-revealed at bottom */}
-              <div className="absolute inset-x-0 bottom-0 px-2 py-1.5 bg-paper/85 backdrop-blur-sm text-[10px] text-ink-muted truncate opacity-0 group-hover:opacity-100 transition-opacity">
+              {/* Drag-handle hint — small grip icon at bottom-left, hover-revealed.
+                  Tells the user the card is draggable without competing with
+                  the order pill or hero badge for visual attention. */}
+              <div className="absolute bottom-1.5 left-1.5 px-1 py-0.5 rounded bg-paper/80 backdrop-blur-sm text-[10px] text-ink-muted opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                ⋮⋮ drag
+              </div>
+              {/* Filename caption — hover-revealed at bottom-right */}
+              <div className="absolute right-2 bottom-1.5 max-w-[60%] px-2 py-0.5 bg-paper/85 backdrop-blur-sm text-[10px] text-ink-muted truncate rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                 {photo.fileName}
               </div>
               {/* Reorder + remove controls — always visible on touch devices,
-                  hover-to-reveal on devices that support hover. The
-                  `pointer:fine` media query targets desktops with mice. */}
+                  hover-to-reveal on devices that support hover. Up/down
+                  buttons remain as a keyboard / no-mouse fallback for
+                  accessibility, even with drag-and-drop. */}
               <div className={cn(
                 "absolute top-2 right-2 flex flex-col gap-1 transition-opacity",
                 "[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
@@ -1071,7 +1145,8 @@ function PhotosArea({ projectId, userId }: { projectId: string; userId: string }
                 </button>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
