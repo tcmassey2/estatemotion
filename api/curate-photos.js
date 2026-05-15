@@ -313,13 +313,14 @@ function buildOpenAIRequest(photos) {
     "You are a senior real-estate cinematographer + editor curating photos for a 60-90 second listing video.",
     "Two jobs: (1) score each photo for keep/reject, (2) assign a global tour order for the keepers.",
     "",
-    "REJECT criteria (low pickWorthiness, tourOrder=0):",
-    "- Blurry, dark, or poorly composed.",
-    "- Empty walls, unfinished spaces, cluttered garages.",
-    "- Documents, floor plans, neighborhood maps.",
-    "- Close-ups of mundane fixtures (light switch, hose bib).",
-    "- Duplicate angles of the same room when a better angle exists.",
-    "- Cluttered staging, half-stocked fridges, unmade beds, visible cords.",
+    "INCLUSION DEFAULT: agents have already curated their upload; lean toward INCLUDING photos in the tour. Only reject if a photo is genuinely unusable. A typical listing should have 90%+ of uploads in the final cut. Aim to KEEP at least 80% of input photos, more for sets under 25.",
+    "",
+    "REJECT criteria (rare — set tourOrder=0 only when one of these clearly applies):",
+    "- Out-of-focus, severely underexposed, or unusable composition.",
+    "- Documents, floor plans, neighborhood maps, MLS sheets.",
+    "- Photos that are clearly NOT this property (stock photos, neighborhood shots, etc.).",
+    "- Two photos that are exactly the same shot (genuine duplicates from burst mode).",
+    "- Severely cluttered or actively-staged-mid-shoot (people in frame, visible photographer reflection).",
     "",
     "PROMOTE criteria (high pickWorthiness):",
     "- Wide angles showing the full room.",
@@ -445,6 +446,39 @@ function pickAndOrder(scored) {
       if (kept.size >= TARGET_KEEP) break;
       if (kept.has(r.photoId)) continue;
       kept.set(r.photoId, r);
+    }
+  }
+
+  // v23.1: model-rejection safety net. If the model rejected so many
+  // photos that we ended up with way fewer than the user uploaded, that's
+  // almost always over-aggressive AI judgment. Real-estate agents have
+  // already pre-curated their uploads — Troy reported the AI keeping only
+  // 15 of 25 photos which produces a 50-60s video instead of the expected
+  // 2 minutes. Force a floor of min(input, max(20, 80% of input)).
+  const inputCount = scored.length + skipped.length;
+  const minKeepFloor = Math.min(
+    TARGET_KEEP,
+    Math.max(20, Math.floor(inputCount * 0.8))
+  );
+  if (kept.size < minKeepFloor) {
+    // Fill from the rest of the ranked list (skipping already-kept and
+    // the model-flagged 'skip' room types that are clearly garbage).
+    for (const r of ranked) {
+      if (kept.size >= minKeepFloor) break;
+      if (kept.has(r.photoId)) continue;
+      kept.set(r.photoId, r);
+    }
+    // If we STILL haven't hit the floor, dip into the 'skip' bucket as a
+    // last resort. Better to include a marginally-bad photo than ship a
+    // 60-second video when the agent expected 2 minutes.
+    if (kept.size < minKeepFloor) {
+      for (const r of skipped) {
+        if (kept.size >= minKeepFloor) break;
+        if (kept.has(r.photoId)) continue;
+        // Reclassify skipped photos to 'detail' so they have a roomType
+        // the picker can sort against.
+        kept.set(r.photoId, { ...r, roomType: r.roomType === "skip" ? "detail" : r.roomType });
+      }
     }
   }
 

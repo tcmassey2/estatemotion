@@ -60,21 +60,24 @@ const RUNWAY_MOTION_PROMPTS = {
 //                      minor for individual clause tweaks.
 //
 // Changelog (last 5 versions):
+//   v23.2 — Universal NO-NEW-FANS clause + living-room + outdoor constraints
+//   v23.1 — MLS auto-strict guard, softer LUTs, model-driven photo tour order
 //   v23.0 — Prompt versioning + B-roll integration + voice catalog
 //   v22.0 — Hallucination Guard balanced/strict tiers + kitchen lockout
 //   v21.0 — Per-room constraints expanded (named appliances)
-//   v20.0 — Gen-4 Turbo default + Compliance Mode
-//   v19.0 — anti-hallucination v3 (shape preservation)
-export const PROMPT_VERSION = "v23.0";
+export const PROMPT_VERSION = "v23.2";
 
-// v3 — added explicit shape/design preservation after Runway placed a
-// microwave door on a fridge and added a phantom wall. Gen-3 Turbo morphs
-// object surfaces during temporal interpolation when prompts don't anchor
-// shape strongly enough. Concrete examples ("fridges keep their doors")
-// work better than abstract instructions with Gen-3.
+// v23.2 — Universal anti-hallucination clause now leads with the most
+// common failure mode (phantom ceiling fans) AND covers ALL rooms, not
+// just kitchen/bedroom. Real-world finding: Gen-4 Turbo invents tiny
+// ceiling fans in living rooms, dining rooms, even covered patios.
+// Naming the failure explicitly + universally is more effective than
+// per-room callouts, because the model has been seen to invent fans in
+// scenes our heuristic didn't tag with a fan-bearing roomType.
 const RUNWAY_CONSTRAINT_CLAUSE =
   "STRICT FIDELITY: photorealistic, only the described camera motion. " +
-  "Every appliance, door, wall, fixture keeps its EXACT shape, design, count, and position. " +
+  "NO NEW CEILING FANS anywhere — if no fan visible in the source, do not add one. NO fan blades. NO new fixtures, no new lights, no new vents on any ceiling. " +
+  "Every appliance, door, wall, window, fixture keeps its EXACT shape, design, count, and position. " +
   "Fridges keep their doors. Walls stay put — no new partitions or panels. " +
   "DO NOT add, remove, duplicate, morph, or redesign any object, plant, person, animal, vehicle, sign, text, water, fire, or particle. " +
   "Preserve original lighting, time of day, weather, sky. " +
@@ -96,11 +99,19 @@ const RUNWAY_CONSTRAINT_CLAUSE =
 // so total prompt stays under Runway's 1000-char limit.
 const RUNWAY_ROOM_CONSTRAINTS = {
   kitchen:
-    "Kitchen: refrigerator, oven, microwave, dishwasher, range, hood, sink, faucet, cabinets, drawers, countertops keep exact shape and count. Do not split, divide, or duplicate any countertop or cabinet face. No ceiling fans, no fan blades. No microwave doors on the refrigerator.",
+    "Kitchen: refrigerator, oven, microwave, dishwasher, range, hood, sink, faucet, cabinets, drawers, countertops keep exact shape and count. Do not split, divide, or duplicate any countertop or cabinet face. No microwave doors on the refrigerator.",
   bathroom:
     "Bathroom: shower head, faucets, toilet, vanity, mirror, towel rack, tile patterns stay aligned and unchanged. No new tiles, no new fixtures, no duplicated faucets, no extra mirrors.",
   bedroom:
-    "Bedroom: bed, headboard, nightstands, lamps, art, closet doors keep their exact shape and position. Bedding stays still. No ceiling fans, no fan blades. No duplicated lamps or pillows."
+    "Bedroom: bed, headboard, nightstands, lamps, art, closet doors keep their exact shape and position. Bedding stays still. No duplicated lamps or pillows.",
+  // v23.2: living-room added after Troy reported ceiling-fan hallucinations
+  // appearing here. Same pattern as bedroom — name the fixed objects, lock
+  // shapes. Universal constraint already covers fans.
+  living:
+    "Living room: sofa, chairs, coffee table, TV, fireplace, art, windows, blinds keep exact shape, count, and position. Cushions stay still. No duplicated lamps or pillows. No new artwork. Window treatments stay aligned.",
+  // outdoor / exterior covered patios — another fan-hallucination hotspot
+  outdoor:
+    "Outdoor: every plant, tree, fence, structure, pool edge, deck board, patio cover, light fixture keeps exact shape and count. Sky stays still. No new outdoor lights or fans on patio covers. No new birds, animals, or people."
 };
 
 const RUNWAY_STYLE_PROMPTS = {
