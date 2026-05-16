@@ -34,26 +34,16 @@ export async function renderEstateMotionJob({ manifest, requestedFormat = "verti
   // jaundiced next to bedrooms shot at 5600K. Replaces every photo URL
   // in the manifest with the processed Supabase URL. Failures fall back
   // to the original URL on a per-photo basis (render still ships).
-  if (shouldRunPhotoPreprocess()) {
-    options.onProgress?.({ phase: "Normalizing photos", progress: 6 });
-    const preprocessResult = await preprocessPhotosForRender({ manifest, jobId });
-    manifest = preprocessResult.manifest;
-  }
+  // v23 photo preprocess REMOVED from canonical pipeline.
+  // v23 address card REMOVED — disable the JSX-side opener. The
+  // disableAddressCard flag is read by the Remotion composition.
+  manifest = { ...manifest, disableAddressCard: true };
 
-  // V23 kill switch: address card lives inside the Remotion JSX
-  // composition. The JSX checks manifest.disableAddressCard. Stamp that
-  // flag here so the kill switch reaches the bundled JSX environment
-  // where process.env doesn't propagate.
-  if (!shouldPrependAddressCard()) {
-    manifest = { ...manifest, disableAddressCard: true };
-  }
-
-  // v23: beat-aware Viral pacing — same logic as Runway side. Only fires
-  // for selectedStyle="viral"; other styles keep their natural pacing.
-  // Suppressed in legacy mode.
+  // v23 beat-aware pacing REMOVED from canonical pipeline. Scene
+  // durations come from the edit plan as-shipped.
   try {
-    const styleSlug = String(manifest?.selectedStyle || manifest?.template?.style || "").toLowerCase();
-    if (styleSlug === "viral" && shouldSnapBeats()) {
+    if (false) {
+      const styleSlug = String(manifest?.selectedStyle || "").toLowerCase();
       const musicSlot = String(manifest?.musicMood || manifest?.selectedStyle || "").toLowerCase();
       const bpm = getBpmForMusic({
         musicUrl: manifest?.music?.url,
@@ -176,7 +166,7 @@ export async function renderEstateMotionJob({ manifest, requestedFormat = "verti
           // v23: Remotion bakes a 3.5s address card BEFORE scene 1 unless
           // disabled. Voice narration must shift forward by that pre-roll
           // so it lands on scene 1, not on the address card.
-          preRollSeconds: manifest?.disableAddressCard ? 0 : 3.5,
+          preRollSeconds: 0, // address card removed from canonical pipeline
           onProgress: (info) => {
             options.onProgress?.({ phase: info.phase, progress: 80 + Math.floor((info.fraction || 0) * 4) });
           }
@@ -190,30 +180,8 @@ export async function renderEstateMotionJob({ manifest, requestedFormat = "verti
       narration = { narrationApplied: false, reason: err.message || "narration_failed" };
     }
   }
-  const postNarrationMaster = narration.narrationApplied ? narration.masterMp4 : mp4Path;
-
-  // v23: transition SFX layered on top of (music + narration) at -18dB.
-  // Per-scene SFX selected from scene.transition + active style pack.
-  // Fail-soft — keeps the post-narration master if anything errors.
-  options.onProgress?.({ phase: "Adding transition SFX", progress: 84 });
-  let sfxResult = { masterMp4: postNarrationMaster, applied: false };
-  try {
-    sfxResult = await applyTransitionSfx({
-      masterMp4: postNarrationMaster,
-      scenes: manifest.scenes,
-      tempDir,
-      jobId,
-      manifest,
-      preRollSeconds: manifest?.disableAddressCard ? 0 : 3.5
-    });
-    if (sfxResult.applied) {
-      console.info(`[remotion] transition SFX applied (${sfxResult.sfxCount} cues)`);
-    }
-  } catch (err) {
-    console.warn(`[remotion] SFX step failed (${err.message}). Continuing without SFX.`);
-    sfxResult = { masterMp4: postNarrationMaster, applied: false, reason: err.message };
-  }
-  const masterForVariants = sfxResult.masterMp4;
+  // v23 transition SFX REMOVED from canonical pipeline.
+  const masterForVariants = narration.narrationApplied ? narration.masterMp4 : mp4Path;
 
   options.onProgress?.({ phase: "Deriving aspect variants", progress: 86 });
   const wants4K = Boolean(manifest?.export4K || String(manifest?.exportFormat || "").toLowerCase().includes("4k"));
@@ -258,7 +226,7 @@ export async function renderEstateMotionJob({ manifest, requestedFormat = "verti
       const sceneSec = (manifest.scenes || [])
         .filter((s) => String(s.type || "photo").toLowerCase() === "photo")
         .reduce((acc, s) => acc + Number(s.duration || 3), 0);
-      const cardSec = manifest?.disableAddressCard ? 0 : 3.5;
+      const cardSec = 0; // address card removed from canonical pipeline
       // Outro duration comes from the style pack's outroDuration field
       // (typically 5s) — best-effort estimate. Validation tolerance covers
       // up to 0.6s of drift.

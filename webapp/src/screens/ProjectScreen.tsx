@@ -113,21 +113,15 @@ export default function ProjectScreen() {
         </div>
       </Section>
 
-      {/* Render */}
+      {/* Render — one canonical pipeline. Pick the engine, pick the
+          hallucination-protection level, click Generate. Everything else
+          (narration, music, brand kit, output formats) is automatic and
+          tier-determined. */}
       <Section title="Render" subtitle="Pick your engine, hit Generate.">
         <div className="flex flex-col gap-5">
-          {/* PRIMARY — everyone sees these. The simplest path to a good
-              render: pick engine, see what quality you'll get, click Generate. */}
           <EngineToggle engine={renderEngine} onChange={setEngine} />
           <RenderQualityPanel />
-
-          {/* ADVANCED — collapsed by default. The toggles below are powerful
-              but each adds a way to ship a worse render. Default-OFF + hidden
-              means new users get sane behavior without having to learn what
-              each switch does. v23.2: pulled out of the always-visible flow
-              after Troy noted the surface was too confusing. */}
-          <AdvancedRenderSettings />
-
+          <RenderSafetyControl />
           <RenderControls />
           {renderJob && <RenderStatusPanel />}
         </div>
@@ -136,90 +130,12 @@ export default function ProjectScreen() {
   );
 }
 
-/* v23.2: Collapses the four power-user toggles under a single disclosure.
-   Default closed. Each toggle still works the same — they're just hidden
-   from new users by default. Existing toggles preserved verbatim;
-   nothing about their behavior changes. */
-function AdvancedRenderSettings() {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="rounded-xl border border-edge-soft bg-surface-input/40 overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-surface-input transition-colors"
-        aria-expanded={open}
-      >
-        <div>
-          <div className="text-sm font-semibold tracking-tightish">Advanced settings</div>
-          <div className="text-xs text-ink-muted mt-0.5">
-            Narration, Twilight Magic, crossfades, render safety. Defaults are tuned — only open if you need to tweak.
-          </div>
-        </div>
-        <span className={cn(
-          "text-ink-muted transition-transform flex-shrink-0",
-          open ? "rotate-180" : "rotate-0"
-        )}>
-          ▼
-        </span>
-      </button>
-      {open && (
-        <div className="px-4 pb-4 pt-2 flex flex-col gap-4 border-t border-edge-soft">
-          <NarrationToggle />
-          <TwilightToggle />
-          <RenderSafetyControl />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function NarrationToggle() {
-  const enabled = useStore((s) => s.narrationEnabled);
-  const setEnabled = useStore((s) => s.setNarrationEnabled);
-  const branding = useStore((s) => s.branding);
-  const hasClonedVoice = Boolean(branding.voiceId);
-
-  return (
-    <button
-      type="button"
-      onClick={() => setEnabled(!enabled)}
-      className={cn(
-        "card-press flex items-center gap-3 p-4 rounded-xl bg-surface border text-left transition-colors",
-        enabled ? "border-gold bg-surface-raised" : "border-edge hover:border-edge-strong"
-      )}
-    >
-      <div
-        className={cn(
-          "flex-shrink-0 w-10 h-6 rounded-full border transition-colors relative",
-          enabled ? "bg-gold border-gold" : "bg-surface-input border-edge-strong"
-        )}
-      >
-        <div
-          className={cn(
-            "absolute top-0.5 w-5 h-5 rounded-full bg-paper transition-all",
-            enabled ? "left-[18px]" : "left-0.5"
-          )}
-        />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-sm font-semibold tracking-tightish flex items-center gap-2">
-          Narrate this video
-          {hasClonedVoice && enabled && (
-            <span className="text-[9px] font-bold tracking-widest px-1.5 py-0.5 rounded bg-gold text-paper">YOUR VOICE</span>
-          )}
-        </div>
-        <div className="text-xs text-ink-muted mt-0.5">
-          {enabled
-            ? hasClonedVoice
-              ? `Will narrate in your cloned voice. Adds ~30s to render time.`
-              : `Will narrate using a stock professional voice. Clone your own in Branding for the upgrade.`
-            : `Skip narration — render finishes faster, ships with music only.`}
-        </div>
-      </div>
-    </button>
-  );
-}
+/* AdvancedRenderSettings, NarrationToggle, and TwilightToggle removed.
+   Narration is always on (worker fail-soft to music-only if unavailable).
+   Twilight Magic was a per-render upgrade that didn't justify its toggle
+   surface area. Render Safety lives directly in the Render section now,
+   not behind a disclosure — it's the only quality-affecting choice
+   the user actually controls. */
 
 /* v23.1: Render Quality Panel — single source of truth for which AI engine
    and resolution this render will use. Tier-aware:
@@ -236,8 +152,6 @@ function NarrationToggle() {
 */
 function RenderQualityPanel() {
   const renderEngine = useStore((s) => s.renderEngine);
-  const export4K = useStore((s) => s.export4K);
-  const setExport4K = useStore((s) => s.setExport4K);
   const [tier, setTier] = useState<string>("trial");
   const [tierLoading, setTierLoading] = useState(true);
 
@@ -279,13 +193,10 @@ function RenderQualityPanel() {
       ? "Premium image-to-video model — best architectural fidelity in the industry."
       : "Image-to-video AI. Strong, fast, with content-aware safety guards.";
 
-  // Resolution: 4K available + togglable on 4K tier; locked at 1080p elsewhere.
-  const resolutionEnabled = is4KTier && export4K;
-  const resolutionLabel = isQuickReel
-    ? "1080p HD (vertical 9:16)"
-    : is4KTier && export4K
-      ? "4K Ultra HD (3840×2160)"
-      : "1080p HD (vertical 9:16)";
+  // v23.2: 4K is currently disabled across all tiers because Gen-4.5 + 4K
+  // crashed the worker every time. Returns when we provision a larger
+  // worker class. Resolution row is now informational, not interactive.
+  const resolutionLabel = "1080p HD";
 
   return (
     <div className="rounded-xl border border-edge bg-surface p-4 flex flex-col gap-3">
@@ -327,122 +238,29 @@ function RenderQualityPanel() {
         </div>
       </div>
 
-      {/* Resolution row — toggle if 4K-tier, otherwise locked badge */}
-      <div className="rounded-lg border border-edge-soft bg-surface-input p-3 flex items-center gap-3">
-        <div className="text-lg" aria-hidden>{resolutionEnabled ? "📺" : "🖥️"}</div>
+      {/* Resolution row — informational only. 1080p across all tiers
+          until larger worker can handle 4K + Gen-4.5. */}
+      <div className="rounded-lg border border-edge-soft bg-surface-input p-3 flex items-start gap-3">
+        <div className="text-lg" aria-hidden>🖥️</div>
         <div className="flex-1 min-w-0">
           <div className="text-xs uppercase tracking-widest text-ink-dim font-mono mb-1">
             Output resolution
           </div>
-          <div className="text-sm font-semibold tracking-tightish flex items-center gap-2 flex-wrap">
+          <div className="text-sm font-semibold tracking-tightish">
             {resolutionLabel}
-            {resolutionEnabled && (
-              <span className="text-[9px] font-bold tracking-widest px-1.5 py-0.5 rounded bg-gold text-paper">
-                4K
-              </span>
-            )}
           </div>
-          {is4KTier && !isQuickReel ? (
-            <div className="text-xs text-ink-muted mt-1 leading-relaxed">
-              {export4K
-                ? "4K master + 1080p variants. Adds 3-5 min to render — turn off for faster preview cuts."
-                : "Toggle on for full 4K Ultra HD. Off saves 3-5 min per render."}
-            </div>
-          ) : (
-            <div className="text-xs text-ink-muted mt-1 leading-relaxed">
-              4K Ultra HD requires Cinematic AI 4K plan.
-            </div>
-          )}
+          <div className="text-xs text-ink-muted mt-1 leading-relaxed">
+            Vertical 9:16 + square 1:1 + wide 16:9 from one render.
+          </div>
         </div>
-        {is4KTier && !isQuickReel && (
-          <button
-            type="button"
-            onClick={() => setExport4K(!export4K)}
-            className="flex-shrink-0"
-            aria-label={export4K ? "Disable 4K output" : "Enable 4K output"}
-          >
-            <div className={cn(
-              "w-10 h-6 rounded-full border transition-colors relative",
-              export4K ? "bg-gold border-gold" : "bg-surface border-edge-strong"
-            )}>
-              <div className={cn(
-                "absolute top-0.5 w-5 h-5 rounded-full bg-paper transition-all",
-                export4K ? "left-[18px]" : "left-0.5"
-              )} />
-            </div>
-          </button>
-        )}
       </div>
-
-      {/* v23.2: 4K is currently auto-downgraded to 1080p on cinematic_4k tier
-          because Gen-4.5 + 4K OOMs the worker every time. Surface this
-          clearly so the user knows the toggle isn't broken — it's
-          intentionally limited until we move to a larger worker class. */}
-      {is4KTier && !isQuickReel && export4K && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-[11px] text-amber-300/95 leading-relaxed">
-          <strong className="font-semibold">4K auto-downgraded to 1080p:</strong>{" "}
-          Gen-4.5 + 4K crashes the worker on the current infrastructure. Your
-          render will ship at 1080p with Gen-4.5 quality (the bigger visible
-          upgrade). 4K returns once we provision a larger worker.
-        </div>
-      )}
-
-      {/* Upgrade CTA — only for non-4K tiers viewing the Cinematic AI engine */}
-      {!is4KTier && !isQuickReel && (
-        <div className="text-[11px] text-ink-dim leading-relaxed pt-1">
-          Want Gen-4.5 + 4K Ultra HD?{" "}
-          <a href="/app/#settings" className="text-gold-light hover:text-gold underline underline-offset-2">
-            Upgrade to Cinematic AI 4K
-          </a>{" "}
-          for the highest-fidelity AI engine and 4K output.
-        </div>
-      )}
     </div>
   );
 }
 
-/* v23: Day-to-Dusk twilight conversion. Premium tier feature — runs the
-   first photo through SDXL with a curated dusk prompt before render.
-   Adds ~$0.04 per render and 30-90s for the Replicate inference. */
-function TwilightToggle() {
-  const enabled = useStore((s) => s.twilightHero);
-  const setEnabled = useStore((s) => s.setTwilightHero);
-  return (
-    <button
-      type="button"
-      onClick={() => setEnabled(!enabled)}
-      className={cn(
-        "card-press flex items-center gap-3 p-4 rounded-xl bg-surface border text-left transition-colors",
-        enabled ? "border-gold bg-surface-raised" : "border-edge hover:border-edge-strong"
-      )}
-    >
-      <div
-        className={cn(
-          "flex-shrink-0 w-10 h-6 rounded-full border transition-colors relative",
-          enabled ? "bg-gold border-gold" : "bg-surface-input border-edge-strong"
-        )}
-      >
-        <div
-          className={cn(
-            "absolute top-0.5 w-5 h-5 rounded-full bg-paper transition-all",
-            enabled ? "left-[18px]" : "left-0.5"
-          )}
-        />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-sm font-semibold tracking-tightish flex items-center gap-2">
-          Twilight Magic
-          <span className="text-[9px] font-bold tracking-widest px-1.5 py-0.5 rounded bg-gold text-paper">PREMIUM</span>
-        </div>
-        <div className="text-xs text-ink-muted mt-0.5">
-          {enabled
-            ? `Hero shot converted to a warm twilight scene with glowing windows. Adds ~30-60s to render.`
-            : `Convert your daytime hero photo to a cinematic dusk scene — the most engaging shot in real estate.`}
-        </div>
-      </div>
-    </button>
-  );
-}
+/* TwilightToggle removed — Day-to-Dusk diffusion produced unpredictable
+   results on real listings without justifying the per-render cost.
+   Will return as a backend-only premium add-on once we have data. */
 
 /* v23.2 REMOVED: CrossfadeToggle. Was an OOM trap that crashed renders on
    anything below Render Pro 4GB, and even there it added 3-5 minutes for
@@ -2167,9 +1985,6 @@ function RenderControls() {
   const organization = useStore((s) => s.organization);
   const selectedStyleId = useStore((s) => s.selectedStyleId);
   const renderEngine = useStore((s) => s.renderEngine);
-  const narrationEnabled = useStore((s) => s.narrationEnabled);
-  const twilightHero = useStore((s) => s.twilightHero);
-  const export4K = useStore((s) => s.export4K);
   const renderSafety = useStore((s) => s.renderSafety);
   const renderJob = useStore((s) => s.renderJob);
   const projectId = useStore((s) => s.projectId);
@@ -2282,18 +2097,12 @@ function RenderControls() {
         },
         brandKit: branding,
         organizationId: organization?.id || null,
-        skipNarration: !narrationEnabled,
-        // v23.1: 4K Ultra HD output. Worker tier-gates this — non-4K-tier
-        // requests fall back to 1080p regardless. Default true so 4K-tier
-        // users get 4K out of the box; the RenderQualityPanel toggle lets
-        // them disable for faster preview cuts.
-        export4K,
-        // v23: Day-to-Dusk twilight conversion on the hero shot. Worker
-        // checks tier eligibility + Replicate token before actually running.
-        creative: {
-          ...((planResult.editPlan as any).creative || {}),
-          twilightHero
-        },
+        // Narration is always on. Worker fail-soft to music-only if
+        // ElevenLabs is unavailable. The user-facing toggle was removed
+        // because it was off by default for the entire launch (silently
+        // skipped narration on every render) and adding the toggle back
+        // creates the same misconfiguration risk.
+        skipNarration: false,
         // Translate the single "Render safety" picker into the worker's
         // existing fields. Worker code is unchanged; only the UI consolidated.
         //   off   → pure AI (no protection)

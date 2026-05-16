@@ -80,16 +80,16 @@ export function resolveLUTPath(manifest) {
 // On missing LUT, falls back to COLOR_GRADE_LEGACY (which already includes
 // its own unsharp pass — so we don't double-sharpen on the fallback path).
 export function buildColorGradeFilter(manifest, options = {}) {
-  // V23 kill switch: when LEGACY_RENDER_MODE=true, fall back to the math
-  // grade that pre-v23 renders used. Bypasses the per-style 3D LUT
-  // entirely. Use to A/B test whether the v23 LUTs are improving or
-  // hurting actual perceived quality.
-  if (!shouldApplyV23LUT()) {
-    if (options.verboseLog) {
-      console.info("[color-grade] LEGACY_RENDER_MODE on — using legacy math grade");
-    }
-    return COLOR_GRADE_LEGACY;
+  // 3D LUT pass REMOVED from canonical pipeline. The per-style LUTs
+  // produced unpredictable color shifts on real-world listings (warm
+  // interiors looked great, exteriors went weird). Reverted to the
+  // proven math grade (eq + colorbalance + unsharp). To re-enable LUTs
+  // for testing, restore the resolveLUTPath() lookup below.
+  if (options.verboseLog) {
+    console.info("[color-grade] math grade (canonical pipeline)");
   }
+  return COLOR_GRADE_LEGACY;
+  // eslint-disable-next-line no-unreachable
   const lutPath = resolveLUTPath(manifest);
   if (!lutPath) {
     if (options.verboseLog) {

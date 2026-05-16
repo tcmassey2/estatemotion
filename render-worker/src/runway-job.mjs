@@ -95,39 +95,10 @@ export async function renderRunwayJob(body, options = {}) {
   // re-processing would compound the corrections AND waste 30-60s of
   // download/process/upload. The skip is detected by whether the manifest
   // already carries a photoPreprocess marker from a prior pass.
-  const isRegenCall = Boolean(manifest?.photoPreprocess?.processed);
-  if (!isRegenCall && shouldRunPhotoPreprocess()) {
-    options.onProgress?.({ phase: "Normalizing photos", progress: 4, scenesTotal: 0 });
-    const preprocessResult = await preprocessPhotosForRender({ manifest, jobId });
-    manifest = preprocessResult.manifest;
-  }
-
-  // v23: beat-aware Viral pacing. Snaps photo scene durations to a beat
-  // grid derived from the music's BPM. Only fires for selectedStyle="viral"
-  // — Luxury/MLS/Investor stay smooth. Suppressed in legacy mode.
-  try {
-    const styleSlug = String(manifest?.selectedStyle || manifest?.template?.style || "").toLowerCase();
-    if (styleSlug === "viral" && shouldSnapBeats()) {
-      const musicSlot = String(manifest?.musicMood || manifest?.selectedStyle || "").toLowerCase();
-      const bpm = getBpmForMusic({
-        musicUrl: manifest?.music?.url,
-        musicSlot,
-        manifest
-      });
-      // Estimate total duration from current scene durations
-      const estimatedTotal = (manifest.scenes || []).reduce((acc, s) => acc + (Number(s.duration) || 3), 0) + 8;
-      const beats = beatGridFromBpm(bpm, estimatedTotal);
-      manifest.scenes = snapScenesToBeats({
-        scenes: manifest.scenes,
-        beats,
-        styleSlug: "viral",
-        beatsPerScene: 2 // 2 beats per scene at 122 BPM ≈ 0.98s/scene — punchy
-      });
-      console.info(`[runway] beat-aware Viral pacing applied (bpm=${bpm}, beatsPerScene=2)`);
-    }
-  } catch (err) {
-    console.warn(`[runway] beat-snap failed (${err.message}). Using original scene durations.`);
-  }
+  // v23 photo preprocess + beat-snap REMOVED from canonical pipeline
+  // (refinement, post-launch). Photos go to Runway as uploaded; scene
+  // durations come from the edit plan. The pre-pass changes added
+  // unpredictability without proven quality lift on real listings.
 
   const photoScenes = manifest.scenes
     .filter((scene) => !NON_PHOTO_TYPES.has(String(scene.type || "photo").toLowerCase()))
@@ -282,8 +253,8 @@ export async function renderRunwayJob(body, options = {}) {
           manifest,
           tempDir,
           jobId,
-          // v23: 3.5s pre-roll shift if address card was prepended.
-          preRollSeconds: addressCardIncluded ? 3.5 : 0,
+          // No pre-roll — address card removed from canonical pipeline.
+          preRollSeconds: 0,
           onProgress: (info) => {
             options.onProgress?.({ phase: info.phase, progress: 80 + Math.floor((info.fraction || 0) * 4) });
           }
@@ -299,29 +270,10 @@ export async function renderRunwayJob(body, options = {}) {
   }
   // If narration was applied, the mixed file replaces our master going
   // forward. Otherwise the original (silent or music-only) master is used.
-  const postNarrationMaster = narration.narrationApplied ? narration.masterMp4 : finalMp4;
-
-  // v23: transition SFX layered on top of (music + narration) at -18dB.
-  // Fail-soft: if SFX mixing fails, use the post-narration master untouched.
-  options.onProgress?.({ phase: "Adding transition SFX", progress: 84 });
-  let sfxResult = { masterMp4: postNarrationMaster, applied: false };
-  try {
-    sfxResult = await applyTransitionSfx({
-      masterMp4: postNarrationMaster,
-      scenes: manifest.scenes,
-      tempDir,
-      jobId,
-      manifest,
-      preRollSeconds: addressCardIncluded ? 3.5 : 0
-    });
-    if (sfxResult.applied) {
-      console.info(`[runway] transition SFX applied (${sfxResult.sfxCount} cues)`);
-    }
-  } catch (err) {
-    console.warn(`[runway] SFX step failed (${err.message}). Continuing without SFX.`);
-    sfxResult = { masterMp4: postNarrationMaster, applied: false, reason: err.message };
-  }
-  const masterForVariants = sfxResult.masterMp4;
+  // v23 transition SFX REMOVED from canonical pipeline. Synthesized
+  // whoosh/impact cues weren't reliably elevating output and added an
+  // ffmpeg pass that could fail silently.
+  const masterForVariants = narration.narrationApplied ? narration.masterMp4 : finalMp4;
 
   options.onProgress?.({ phase: "Deriving aspect variants", progress: 86 });
   const wants4K = Boolean(
@@ -372,7 +324,7 @@ export async function renderRunwayJob(body, options = {}) {
       const sceneSec = (manifest.scenes || [])
         .filter((s) => String(s.type || "photo").toLowerCase() === "photo")
         .reduce((acc, s) => acc + Number(s.duration || 5), 0);
-      const cardSec = addressCardIncluded ? 3.5 : 0;
+      const cardSec = 0; // address card removed from canonical pipeline
       const outroSec = 5; // composited outro card duration (see buildBrandOutroClip)
       return sceneSec + cardSec + outroSec;
     })();
@@ -899,133 +851,12 @@ export async function stitchClipsAndOverlays(clipResults, manifest, outputPath, 
     logoMaxHeight
   });
 
-  // v23: address opener card. Generated as a normalized clip and prepended
-  // to the array before stitch. Uses the first photo as the slow-zoomed
-  // backdrop with animated address + price + stats overlays. Skipped if
-  // manifest.disableAddressCard is true, hero image fails to download,
-  // or LEGACY_RENDER_MODE is on.
-  let addressCardPath = null;
-  if (!shouldPrependAddressCard()) {
-    console.info("[runway] address card skipped (legacy mode)");
-  } else try {
-    const heroScene = clipResults.find((c) => c.photoId);
-    const heroSceneObj = heroScene ? manifest.scenes.find((s) => s.photoId === heroScene.photoId) : null;
-    const heroPhoto = heroScene ? (manifest.orderedPhotos || []).find((p) => p.id === heroScene.photoId) : null;
-    const heroUrl = heroSceneObj && heroPhoto ? pickImageUrl(heroSceneObj, heroPhoto) : null;
-    if (heroUrl) {
-      // Download hero locally — drawtext + zoompan need a local file path
-      // for reliable rendering across ffmpeg builds.
-      const heroLocalPath = path.join(tempDir, "address-card-hero.jpg");
-      await downloadFile(heroUrl, heroLocalPath);
-      const accentColor =
-        manifest?.template?.accentColor ||
-        manifest?.brandKit?.accentColor ||
-        "#C7A76C";
-      addressCardPath = await buildAddressCardClip({
-        project: manifest.project || {},
-        brandKit: manifest.brandKit || {},
-        manifest,
-        dimensions,
-        heroImage: heroLocalPath,
-        tempDir,
-        accentColor,
-        encodeOptions: {
-          preset: ENCODE_PRESET,
-          crf: ENCODE_CRF_MASTER,
-          x264Params: X264_PARAMS,
-          bufsize: BUFSIZE
-        }
-      });
-      // Cleanup hero copy after use
-      await fs.unlink(heroLocalPath).catch(() => {});
-    }
-  } catch (err) {
-    console.warn(`[runway] address card generation failed (${err.message}). Continuing without it.`);
-    addressCardPath = null;
-  }
-
-  // v23.2: B-roll OFF BY DEFAULT. Was opt-out (injectBroll !== false),
-  // now opt-in (injectBroll === true). Reason: Pexels stock clips
-  // dilute the listing-specific brand and confuse viewers ("wait,
-  // whose coffee was that?"). Keeping the integration so it can be
-  // re-enabled per-render or globally once we have a curated
-  // brokerage-owned B-roll library. To re-enable globally, set
-  // env var ENABLE_BROLL_DEFAULT=true on the worker.
-  let brollPrepared = [];
-  const brollEnabledGlobally = process.env.ENABLE_BROLL_DEFAULT === "true";
-  const brollExplicitlyOn = manifest?.creative?.injectBroll === true;
-  try {
-    if (brollExplicitlyOn || brollEnabledGlobally) {
-      const brollCount = Math.min(3, Math.max(1, Math.floor(normalizedClips.length / 8)));
-      if (brollCount > 0) {
-        options.onProgress?.({ phase: "Fetching B-roll cutaways", progress: 80 });
-        const suggestions = await getBrollSuggestions({ manifest, count: brollCount });
-        if (suggestions.length > 0) {
-          brollPrepared = await prepareBrollClips({
-            brollSuggestions: suggestions,
-            dimensions,
-            tempDir,
-            encodeOptions: {
-              preset: ENCODE_PRESET,
-              crf: ENCODE_CRF_MASTER,
-              x264Params: X264_PARAMS,
-              bufsize: BUFSIZE
-            },
-            durationSec: 4.0,
-            runFFmpeg
-          });
-          if (brollPrepared.length > 0) {
-            console.info(`[runway] B-roll prepared: ${brollPrepared.length} clips`);
-          }
-        }
-      }
-    }
-  } catch (err) {
-    console.warn(`[runway] B-roll injection failed (${err.message}). Continuing without B-roll.`);
-    brollPrepared = [];
-  }
-
-  // If we got an address card, prepend it to the normalized clips so the
-  // stitch step concatenates: [address-card, scene-1, scene-2, ..., scene-N].
-  // Outro is added by the stitch functions themselves.
-  let stitchClips = addressCardPath
-    ? [{ clipPath: addressCardPath, sceneIndex: -1, duration: 3.5, transition: "fade", isAddressCard: true }, ...normalizedClips]
-    : [...normalizedClips];
-
-  // v23: splice B-roll into stitchClips at evenly distributed indices.
-  // E.g. 3 B-roll into 24 photos → insert at positions 6, 12, 18.
-  if (brollPrepared.length > 0) {
-    const photoStart = addressCardPath ? 1 : 0;
-    const photoCount = stitchClips.length - photoStart;
-    const augmented = [];
-    let brollIdx = 0;
-    for (let i = 0; i < stitchClips.length; i++) {
-      augmented.push(stitchClips[i]);
-      // After every floor(photoCount / (brollPrepared.length+1))-th photo, insert one B-roll
-      const offset = i - photoStart + 1;
-      const interval = Math.floor(photoCount / (brollPrepared.length + 1));
-      if (
-        i >= photoStart &&
-        brollIdx < brollPrepared.length &&
-        interval > 0 &&
-        offset % interval === 0 &&
-        offset < photoCount
-      ) {
-        const bclip = brollPrepared[brollIdx];
-        augmented.push({
-          clipPath: bclip.clipPath,
-          sceneIndex: -2 - brollIdx,
-          duration: bclip.durationSec,
-          transition: "fade",
-          isBroll: true,
-          brollCategory: bclip.suggestion?.categorySlug,
-          brollAttribution: bclip.suggestion?.attribution
-        });
-        brollIdx++;
-      }
-    }
-    stitchClips = augmented;
-  }
+  // v23 address card opener + B-roll insertion REMOVED from canonical
+  // pipeline. Renders open on scene 1 and play through the photos
+  // straight, no synthetic content injected. Outro card from
+  // buildBrandOutroClip still gets appended by the stitch functions.
+  const stitchClips = [...normalizedClips];
+  const addressCardIncluded = false;
 
   // Step 3: stitch.
   // ============================================================================
