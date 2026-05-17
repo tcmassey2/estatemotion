@@ -184,7 +184,7 @@ export default function DashboardScreen() {
                 <div className="font-mono text-[11px] text-gold mb-2">01</div>
                 <h3 className="text-sm font-semibold mb-1.5 tracking-tightish">Upload photos</h3>
                 <p className="text-xs text-ink-muted leading-relaxed">
-                  Drop in 8–60 listing photos. The AI curator picks the best 24 in tour order.
+                  Drop in 8–24 listing photos. Drag the tiles to set the tour order.
                 </p>
               </div>
               <div className="text-center sm:text-left">

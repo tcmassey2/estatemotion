@@ -29,8 +29,16 @@ const DEFAULT_MODEL = process.env.ELEVENLABS_MODEL_ID || "eleven_turbo_v2_5";
 const FALLBACK_VOICE_ID = process.env.ELEVENLABS_DEFAULT_VOICE_ID || "21m00Tcm4TlvDq8ikWAM"; // "Rachel"
 const SYNTH_CONCURRENCY = 4;
 const SYNTH_TIMEOUT_MS = 25000;
-// Music volume during narration. 0.30 ≈ -10dB, broadcast voiceover level.
-const DUCK_LEVEL = 0.3;
+// Music volume during narration. 0.30 ≈ -10 dB relative to the music bed,
+// which means with the runway-job pre-attenuating music to 0.35, music
+// during voice drops to ~0.105 (-19 dB). Combined with VOICE_WEIGHT=1.4
+// that puts voice ~22 dB above music when narration plays — broadcast
+// voiceover level. Override via env DUCK_LEVEL or manifest.duckLevel.
+const DUCK_LEVEL = Number(process.env.DUCK_LEVEL ?? 0.30);
+// Voice gain in the final amix. 1.4 ≈ +3 dB push so voice cuts through
+// any low-frequency music rumble. Override via env VOICE_LEVEL or
+// manifest.voiceLevel.
+const VOICE_WEIGHT = Number(process.env.VOICE_LEVEL ?? 1.4);
 
 export async function applyVoiceNarration({ masterMp4, scenes, brandKit, tempDir, jobId, onProgress }) {
   if (!process.env.ELEVENLABS_API_KEY) {
@@ -50,25 +58,46 @@ export async function applyVoiceNarration({ masterMp4, scenes, brandKit, tempDir
 
   // ============================================================
   // STEP 1 — synthesize each narration line via ElevenLabs (parallel)
+  // Per-line fail-soft: one failed TTS call no longer kills the whole
+  // narration step. Before: pMap used Promise.all, so a single 502 from
+  // ElevenLabs aborted everything and the user got zero narration. Now we
+  // catch per-line and continue. If *every* line fails we return
+  // narrationApplied:false so the master ships music-only.
   // ============================================================
   onProgress?.({ phase: `Synthesizing voice (${narrationScenes.length} lines)`, fraction: 0 });
   const synthesized = new Array(photoScenes.length).fill(null);
+  const synthErrors = [];
   let completed = 0;
   await pMap(
     narrationScenes,
     async ({ scene, index }) => {
       const mp3Path = path.join(tempDir, `${jobId}-n-${String(index).padStart(3, "0")}.mp3`);
-      await synthesizeToFile({
-        text: scene.narrationLine.trim(),
-        voiceId,
-        outPath: mp3Path
-      });
-      synthesized[index] = { mp3Path, scene };
+      try {
+        await synthesizeToFile({
+          text: scene.narrationLine.trim(),
+          voiceId,
+          outPath: mp3Path
+        });
+        synthesized[index] = { mp3Path, scene };
+      } catch (err) {
+        synthErrors.push({ index, message: err.message || String(err) });
+        console.warn(`[voice] scene ${index + 1} TTS failed: ${err.message} — skipping this line, continuing.`);
+      }
       completed += 1;
       onProgress?.({ phase: `Synthesizing voice (${completed}/${narrationScenes.length})`, fraction: completed / narrationScenes.length * 0.6 });
     },
     { concurrency: SYNTH_CONCURRENCY }
   );
+
+  const successCount = synthesized.filter(Boolean).length;
+  console.info(`[voice] synthesized ${successCount}/${narrationScenes.length} lines (${synthErrors.length} failed)`);
+  if (successCount === 0) {
+    return {
+      masterMp4,
+      narrationApplied: false,
+      reason: `All ${narrationScenes.length} ElevenLabs TTS calls failed. First error: ${synthErrors[0]?.message || "unknown"}`
+    };
+  }
 
   // ============================================================
   // STEP 2 — single-pass narration track via adelay
@@ -148,7 +177,7 @@ export async function applyVoiceNarration({ masterMp4, scenes, brandKit, tempDir
       "-i", masterMp4,
       "-i", narrationTrackPath,
       "-filter_complex",
-      `[0:a:0]volume=eval=frame:volume='${volumeExpr}'[ducked];[ducked][1:a]amix=inputs=2:duration=first:dropout_transition=0:weights=1 1.4,loudnorm=I=-16:TP=-1.5:LRA=11[aout]`,
+      `[0:a:0]volume=eval=frame:volume='${volumeExpr}'[ducked];[ducked][1:a]amix=inputs=2:duration=first:dropout_transition=0:weights=1 ${VOICE_WEIGHT.toFixed(2)},loudnorm=I=-16:TP=-1.5:LRA=11[aout]`,
       "-map", "0:v:0",
       "-map", "[aout]",
       "-c:v", "copy",

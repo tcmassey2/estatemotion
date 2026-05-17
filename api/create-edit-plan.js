@@ -323,20 +323,21 @@ function buildOpenAIRequest({ allPhotos, visionPhotos, listingDetails, selectedS
   const targetSceneCount = Math.min(allPhotos.length, MAX_PLAN_SCENES);
   const isCinematicAI = engine === "runway";
 
-  // Narration guidance: how many scenes should get a line, and how to write
-  // them. Real estate narration that converts is conversational, agent-led,
-  // and references concrete listing facts — never generic ("This stunning
-  // home features..."). When `includeNarration` is on we ask for ~6 lines
-  // out of `targetSceneCount` so most scenes still let the photo + music
-  // breathe.
-  const narrationTargetCount = Math.min(8, Math.max(4, Math.round(targetSceneCount * 0.35)));
+  // Narration guidance: real estate listing videos sound more professional
+  // with CONTINUOUS narration across every scene. Sparse narration (the old
+  // behavior: ~35% of scenes) produced long silent gaps that users
+  // perceived as "voice broken after 5 seconds." Every scene now gets a
+  // line; the AI is asked to vary length and cadence so it doesn't sound
+  // monotonous.
+  const narrationTargetCount = targetSceneCount;
   const narrationGuidance = includeNarration
     ? [
-        `Add narrationLine to about ${narrationTargetCount} of the ${targetSceneCount} scenes — the ones that gain from a spoken beat. Always include narration on scene 1 (intro), the kitchen, primary bedroom, the strongest outdoor/view shot, and the final scene (outro/CTA). Leave detail shots and repeat-room shots silent.`,
-        `Each narrationLine is 8-22 words, conversational, in the agent's voice. Example tone: "Welcome to 9828 East Pinnacle Peak — five bedrooms across 5,640 square feet of modern desert living."`,
-        `The agent's name is "${brandKit.fullName || "the listing agent"}", brokerage "${brandKit.brokerage || "their brokerage"}". Refer to them naturally only on scene 1 and the outro CTA. Don't repeat the agent name on every scene.`,
+        `Add narrationLine to EVERY scene — all ${targetSceneCount} of them. Continuous narration sounds more professional than sparse voice with long silent gaps.`,
+        `Vary length and cadence so it doesn't sound monotonous: mix 4-10 word short observations ("Crown molding throughout", "Quartz countertops, soft-close cabinets") with 12-22 word longer lines on hero scenes (intro, kitchen, primary bedroom, outdoor, outro).`,
+        `Scene 1 is the intro — name the property briefly. Final scene is the CTA — push to action ("Schedule your private tour today"). Middle scenes describe what's on screen.`,
+        `The agent's name is "${brandKit.fullName || "the listing agent"}", brokerage "${brandKit.brokerage || "their brokerage"}". Refer to them only on scene 1 and the outro CTA — don't repeat the name throughout.`,
         `Narration MUST stay grounded in the listing facts provided (price, beds, baths, sq ft, address) and what is visible in the photo. Never invent features, views, schools, or neighborhoods.`,
-        `Scenes without narration: omit the narrationLine field entirely OR set it to an empty string. Do NOT pad silence with filler text.`
+        `For detail or repeat-room shots, narrate the small thing the viewer sees — finishes, fixtures, light quality. Short observations work great here.`
       ].join(" ")
     : "Do NOT include narrationLine on any scene.";
 

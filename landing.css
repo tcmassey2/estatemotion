@@ -1790,27 +1790,32 @@ em.accent { font-style: italic; color: var(--gold-light); font-weight: 400; }
 
 .hero-preview-overlay {
   position: absolute;
-  left: 16px;
-  right: 16px;
-  bottom: 16px;
+  right: 14px;
+  bottom: 14px;
   z-index: 3;
-  padding: 12px 16px;
-  border-radius: 12px;
-  background: linear-gradient(180deg, rgba(13, 13, 13, 0.0), rgba(13, 13, 13, 0.85));
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(13, 13, 13, 0.78);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   pointer-events: none;
+  text-align: right;
+  max-width: 60%;
 }
 .hero-preview-listing {
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
   color: white;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
+  white-space: nowrap;
 }
 .hero-preview-runtime {
   font-family: var(--font-mono, monospace);
-  font-size: 10px;
+  font-size: 9px;
   letter-spacing: 0.2em;
   text-transform: uppercase;
   color: rgba(199, 167, 108, 0.85);
+  white-space: nowrap;
 }
 
 @media (max-width: 720px) {

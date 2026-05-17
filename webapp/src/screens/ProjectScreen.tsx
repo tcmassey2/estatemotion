@@ -541,7 +541,6 @@ function PhotosArea({ projectId, userId }: { projectId: string; userId: string }
   const addPhotos = useStore((s) => s.addPhotos);
   const removePhoto = useStore((s) => s.removePhoto);
   const reorderPhotos = useStore((s) => s.reorderPhotos);
-  const curatePhotosWithAI = useStore((s) => s.curatePhotosWithAI);
   const setError = useStore((s) => s.setError);
   const setToast = useStore((s) => s.setToast);
 
@@ -552,14 +551,12 @@ function PhotosArea({ projectId, userId }: { projectId: string; userId: string }
   // and which position it's hovering over for the drop indicator.
   const [draggedPhotoIdx, setDraggedPhotoIdx] = useState<number | null>(null);
   const [dropTargetIdx, setDropTargetIdx] = useState<number | null>(null);
-  const [curating, setCurating] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  // Upload up to 60 photos — the AI curator picks the best 24 in tour order.
-  // The render-side cap is 24 scenes (MAX_PLAN_SCENES on the server), so the
-  // user uploads everything they have, hits "Auto-arrange with AI", and the
-  // result drops to 24 in a strong walkthrough sequence.
-  const MAX_PHOTOS = 60;
+  // Upload up to 24 photos. Render uses them in the order shown — drag the
+  // tiles to rearrange. AI curation was removed (it consistently picked
+  // wrong subsets / wrong order), so MAX_PHOTOS now equals RENDER_LIMIT.
+  const MAX_PHOTOS = 24;
   const RENDER_LIMIT = 24;
 
   const handleFiles = async (files: FileList | null) => {
@@ -661,44 +658,9 @@ function PhotosArea({ projectId, userId }: { projectId: string; userId: string }
     reorderPhotos(ids);
   };
 
-  const handleCurate = async () => {
-    if (curating || photos.length === 0) return;
-    setCurating(true);
-    setError("");
-    try {
-      const result = await curatePhotosWithAI();
-      // v23 diagnostics: log full result so debugging post-deploy doesn't
-      // require a network-tab dive. Visible in DevTools console.
-      console.info("[ai-curate] result:", result);
-
-      if (result.status === "ok") {
-        setToast(
-          result.removedCount > 0
-            ? `AI picked ${result.keptCount} best photos · removed ${result.removedCount}.`
-            : `AI re-arranged ${result.keptCount} photos in tour order.`
-        );
-      } else if (result.status === "fallback") {
-        // v23: was a 3s blip toast, now a sticky error alert because
-        // "AI fell back to upload order" usually means OpenAI hit a real
-        // problem (rate limit, partial response, content moderation) and
-        // the user needs to know — not a happy path.
-        setError(
-          (result.reason || "AI curation fell back to upload order.") +
-          " (Check console for the full response.)"
-        );
-      } else if (result.status === "skipped") {
-        setToast(result.reason || "Not enough photos to curate.");
-      } else {
-        setError(result.reason || "AI curation failed. Check console for details.");
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "AI curation failed.";
-      console.error("[ai-curate] threw:", err);
-      setError(msg);
-    } finally {
-      setCurating(false);
-    }
-  };
+  // AI photo curator removed — photos render in upload order. Users can
+  // drag to reorder. The `curating` state + `handleCurate` were retired
+  // along with the button that called them.
 
   const photoCountLabel = `${photos.length} of ${MAX_PHOTOS}`;
   const isFull = photos.length >= MAX_PHOTOS;
@@ -797,42 +759,14 @@ function PhotosArea({ projectId, userId }: { projectId: string; userId: string }
                 photos.length >= 8 ? "text-gold" : "text-ink-muted"
               )}>
                 {photos.length >= 8
-                  ? photos.length > RENDER_LIMIT
-                    ? `Render uses up to ${RENDER_LIMIT} — let AI pick the best`
-                    : "Ready to render"
+                  ? "Ready to render"
                   : `${8 - photos.length} more for a full tour`}
               </span>
             </div>
-            {/* AI auto-arrange — appears as soon as the user has at least
-                a few photos. Becomes especially valuable above the 24
-                render limit because it CURATES (drops weaker shots). */}
-            {photos.length >= 8 && (
-              <button
-                type="button"
-                onClick={handleCurate}
-                disabled={curating}
-                className={cn(
-                  "card-press h-9 px-4 rounded-lg text-xs font-semibold tracking-tightish transition-colors inline-flex items-center gap-2 self-start sm:self-auto",
-                  photos.length > RENDER_LIMIT
-                    ? "bg-gold text-paper hover:bg-gold-light"
-                    : "bg-surface-input text-ink hover:text-gold border border-edge hover:border-gold",
-                  curating && "opacity-70 cursor-wait"
-                )}
-                title="Send every uploaded photo to OpenAI Vision. The AI keeps the strongest 24 in walkthrough order."
-              >
-                {curating ? (
-                  <>
-                    <span className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} />
-                    AI is reviewing your photos…
-                  </>
-                ) : (
-                  <>
-                    <span className="text-sm leading-none">✦</span>
-                    {photos.length > RENDER_LIMIT ? `Pick best ${RENDER_LIMIT} with AI` : "Auto-arrange with AI"}
-                  </>
-                )}
-              </button>
-            )}
+            {/* AI auto-arrange removed — photos render in the order you
+                upload (or drag) them. Use the drag handles below to
+                rearrange. The AI selector consistently picked the wrong
+                subset and was retired. */}
           </div>
           <div className="h-1 bg-edge rounded-full overflow-hidden">
             <div

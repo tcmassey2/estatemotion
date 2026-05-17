@@ -16,7 +16,7 @@ import type {
   UserProfile
 } from "./types";
 import { onAuthChange, getSession, fetchBrandKit, saveBrandKit } from "./supabase";
-import { fetchOrganization, curatePhotos } from "./api";
+import { fetchOrganization } from "./api";
 
 export type Screen = "auth" | "dashboard" | "project" | "brokerage" | "settings";
 
@@ -114,15 +114,7 @@ interface AppState {
   removePhoto: (id: string) => void;
   reorderPhotos: (ids: string[]) => void;
   updatePhoto: (id: string, patch: Partial<Photo>) => void;
-  // AI curation: send all uploaded photos to OpenAI Vision, keep the best 24
-  // in tour order, drop the rest. Returns the curation result so the UI can
-  // surface "kept N · removed M · reasons" feedback.
-  curatePhotosWithAI: () => Promise<{
-    status: string;
-    keptCount: number;
-    removedCount: number;
-    reason?: string;
-  }>;
+  // AI photo curation removed — photos render in upload (or drag-reordered) order.
   setStyle: (id: StyleId) => void;
   setEngine: (e: RenderEngine) => void;
   setNarrationEnabled: (enabled: boolean) => void;
@@ -266,7 +258,7 @@ const emptyProject = () => ({
   // worker still gracefully falls back to music-only if ElevenLabs is
   // unavailable, so this is safe.
   narrationEnabled: true,
-  crossfadesEnabled: false,
+  crossfadesEnabled: true,
   twilightHero: false,
   // Default ON — 4K-tier subscribers paid for 4K, give them 4K out of the
   // box. The RenderQualityPanel renders this as a toggleable switch only
@@ -427,42 +419,8 @@ export const useStore = create<AppState>((set, get) => ({
       .filter((p): p is Photo => p !== null);
     set({ photos: next });
   },
-  curatePhotosWithAI: async () => {
-    const photos = get().photos;
-    if (!photos.length) {
-      return { status: "skipped", keptCount: 0, removedCount: 0, reason: "No photos uploaded yet." };
-    }
-    const result = await curatePhotos({
-      photos: photos.map((p) => ({
-        id: p.id,
-        durableUrl: p.durableUrl || p.publicUrl || "",
-        fileName: p.fileName
-      }))
-    });
-    if (result.status === "failed" || !result.curated?.length) {
-      return {
-        status: result.status,
-        keptCount: 0,
-        removedCount: 0,
-        reason: result.reason || "AI curation didn't return any picks."
-      };
-    }
-    // Build the new photos array: kept photos in the AI's tour order, with
-    // `order` rewritten 1..N. Rejected photos are dropped entirely — the
-    // user can always re-upload them if the AI made a bad call.
-    const byId = new Map(photos.map((p) => [p.id, p]));
-    const next: Photo[] = result.curated
-      .map((pick) => byId.get(pick.photoId))
-      .filter((p): p is Photo => p !== undefined)
-      .map((p, i) => ({ ...p, order: i + 1 }));
-    set({ photos: next, editPlan: null }); // any AI re-curation invalidates the edit plan
-    return {
-      status: result.status,
-      keptCount: result.curated.length,
-      removedCount: photos.length - next.length,
-      reason: result.reason
-    };
-  },
+  // curatePhotosWithAI removed — see api/curate-photos.js. The endpoint
+  // still exists but nothing in the app calls it.
   updatePhoto: (id, patch) => {
     set({
       photos: get().photos.map((p) => (p.id === id ? { ...p, ...patch } : p))

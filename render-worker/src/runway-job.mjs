@@ -660,7 +660,11 @@ export async function stitchClipsAndOverlays(clipResults, manifest, outputPath, 
   // ============================================================================
   const stitched = path.join(tempDir, "stitched.mp4");
   options.onProgress?.({ phase: "Stitching final video", progress: 81 });
-  const useCrossfades = Boolean(manifest?.runwayConfig?.useCrossfades);
+  // Crossfades are the product. Default ON unless the manifest explicitly
+  // opts out (e.g. some MLS regions reject any blended frames). If the
+  // batched xfade pipeline throws, we still fall through to simple concat
+  // below — so the render always ships, just with hard cuts.
+  const useCrossfades = manifest?.runwayConfig?.useCrossfades !== false;
   if (useCrossfades) {
     try {
       await stitchWithCrossfades({
@@ -695,6 +699,16 @@ export async function stitchClipsAndOverlays(clipResults, manifest, outputPath, 
   // Step 4: optional audio mix from manifest.musicMood mapping. We honor a
   // RUNWAY_MUSIC_<MOOD>_URL env var pointing to a remote MP3. If no music
   // configured, the final video has no audio (acceptable for v1).
+  // Music level: 0.35 (~ -9 dB). Source MP3s are often mastered hot
+  // (peak near 0 dB) and at unity gain they drown out any narration the
+  // voice-mixer adds in the next step. Pre-attenuating here means:
+  //   - music alone: -9 dB → comfortable background listening level
+  //   - music under voice (ducked further by voice-mixer to 30% of this):
+  //     0.35 × 0.30 = 0.105 → ~ -20 dB → voice clearly above music
+  // Override via env MUSIC_BED_LEVEL or manifest.musicBedLevel.
+  const musicBedLevel = Number(
+    manifest?.musicBedLevel ?? process.env.MUSIC_BED_LEVEL ?? 0.35
+  );
   const musicUrl = pickMusicUrl(manifest);
   if (musicUrl) {
     await runFFmpeg([
@@ -702,12 +716,13 @@ export async function stitchClipsAndOverlays(clipResults, manifest, outputPath, 
       "-threads", "1",
       "-i", stitched,
       "-i", musicUrl,
+      "-filter_complex", `[1:a]volume=${musicBedLevel.toFixed(3)}[mus]`,
       "-c:v", "copy",
       "-c:a", "aac",
       "-b:a", "192k",
       "-shortest",
       "-map", "0:v:0",
-      "-map", "1:a:0",
+      "-map", "[mus]",
       outputPath
     ], { timeoutMs: 120000, label: "runway:music-mix" });
   } else {
