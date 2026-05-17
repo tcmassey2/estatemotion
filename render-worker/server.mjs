@@ -1,13 +1,20 @@
 import http from "node:http";
 import { renderEstateMotionJob } from "./src/render-job.mjs";
 import { renderRunwayJob } from "./src/runway-job.mjs";
+import { renderDepthJob, DEPTH_ENGINE_ENABLED } from "./src/depth-job.mjs";
 import { regenerateScene } from "./src/regenerate-job.mjs";
 
 // Route to the correct render engine based on manifest.engine.
-// "remotion" (default) — existing Ken-Burns photo-animation pipeline.
-// "runway" — Runway Gen-3 Turbo image-to-video then FFmpeg stitch.
+// "remotion" (default) — Ken-Burns photo-animation via Remotion.
+// "runway"  — Runway Gen-4 Turbo image-to-video then FFmpeg stitch.
+// "depth"   — depth-based 2.5D parallax via DepthAnything V2 + headless
+//             WebGL. Gated behind ENABLE_DEPTH_ENGINE=true env on the
+//             worker. See src/DEPTH_ENGINE_README.md.
 async function dispatchRender(body, options = {}) {
   const engine = String(body?.manifest?.engine || "remotion").toLowerCase();
+  if (engine === "depth") {
+    return renderDepthJob(body, options);
+  }
   if (engine === "runway") {
     return renderRunwayJob(body, options);
   }
@@ -39,7 +46,8 @@ const server = http.createServer(async (request, response) => {
   // hardening pass so we can confirm the latest fix is live.
   if (request.method === "GET" && request.url === "/version") {
     sendJson(response, 200, {
-      version: "2026.05.12-v22-batched-xfade",
+      version: "2026.05.17-depth-engine-phase1",
+      depthEngineEnabled: DEPTH_ENGINE_ENABLED,
       bootedAt: BOOTED_AT,
       uptimeSec: Math.round(process.uptime()),
       activeJobs: jobs.size,
