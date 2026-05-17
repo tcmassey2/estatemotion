@@ -43,9 +43,37 @@ import { Buffer } from "node:buffer";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import createGL from "gl";
-import * as THREE from "three";
 import sharp from "sharp";
+
+// gl + three are OPTIONAL dependencies. They require X11 dev libraries
+// (libxi-dev, libxext-dev, libx11-dev, libglu1-mesa-dev, libglew-dev,
+// pkg-config) that aren't preinstalled on Render's native build runtime.
+// Lazy-imported so the worker boots successfully even when those system
+// libs are missing — Runway and Quick Reel keep working; only the depth
+// engine errors out at render time with a clear message.
+let createGL = null;
+let THREE = null;
+let glLoadError = null;
+
+async function ensureGlLoaded() {
+  if (createGL && THREE) return;
+  if (glLoadError) throw glLoadError;
+  try {
+    const glMod = await import("gl");
+    createGL = glMod.default || glMod;
+    const threeMod = await import("three");
+    THREE = threeMod;
+  } catch (err) {
+    glLoadError = new Error(
+      "Cinematic Depth can't run because the worker is missing the 'gl' or 'three' native modules. " +
+      "On Render.com: switch the worker's Build Command to " +
+      "`apt-get update && apt-get install -y libxi-dev libxext-dev libx11-dev libglu1-mesa-dev libglew-dev pkg-config && npm install` " +
+      "(or use the Dockerfile in render-worker/, which already installs these). " +
+      `Underlying error: ${err.message}`
+    );
+    throw glLoadError;
+  }
+}
 
 const DEFAULT_STEP = 4;        // mesh vertex spacing in source-photo pixels
 const DEFAULT_FOV = 50;        // degrees, photographic look
@@ -86,6 +114,9 @@ export async function renderDepthClip({
   const { width, height } = dimensions;
   if (!width || !height) throw new Error("renderDepthClip: dimensions.width/height required");
   if (!cameraPath?.length) throw new Error("renderDepthClip: cameraPath empty");
+
+  // Lazy-load gl + three. Fails with clear apt-get message if missing.
+  await ensureGlLoaded();
 
   // ---- Decode inputs ---------------------------------------------------
   // Photo: full-resolution RGBA buffer. We size it to (width, height) so

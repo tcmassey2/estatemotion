@@ -38,6 +38,32 @@ scripts/smoke-gl.mjs — validates the `gl` npm package installs + runs on the h
 
 The depth engine ships behind `ENABLE_DEPTH_ENGINE=true`. Until that env var is set on the worker, `renderDepthJob` throws a clear "not yet wired" error. This lets the code deploy without affecting any live render path. Toggle the env to spike-test in production without changing the engine routing for everyone else.
 
+## System dependencies (CRITICAL — Render.com build)
+
+The `gl` npm package is a NATIVE module that compiles against X11 + OpenGL headers. On Render.com's default native build runtime those headers AREN'T preinstalled, so `npm install` fails with:
+
+```
+Package xi was not found in the pkg-config search path.
+```
+
+**Two paths to fix:**
+
+### Path 1 — keep the native runtime, add apt deps to the Build Command
+
+In Render's dashboard for the worker service → **Settings → Build & Deploy → Build Command**, change `npm install` to:
+
+```
+apt-get update && apt-get install -y libxi-dev libxext-dev libx11-dev libglu1-mesa-dev libglew-dev pkg-config && npm install
+```
+
+After the next deploy, `gl` compiles successfully.
+
+### Path 2 — switch the service to Docker runtime (use the bundled Dockerfile)
+
+The `render-worker/Dockerfile` already installs everything `gl` needs (commit that fixed the apt deps for it: see `DEPTH_PIPELINE_BUILD_PLAN.md`). In Render's dashboard for the worker → **Settings → Build & Deploy**, change Runtime to **Docker** and set Root Directory to `render-worker`. The Dockerfile takes over and the X11 deps land cleanly.
+
+**Until either path is applied:** `gl` and `three` are configured as `optionalDependencies` in `package.json`, so `npm install` SUCCEEDS without them — the worker boots and Runway / Quick Reel keep working. Cinematic Depth fails at render-time with the exact apt-get command needed (lazy-import error in `depth-renderer.mjs::ensureGlLoaded`).
+
 ## Smoke tests
 
 ```bash

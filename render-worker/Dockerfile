@@ -13,6 +13,11 @@ WORKDIR /app
 #   - fonts so Remotion text overlays render correctly without falling back to
 #     blank squares
 #   - ca-certificates for HTTPS to Supabase, OpenAI, and Runway
+#   - X11 dev libs + pkg-config + build-essential + python3 so the `gl`
+#     npm package (headless WebGL for Cinematic Depth engine) compiles
+#     its native binding from source on first install. Without these the
+#     npm install step fails with "Package xi was not found in the
+#     pkg-config search path" (Render.com build log signature).
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -39,6 +44,14 @@ RUN apt-get update \
     libcairo2 \
     libasound2 \
     libdbus-1-3 \
+    libxi-dev \
+    libxext-dev \
+    libx11-dev \
+    libglu1-mesa-dev \
+    libglew-dev \
+    pkg-config \
+    build-essential \
+    python3 \
   && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies first (cached layer when only source changes).
