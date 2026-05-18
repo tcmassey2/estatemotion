@@ -53,6 +53,7 @@ RUN apt-get update \
     build-essential \
     python3 \
     xvfb \
+    xauth \
     mesa-utils \
   && rm -rf /var/lib/apt/lists/*
 
