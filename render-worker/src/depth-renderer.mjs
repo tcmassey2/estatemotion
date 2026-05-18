@@ -59,6 +59,36 @@ async function ensureGlLoaded() {
   if (createGL && THREE) return;
   if (glLoadError) throw glLoadError;
   try {
+    // Three.js's WebGLRenderer reaches for browser globals during
+    // construction AND cleanup: requestAnimationFrame /
+    // cancelAnimationFrame for its internal animation loop, plus
+    // window / document / self for various capability checks. In
+    // headless Node these are all undefined, which surfaces as
+    // 'Cannot read properties of null (reading cancelAnimationFrame)'
+    // when renderer.dispose() runs. Shimming them BEFORE the three
+    // import lets Three's static initialization succeed cleanly.
+    if (typeof globalThis.requestAnimationFrame !== "function") {
+      globalThis.requestAnimationFrame = (cb) => setTimeout(() => cb(Date.now()), 16);
+      globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
+    }
+    if (typeof globalThis.window === "undefined") {
+      globalThis.window = globalThis;
+    }
+    if (typeof globalThis.self === "undefined") {
+      globalThis.self = globalThis;
+    }
+    if (typeof globalThis.document === "undefined") {
+      // Minimal document shim — Three only touches createElementNS for
+      // SVG capability checks and a few property reads. Returning empty
+      // objects satisfies those without breaking anything.
+      globalThis.document = {
+        createElement: () => ({ style: {}, getContext: () => null }),
+        createElementNS: () => ({ style: {} }),
+        addEventListener: () => {},
+        removeEventListener: () => {}
+      };
+    }
+
     const glMod = await import("gl");
     createGL = glMod.default || glMod;
     const threeMod = await import("three");
