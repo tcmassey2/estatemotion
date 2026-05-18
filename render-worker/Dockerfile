@@ -55,8 +55,16 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies first (cached layer when only source changes).
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+# Using `npm install` instead of `npm ci` because the lock file isn't
+# regenerated for every package.json change in the sandbox where edits
+# happen. `npm install` tolerates the drift; `npm ci` errors out the
+# moment lock != package.json (which broke this build when sharp, gl,
+# and three were added to package.json without a matching lock update).
+# To restore `npm ci` later: regenerate package-lock.json locally with
+# `cd render-worker && rm -rf node_modules package-lock.json && npm install`,
+# commit the new lock, then swap this RUN back to `npm ci --omit=dev`.
+COPY package.json package-lock.json* ./
+RUN npm install --omit=dev --no-audit --no-fund
 
 # Copy source.
 COPY . .
