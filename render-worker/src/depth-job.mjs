@@ -221,45 +221,15 @@ export async function renderDepthJob(body, options = {}) {
   const masterForVariants = narration.narrationApplied ? narration.masterMp4 : masterWithMusic;
 
   // ============================================================
-  // Step 5: aspect variants + social shorts (reused from runway-job)
+  // Step 5: finalize master (ONE-MASTER simplification)
   // ============================================================
-  options.onProgress?.({ phase: "Deriving aspect variants", progress: 88 });
-  const wants4K = Boolean(
-    manifest?.runwayConfig?.is4K ||
-    manifest?.runwayConfig?.upscale4K ||
-    manifest?.export4K ||
-    String(manifest?.exportFormat || "").toLowerCase().includes("4k")
-  );
-  let variants = {};
-  try {
-    variants = await deriveAspectVariants({
-      masterMp4: masterForVariants,
-      tempDir,
-      jobId,
-      upscale4K: wants4K
-    });
-  } catch (err) {
-    console.warn(`[depth] aspect variants failed (${err.message}). Falling back to vertical-only.`);
-    variants = { vertical: { format: "vertical", path: masterForVariants, dimensions: { w: 1080, h: 1920 } } };
-  }
-  if (!variants.vertical?.path) {
-    variants.vertical = { format: "vertical", path: masterForVariants, dimensions: { w: 1080, h: 1920 } };
-  }
-
-  options.onProgress?.({ phase: "Cutting social shorts", progress: 92 });
-  let shorts = [];
-  try {
-    shorts = await buildSocialShorts({
-      masterMp4: masterForVariants,
-      scenes: manifest.scenes,
-      tempDir,
-      jobId,
-      count: 3
-    });
-  } catch (err) {
-    console.warn(`[depth] social shorts failed (${err.message}). Continuing without shorts.`);
-    shorts = [];
-  }
+  // No aspect variants, no social shorts. See runway-job.mjs for the
+  // full rationale — single 9:16 master per render.
+  options.onProgress?.({ phase: "Finalizing master", progress: 90 });
+  const variants = {
+    vertical: { format: "vertical", path: masterForVariants, dimensions: { w: 1080, h: 1920 } }
+  };
+  const shorts = [];
 
   // ============================================================
   // Step 6: upload deliverables + per-scene clips (reused)
