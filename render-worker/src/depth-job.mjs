@@ -39,7 +39,6 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Buffer } from "node:buffer";
-import { spawn } from "node:child_process";
 import { renderDepthClip, stitchFramesToMp4, cameraPathFor, isDepthFlat } from "./depth-renderer.mjs";
 import { generateKenBurnsFallback } from "./runway-job.mjs";
 import { estimateDepth, inpaintImage, fileToDataUrl } from "./replicate-client.mjs";
@@ -297,23 +296,54 @@ export async function renderDepthJob(body, options = {}) {
   options.onProgress?.({ phase: "Ready to download", progress: 100 });
 
   // Audit log — fire-and-forget so a slow Supabase write doesn't block.
+  // Args MUST match the writeRenderAudit destructuring shape in
+  // audit-log.mjs: { manifest, jobId, engine, upload, narration, scenes }.
+  // Prior version used engineUsed/scenesMeta — destructured to undefined,
+  // audit row had engine=null + scenes=[].
+  const enginePhase = ENABLE_INPAINT ? "phase2-inpaint" : "phase1-no-inpaint";
   writeRenderAudit({
     jobId,
     manifest,
+    engine: "depth",
     upload,
-    scenesMeta,
-    narration,
-    engineUsed: "depth_parallax",
-    enginePhase: ENABLE_INPAINT ? "phase2-inpaint" : "phase1-no-inpaint",
-    promptVersion: manifest?.promptVersion || null
+    narration: narration.narrationApplied
+      ? { applied: true, voiceId: narration.voiceId, lineCount: narration.narrationLineCount }
+      : { applied: false, reason: narration.reason },
+    scenes: scenesMeta
   }).catch((err) => console.warn(`[depth] audit log failed: ${err.message}`));
 
+  // Return shape MUST match runway-job's so server.mjs.publishLocalAssetUrls
+  // + the frontend's mp4Url/thumbnailUrl/variants readers all work
+  // identically across engines. Prior version returned just {...upload}
+  // which is missing mp4Url, jobId, status, engine, etc.
   return {
-    ...upload,
-    scenesMeta,
-    narrationApplied: narration.narrationApplied,
-    engineUsed: "depth_parallax",
-    enginePhase: ENABLE_INPAINT ? "phase2-inpaint" : "phase1-no-inpaint"
+    status: "complete",
+    mock: false,
+    engine: "depth",
+    enginePhase,
+    jobId,
+    mp4Url: upload.formats?.vertical?.mp4Url || "",
+    thumbnailUrl: upload.thumbnailUrl,
+    storagePath: upload.formats?.vertical?.storagePath,
+    thumbnailPath: upload.thumbnailStoragePath,
+    localMp4Path: upload.storageSkipped ? masterForVariants : "",
+    localThumbnailPath: upload.storageSkipped ? thumbnailPath : "",
+    storageSkipped: upload.storageSkipped,
+    storageWarning: upload.storageWarning || "",
+    formats: upload.formats,
+    socialShorts: upload.socialShorts,
+    narration: narration.narrationApplied
+      ? { applied: true, voiceId: narration.voiceId, lineCount: narration.narrationLineCount }
+      : { applied: false, reason: narration.reason },
+    scenesGenerated: clipResults.length,
+    sceneClips: clipResults.map((c) => ({
+      photoId: c.photoId,
+      durationSec: c.duration,
+      cameraMotion: c.cameraMotion,
+      enginePhase: c.enginePhase,
+      engineSource: c.engineSource || null
+    })),
+    scenesMeta
   };
 }
 
@@ -321,9 +351,19 @@ export async function renderDepthJob(body, options = {}) {
    Per-scene depth render
    ============================================================ */
 async function renderOneScene({ scene, manifest, tempDir, dims, frameRate, sceneIndex }) {
-  const imageUrl = scene.imageUrl || scene.photoUrl || scene.durableUrl;
+  // Image URL lookup mirrors runway-job's pickImageUrl: scenes don't carry
+  // the photo URL directly — it lives in manifest.orderedPhotos keyed by
+  // photoId. Try every plausible field on scene + photo so partial
+  // manifests still work.
+  const orderedPhotos = Array.isArray(manifest?.orderedPhotos) ? manifest.orderedPhotos : [];
+  const photo = orderedPhotos.find((p) => p?.id === scene.photoId) || {};
+  const imageUrl = pickImageUrl(scene, photo);
   if (!imageUrl) {
-    throw new Error(`Depth scene ${sceneIndex + 1} (${scene.photoId}): no source image URL`);
+    throw new Error(
+      `Depth scene ${sceneIndex + 1} (${scene.photoId}): no source image URL found on scene OR photo record. ` +
+      `Manifest.orderedPhotos length=${orderedPhotos.length}. ` +
+      `Re-upload photos or re-run create-edit-plan with engine=depth.`
+    );
   }
 
   const padIdx = String(sceneIndex).padStart(3, "0");
@@ -379,6 +419,39 @@ async function renderOneScene({ scene, manifest, tempDir, dims, frameRate, scene
     // Phase 1: render straight to MP4. Disocclusion gaps will show as
     // magenta in this version — acceptable for first end-to-end test.
     // Once Phase 2 is enabled the magenta is filled by LaMa.
+    try {
+      const renderResult = await renderDepthClip({
+        photoPath,
+        depthPath,
+        cameraPath,
+        dimensions: dims,
+        frameRate,
+        durationSec,
+        outPath: clipPath
+      });
+      return {
+        sceneIndex,
+        photoId: scene.photoId,
+        clipPath: renderResult.outPath,
+        duration: durationSec,
+        cameraMotion: motion,
+        engineUsed: "depth_parallax",
+        enginePhase: "phase1",
+        fallback: false,
+        runwayPrompt: ""
+      };
+    } finally {
+      // Always clean up the source assets even if render threw — they're
+      // a few MB each but accumulate fast across long-running workers.
+      await fs.unlink(photoPath).catch(() => {});
+      await fs.unlink(depthPath).catch(() => {});
+    }
+  }
+
+  // Phase 2: render to per-frame PNGs + mask PNGs, inpaint disocclusion
+  // gaps via LaMa, stitch cleaned frames into the final MP4.
+  const framesDir = path.join(tempDir, `s${padIdx}-frames`);
+  try {
     const renderResult = await renderDepthClip({
       photoPath,
       depthPath,
@@ -386,65 +459,41 @@ async function renderOneScene({ scene, manifest, tempDir, dims, frameRate, scene
       dimensions: dims,
       frameRate,
       durationSec,
-      outPath: clipPath
+      outPath: clipPath, // unused when writeFramesDir is set, but kept for symmetry
+      writeFramesDir: framesDir
     });
-    await fs.unlink(photoPath).catch(() => {});
-    await fs.unlink(depthPath).catch(() => {});
+
+    await inpaintFrames({
+      framesDir,
+      totalFrames: renderResult.framesRendered,
+      sceneIndex
+    });
+
+    await stitchFramesToMp4({
+      framesDir,
+      outPath: clipPath,
+      frameRate
+    });
+
     return {
       sceneIndex,
       photoId: scene.photoId,
-      clipPath: renderResult.outPath,
+      clipPath,
       duration: durationSec,
       cameraMotion: motion,
       engineUsed: "depth_parallax",
-      enginePhase: "phase1",
+      enginePhase: "phase2-inpaint",
       fallback: false,
       runwayPrompt: ""
     };
+  } finally {
+    // Cleanup runs even if inpaint or stitch threw. Per-scene temp dirs
+    // can hit 100+ MB at high resolutions; leaking them across a 24-scene
+    // render would burn through Render's local disk.
+    await fs.unlink(photoPath).catch(() => {});
+    await fs.unlink(depthPath).catch(() => {});
+    await fs.rm(framesDir, { recursive: true, force: true }).catch(() => {});
   }
-
-  // Phase 2: render to per-frame PNGs + mask PNGs, inpaint disocclusion
-  // gaps via LaMa, stitch cleaned frames into the final MP4.
-  const framesDir = path.join(tempDir, `s${padIdx}-frames`);
-  const renderResult = await renderDepthClip({
-    photoPath,
-    depthPath,
-    cameraPath,
-    dimensions: dims,
-    frameRate,
-    durationSec,
-    outPath: clipPath, // unused when writeFramesDir is set, but kept for symmetry
-    writeFramesDir: framesDir
-  });
-
-  await inpaintFrames({
-    framesDir,
-    totalFrames: renderResult.framesRendered,
-    sceneIndex
-  });
-
-  await stitchFramesToMp4({
-    framesDir,
-    outPath: clipPath,
-    frameRate
-  });
-
-  // Cleanup: source photo, depth map, all per-frame PNGs and masks.
-  await fs.unlink(photoPath).catch(() => {});
-  await fs.unlink(depthPath).catch(() => {});
-  await fs.rm(framesDir, { recursive: true, force: true }).catch(() => {});
-
-  return {
-    sceneIndex,
-    photoId: scene.photoId,
-    clipPath,
-    duration: durationSec,
-    cameraMotion: motion,
-    engineUsed: "depth_parallax",
-    enginePhase: "phase2-inpaint",
-    fallback: false,
-    runwayPrompt: ""
-  };
 }
 
 /* ============================================================
@@ -572,6 +621,25 @@ function makeFallbackJobId(manifest) {
     manifest?.project?.id || manifest?.project?.title || manifest?.projectTitle || "estate-motion";
   const safe = String(projectId).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "depth";
   return `depth-${safe}-${Date.now()}`;
+}
+
+// Mirrors runway-job's pickImageUrl exactly — same field priority so the
+// two engines accept the same manifest shapes.
+function pickImageUrl(scene, photo) {
+  return (
+    scene?.durableUrl ||
+    scene?.durable_url ||
+    scene?.publicUrl ||
+    scene?.public_url ||
+    scene?.imageUrl ||
+    photo?.durableUrl ||
+    photo?.durable_url ||
+    photo?.publicUrl ||
+    photo?.public_url ||
+    photo?.imageUrl ||
+    photo?.uri ||
+    ""
+  );
 }
 
 export const DEPTH_ENGINE_ENABLED = ENABLE_FLAG;

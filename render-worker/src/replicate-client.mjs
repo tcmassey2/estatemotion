@@ -50,16 +50,45 @@ function authHeader() {
 /* ============================================================
    Generic prediction runner
    ============================================================ */
+// Cache for slug → latest version SHA lookups. Replicate's POST
+// /predictions endpoint requires a version SHA, not a slug, so we
+// resolve the slug to its current latest version once per process
+// and reuse. Cache TTL is the process lifetime — restarts pick up
+// model updates.
+const versionCache = new Map();
+
+async function resolveLatestVersion(modelSlug) {
+  if (versionCache.has(modelSlug)) return versionCache.get(modelSlug);
+  const meta = await fetchJsonWithRetry(
+    `${REPLICATE_BASE}/models/${modelSlug}`,
+    { headers: authHeader() },
+    { label: `replicate:resolve:${modelSlug}`, maxAttempts: 3 }
+  );
+  const versionId = meta?.latest_version?.id;
+  if (!versionId) {
+    throw new Error(
+      `Replicate model '${modelSlug}' has no latest_version. ` +
+      `Check that the slug is correct AND the model has at least one published version. ` +
+      `Verify at https://replicate.com/${modelSlug}`
+    );
+  }
+  versionCache.set(modelSlug, versionId);
+  return versionId;
+}
+
 async function runPrediction({ model, input, label }) {
-  // POST /predictions kicks off the job. Replicate returns a prediction
-  // id we poll for completion.
+  // Resolve slug -> latest version SHA. Required by Replicate's
+  // /v1/predictions endpoint; passing the bare slug returns 422
+  // 'Invalid version or not permitted'.
+  const versionId = await resolveLatestVersion(model);
+
   const start = await fetchJsonWithRetry(
     `${REPLICATE_BASE}/predictions`,
     {
       method: "POST",
       headers: authHeader(),
       body: JSON.stringify({
-        version: model, // when passing model slug, Replicate resolves to latest version
+        version: versionId,
         input
       })
     },
