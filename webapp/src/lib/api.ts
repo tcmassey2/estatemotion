@@ -68,6 +68,9 @@ export interface CreateEditPlanArgs {
   // write narration in the agent's voice (referencing their name/brokerage)
   // and tailor the outro CTA.
   brandKit?: AgentBranding;
+  // v24: target video length in seconds. 30s default (social-first),
+  // 60s max. Drives the scene count in the edit plan generator.
+  targetDurationSec?: 30 | 60;
 }
 
 export interface CreateEditPlanResult {
@@ -96,7 +99,8 @@ export async function createEditPlan(args: CreateEditPlanArgs): Promise<CreateEd
       selectedStyle: args.selectedStyle,
       exportFormat: args.exportFormat,
       engine: args.engine,
-      brandKit: args.brandKit || null
+      brandKit: args.brandKit || null,
+      targetDurationSec: args.targetDurationSec || 30
     })
   });
   if (!res.ok) {

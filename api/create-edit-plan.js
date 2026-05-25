@@ -16,9 +16,14 @@ const DEFAULT_TIMEOUT_MS = 60000; // bumped from 35s to 60s (matches the longer 
 // plan — OpenAI just orders them via metadata (filename, upload order, etc.)
 // instead of visual quality scoring.
 const OPENAI_VISION_PHOTO_LIMIT = 12;
-// Max scenes the edit plan can contain. Each scene in Cinematic AI = ~5 sec
-// of Runway-rendered video, so 24 scenes ≈ 2-minute output (the target).
-const MAX_PLAN_SCENES = 24;
+// v24 rebrand: target 30s default / 60s max per render. Each Cinematic AI
+// scene is ~5 sec of Runway-rendered video, so 6 scenes = 30s and 12 scenes
+// = 60s. Quick Reel scenes are shorter (~2-3s each) so 30s = ~10-12 scenes.
+// MAX_PLAN_SCENES is the hard ceiling for the longest 60s render path.
+// targetSceneCountFor() picks the actual count based on manifest.targetDurationSec.
+const MAX_PLAN_SCENES = 12;
+const DEFAULT_TARGET_DURATION_SEC = 30;
+const MAX_TARGET_DURATION_SEC = 60;
 
 const ROOM_TYPES = ["exterior", "kitchen", "living", "bedroom", "bathroom", "outdoor", "amenity", "detail"];
 const CAMERA_MOTIONS = ["push_in", "pull_out", "lateral_pan", "vertical_reveal", "parallax_zoom", "detail_sweep"];
@@ -186,6 +191,12 @@ export default async function handler(request, response) {
   // Now: edit plan always carries narrationLine per scene. Worker
   // gracefully no-ops if ElevenLabs isn't configured on its end.
   const includeNarration = body?.includeNarration !== false;
+  // v24: 30s default, 60s ceiling. Frontend will pass this; older clients
+  // omit it and get the 30s default.
+  const targetDurationSec = Math.max(
+    15,
+    Math.min(MAX_TARGET_DURATION_SEC, Number(body?.targetDurationSec) || DEFAULT_TARGET_DURATION_SEC)
+  );
 
   if (photos.length < 3) {
     const error = invalidPhotoUrls.length
@@ -211,7 +222,7 @@ export default async function handler(request, response) {
       status: "fallback",
       reason,
       errorCategory: "missing_openai_api_key",
-      editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat, engine, includeNarration })
+      editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat, engine, includeNarration, targetDurationSec })
     });
     return;
   }
@@ -229,7 +240,7 @@ export default async function handler(request, response) {
         status: "fallback",
         reason,
         errorCategory: "inaccessible_image_url",
-        editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat, engine, includeNarration })
+        editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat, engine, includeNarration, targetDurationSec })
       });
       return;
     }
@@ -251,7 +262,7 @@ export default async function handler(request, response) {
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify(buildOpenAIRequest({ allPhotos: photos, visionPhotos, listingDetails, selectedStyle, exportFormat, engine, brandKit, includeNarration }))
+      body: JSON.stringify(buildOpenAIRequest({ allPhotos: photos, visionPhotos, listingDetails, selectedStyle, exportFormat, engine, brandKit, includeNarration, targetDurationSec }))
     }, Number(process.env.OPENAI_MOTION_DIRECTOR_TIMEOUT_MS || DEFAULT_TIMEOUT_MS));
 
     const payload = await openaiResponse.json().catch(() => ({}));
@@ -264,7 +275,7 @@ export default async function handler(request, response) {
         reason,
         errorCategory: openaiError.category,
         requestId: openaiError.requestId,
-        editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat, engine, includeNarration })
+        editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat, engine, includeNarration, targetDurationSec })
       });
       return;
     }
@@ -282,7 +293,7 @@ export default async function handler(request, response) {
         status: "fallback",
         reason: `Motion Director unavailable: schema validation failed. ${validation.error}`,
         errorCategory: "schema_validation",
-        editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat, engine, includeNarration })
+        editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat, engine, includeNarration, targetDurationSec })
       });
       return;
     }
@@ -329,16 +340,21 @@ export default async function handler(request, response) {
       status: "fallback",
       reason,
       errorCategory: category,
-      editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat, engine, includeNarration })
+      editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat, engine, includeNarration, targetDurationSec })
     });
   }
 }
 
-function buildOpenAIRequest({ allPhotos, visionPhotos, listingDetails, selectedStyle, exportFormat, engine = "remotion", brandKit = {}, includeNarration = false }) {
-  // Target scene count: use every photo, capped at MAX_PLAN_SCENES.
-  // The AI will be instructed to use ALL provided photos as scenes (no skipping).
-  const targetSceneCount = Math.min(allPhotos.length, MAX_PLAN_SCENES);
+function buildOpenAIRequest({ allPhotos, visionPhotos, listingDetails, selectedStyle, exportFormat, engine = "remotion", brandKit = {}, includeNarration = false, targetDurationSec = DEFAULT_TARGET_DURATION_SEC }) {
+  // v24: target scene count is now duration-driven, not photo-count-driven.
+  // 30s default = 6 Cinematic AI scenes (5s each) or 10-12 Quick Reel scenes
+  // (2.5s avg). 60s = 12 Cinematic AI or up to MAX_PLAN_SCENES Quick Reel.
+  // Always capped by available photos AND the hard MAX_PLAN_SCENES ceiling.
   const isCinematicAI = engine === "runway";
+  const clampedDuration = Math.max(15, Math.min(MAX_TARGET_DURATION_SEC, Number(targetDurationSec) || DEFAULT_TARGET_DURATION_SEC));
+  const secPerScene = isCinematicAI ? 5 : 2.8;
+  const desiredScenes = Math.round(clampedDuration / secPerScene);
+  const targetSceneCount = Math.min(allPhotos.length, MAX_PLAN_SCENES, Math.max(4, desiredScenes));
 
   // Narration guidance: real estate listing videos sound more professional
   // with CONTINUOUS narration across every scene. Sparse narration (the old
@@ -526,7 +542,7 @@ function editPlanSchema(photoIds, targetSceneCount, { includeNarration = false }
   };
 }
 
-function deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat, engine = "remotion", includeNarration = false }) {
+function deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat, engine = "remotion", includeNarration = false, targetDurationSec = DEFAULT_TARGET_DURATION_SEC }) {
   const ranked = photos
     .map((photo, index) => ({
       ...photo,
@@ -534,12 +550,19 @@ function deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFo
       qualityScore: qualityScore(photo, index)
     }))
     .sort((a, b) => roomRank(a.roomType) - roomRank(b.roomType) || b.qualityScore - a.qualityScore);
-  // Use ALL photos as scenes (was capped at 10). The cap was hiding 60–70%
-  // of the user's uploads from the final video.
+  // v24: scene count is duration-driven. 30s default = 6 scenes for
+  // Cinematic AI (5s each) or ~10-12 for Quick Reel (2.8s avg).
+  const isCinematicAI = engine === "runway";
+  const clampedDuration = Math.max(15, Math.min(MAX_TARGET_DURATION_SEC, Number(targetDurationSec) || DEFAULT_TARGET_DURATION_SEC));
+  const secPerScene = isCinematicAI ? 5 : 2.8;
+  const desiredScenes = Math.min(
+    MAX_PLAN_SCENES,
+    Math.max(4, Math.round(clampedDuration / secPerScene))
+  );
   const unique = [];
   const used = new Set();
   ranked.forEach((photo) => {
-    if (unique.length < MAX_PLAN_SCENES && !used.has(photo.id)) {
+    if (unique.length < desiredScenes && !used.has(photo.id)) {
       used.add(photo.id);
       unique.push(photo);
     }

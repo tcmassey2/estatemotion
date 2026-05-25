@@ -30,6 +30,8 @@ export default function ProjectScreen() {
   const projectTitle = useStore((s) => s.projectTitle);
   const selectedStyleId = useStore((s) => s.selectedStyleId);
   const renderEngine = useStore((s) => s.renderEngine);
+  const targetDurationSec = useStore((s) => s.targetDurationSec);
+  const setTargetDuration = useStore((s) => s.setTargetDuration);
   const renderJob = useStore((s) => s.renderJob);
   const error = useStore((s) => s.error);
 
@@ -126,9 +128,10 @@ export default function ProjectScreen() {
           hallucination-protection level, click Generate. Everything else
           (narration, music, brand kit, output formats) is automatic and
           tier-determined. */}
-      <Section title="Render" subtitle="Pick your engine, hit Generate.">
+      <Section title="Render" subtitle="Pick your engine, pick a length, hit Generate.">
         <div className="flex flex-col gap-5">
           <EngineToggle engine={renderEngine} onChange={setEngine} />
+          <LengthToggle value={targetDurationSec} onChange={setTargetDuration} />
           <RenderQualityPanel />
           <RenderSafetyControl />
           <RenderControls />
@@ -1878,6 +1881,51 @@ function EngineToggle({ engine, onChange }: { engine: RenderEngine; onChange: (e
   );
 }
 
+/* ============================================================
+   v24 length toggle — 30s default / 60s max.
+   ============================================================
+   Drives manifest.targetDurationSec → edit-plan scene count.
+   30s ≈ 6 Cinematic AI scenes (or ~10 Quick Reel). 60s doubles that.
+*/
+function LengthToggle({ value, onChange }: { value: 30 | 60; onChange: (v: 30 | 60) => void }) {
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-2.5">
+        <h3 className="text-sm font-semibold tracking-tightish">Video length</h3>
+        <span className="text-xs text-ink-muted">Shorter = higher completion + cheaper render</span>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <button
+          type="button"
+          onClick={() => onChange(30)}
+          className={cn(
+            "card-press text-left p-3 rounded-lg bg-surface border",
+            value === 30
+              ? "border-gold bg-surface-raised card-selected"
+              : "border-edge hover:border-edge-strong"
+          )}
+        >
+          <div className="text-sm font-semibold tracking-tightish mb-0.5">30 seconds</div>
+          <div className="text-xs text-ink-muted">Reels · TikTok · best completion rate</div>
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange(60)}
+          className={cn(
+            "card-press text-left p-3 rounded-lg bg-surface border",
+            value === 60
+              ? "border-gold bg-surface-raised card-selected"
+              : "border-edge hover:border-edge-strong"
+          )}
+        >
+          <div className="text-sm font-semibold tracking-tightish mb-0.5">60 seconds</div>
+          <div className="text-xs text-ink-muted">Longer tour · Zillow · listing site</div>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function EngineCard({
   active,
   title,
@@ -1935,6 +1983,8 @@ function RenderControls() {
   const organization = useStore((s) => s.organization);
   const selectedStyleId = useStore((s) => s.selectedStyleId);
   const selectedMusicTrackId = useStore((s) => s.selectedMusicTrackId);
+  const targetDurationSec = useStore((s) => s.targetDurationSec);
+  const setTargetDuration = useStore((s) => s.setTargetDuration);
   const crossfadesEnabled = useStore((s) => s.crossfadesEnabled);
   const renderEngine = useStore((s) => s.renderEngine);
   const renderSafety = useStore((s) => s.renderSafety);
@@ -1986,7 +2036,8 @@ function RenderControls() {
         selectedStyle: styleLabel,
         exportFormat: "vertical",
         engine: renderEngine,
-        brandKit: branding
+        brandKit: branding,
+        targetDurationSec
       });
       if (!planResult.editPlan) {
         throw new Error(planResult.reason || "We couldn't draft an edit plan. Try again in a moment.");

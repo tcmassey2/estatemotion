@@ -64,6 +64,10 @@ interface AppState {
   // Default OFF — narration adds 30-60s to render time and gates on
   // ElevenLabs availability. Agents can opt in once they trust the basics.
   narrationEnabled: boolean;
+  // v24: target video length in seconds. 30s default for social-first
+  // hero cuts, 60s max for longer-form listing tours. Drives scene count
+  // in the edit plan generator (30s = 6 scenes for Cinematic AI).
+  targetDurationSec: 30 | 60;
   // Default OFF — xfade crossfades require ~3-8 min of CPU on a 24-clip
   // render and OOM-killed Render Standard 2GB. Safe to enable on Pro 4GB+.
   crossfadesEnabled: boolean;
@@ -122,6 +126,7 @@ interface AppState {
   setMusicTrack: (trackId: string | null) => void;
   setEngine: (e: RenderEngine) => void;
   setNarrationEnabled: (enabled: boolean) => void;
+  setTargetDuration: (sec: 30 | 60) => void;
   setCrossfadesEnabled: (enabled: boolean) => void;
   setTwilightHero: (enabled: boolean) => void;
   setExport4K: (enabled: boolean) => void;
@@ -265,6 +270,9 @@ const emptyProject = () => ({
   // worker still gracefully falls back to music-only if ElevenLabs is
   // unavailable, so this is safe.
   narrationEnabled: true,
+  // v24: 30s default. Attention-span research + Troy's user-testing
+  // showed people don't watch past ~30s of any listing video.
+  targetDurationSec: 30 as 30 | 60,
   crossfadesEnabled: true,
   twilightHero: false,
   // Default ON — 4K-tier subscribers paid for 4K, give them 4K out of the
@@ -440,6 +448,7 @@ export const useStore = create<AppState>((set, get) => ({
   setMusicTrack: (trackId) => set({ selectedMusicTrackId: trackId }),
   setEngine: (e) => set({ renderEngine: e, editPlan: null }),
   setNarrationEnabled: (enabled) => set({ narrationEnabled: enabled, editPlan: null }),
+  setTargetDuration: (sec) => set({ targetDurationSec: sec, editPlan: null }),
   setCrossfadesEnabled: (enabled) => set({ crossfadesEnabled: enabled }),
   setTwilightHero: (enabled) => set({ twilightHero: enabled }),
   setExport4K: (enabled) => set({ export4K: enabled }),
