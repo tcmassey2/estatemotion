@@ -900,10 +900,12 @@ function qualityScore(photo, index) {
 }
 
 function durationFor(roomType, style, index, engine = "remotion") {
-  // Cinematic AI: every scene is exactly one Runway Gen-3 Turbo clip.
-  // Runway returns 5s clips natively. 24 photos × 5s = 120s = the 2-minute
-  // target output. The worker reads duration > 5.5 as a signal to upgrade to
-  // a 10s clip — keep us at exactly 5 so cost stays predictable.
+  // Cinematic AI: every scene is exactly one Runway Gen-4 Turbo clip.
+  // Runway returns 5s clips natively. v24 targets:
+  //   30s render = 6 Runway scenes × 5s
+  //   60s render = 12 Runway scenes × 5s
+  // The worker reads duration > 5.5 as a signal to upgrade to a 10s clip —
+  // keep us at exactly 5 so cost stays predictable.
   if (engine === "runway") return 5;
   const fast = /social|modern/i.test(style || "");
   if (index === 0) return fast ? 2.1 : 3.0;
