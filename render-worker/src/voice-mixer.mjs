@@ -116,9 +116,26 @@ export async function applyVoiceNarration({ masterMp4, scenes, brandKit, tempDir
   }
   const totalDurationSec = cursor;
 
-  // Build [{mp3Path, delayMs}] for non-null synthesized scenes.
+  // Per-scene maximum narration audio length. ElevenLabs sometimes returns
+  // 6-8s of audio for a 22-word narration line, but if the scene is only
+  // 5s long that audio extends past the scene boundary AND overlaps with
+  // the NEXT scene's narration in amix — producing the 'two voices
+  // talking at once' bug. Trim each narration to fit within its scene
+  // window: scene_duration - leadIn (0.35) - tail buffer (0.5s).
+  // Tail buffer also gives the scene's last beat to breathe before the
+  // hard cut/crossfade to the next scene.
+  const TAIL_BUFFER_SEC = 0.5;
   const placedNarrations = synthesized
-    .map((entry, i) => entry ? { mp3Path: entry.mp3Path, delayMs: Math.round((sceneStarts[i] + leadInSec) * 1000) } : null)
+    .map((entry, i) => {
+      if (!entry) return null;
+      const sceneDur = Number(photoScenes[i].duration || 3);
+      const maxNarrationSec = Math.max(0.8, sceneDur - leadInSec - TAIL_BUFFER_SEC);
+      return {
+        mp3Path: entry.mp3Path,
+        delayMs: Math.round((sceneStarts[i] + leadInSec) * 1000),
+        maxNarrationSec
+      };
+    })
     .filter(Boolean);
   const narrationActiveWindows = synthesized
     .map((entry, i) => entry ? [sceneStarts[i] + leadInSec, sceneStarts[i] + Number(photoScenes[i].duration || 3) - 0.2] : null)
@@ -128,10 +145,18 @@ export async function applyVoiceNarration({ masterMp4, scenes, brandKit, tempDir
   //   [0:a] silent base (lavfi anullsrc, duration = totalDurationSec)
   //   [1:a] first narration mp3
   //   [2:a] second narration mp3 ...
-  // For each narration: adelay it by delayMs (both channels), label [n0], [n1]...
-  // Then amix all delayed lines with the silent base.
+  // For each narration:
+  //   1. atrim caps it at maxNarrationSec so it can't overflow into the
+  //      next scene (root cause of the 'two voices' bug).
+  //   2. asetpts rebases timestamps after the trim.
+  //   3. adelay positions it at sceneStart+leadIn.
+  //   4. apad extends silence to the end of the master so amix has
+  //      something to read at every timestamp.
   const adelaySteps = placedNarrations
-    .map((n, i) => `[${i + 1}:a]adelay=${n.delayMs}|${n.delayMs},apad[n${i}]`)
+    .map((n, i) =>
+      `[${i + 1}:a]atrim=duration=${n.maxNarrationSec.toFixed(2)},asetpts=PTS-STARTPTS,` +
+      `adelay=${n.delayMs}|${n.delayMs},apad[n${i}]`
+    )
     .join(";");
   const mixInputs = placedNarrations.map((_, i) => `[n${i}]`).join("");
   const filterComplex = `${adelaySteps};[0:a]${mixInputs}amix=inputs=${placedNarrations.length + 1}:duration=first:dropout_transition=0,atrim=duration=${totalDurationSec}[narr]`;

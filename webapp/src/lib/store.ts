@@ -444,7 +444,12 @@ export const useStore = create<AppState>((set, get) => ({
         return { ...photo, order: i + 1 };
       })
       .filter((p): p is Photo => p !== null);
-    set({ photos: next });
+    // v24.3: invalidate the editPlan on reorder. Without this, narration
+    // lines stay locked to the OLD photo order — voice talks about the
+    // kitchen while the screen shows the master bedroom (because the
+    // plan's narrationLine[0] was for photo X but now photo Y is at
+    // position 0). Re-planning is cheap; mis-synced narration is awful.
+    set({ photos: next, editPlan: null });
   },
   // curatePhotosWithAI removed — see api/curate-photos.js. The endpoint
   // still exists but nothing in the app calls it.

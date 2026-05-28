@@ -1673,20 +1673,24 @@ function computeHallucinationRisk(scene) {
   if (scene?.runway_prompt) blobParts.push(scene.runway_prompt);
   const blob = blobParts.join(" ").toLowerCase();
 
-  // Each category contributes once (saturating) so a feature list packed
-  // with "cabinets, counter, granite" doesn't quadruple-count the same
-  // parallel-edge failure profile.
-  if (RISK_KEYWORDS.high.some((kw) => blob.includes(kw))) score += 25;
-  if (RISK_KEYWORDS.appliance.some((kw) => blob.includes(kw))) score += 20;
-  if (RISK_KEYWORDS.rotational.some((kw) => blob.includes(kw))) score += 30;
-  if (RISK_KEYWORDS.reflective.some((kw) => blob.includes(kw))) score += 15;
-  if (RISK_KEYWORDS.text.some((kw) => blob.includes(kw))) score += 10;
+  // v24.3: halved per-category bumps so non-kitchen/bath scenes rarely
+  // hit the 80 threshold. Previous values (25/20/30/15/10) sent a
+  // bedroom-with-ceiling-fan to 55 (25 base + 30 rotational), and
+  // adding parallax motion (+8) tipped many scenes to KB unnecessarily.
+  // New values let normal scenes pass; only multi-category-stacking
+  // worst-cases (e.g. living + cabinet + appliance + reflective +
+  // rotational) hit 80.
+  if (RISK_KEYWORDS.high.some((kw) => blob.includes(kw))) score += 12;
+  if (RISK_KEYWORDS.appliance.some((kw) => blob.includes(kw))) score += 10;
+  if (RISK_KEYWORDS.rotational.some((kw) => blob.includes(kw))) score += 15;
+  if (RISK_KEYWORDS.reflective.some((kw) => blob.includes(kw))) score += 8;
+  if (RISK_KEYWORDS.text.some((kw) => blob.includes(kw))) score += 5;
 
   // Camera motion modulation — parallax/lateral_pan add risk because they
   // sweep across more pixels, giving Runway more surface area to invent on.
   const motion = String(scene?.cameraMotion || "").toLowerCase();
-  if (motion === "parallax_zoom" || motion === "lateral_pan") score += 8;
-  if (motion === "detail_sweep") score += 5;
+  if (motion === "parallax_zoom" || motion === "lateral_pan") score += 4;
+  if (motion === "detail_sweep") score += 3;
 
   // Long clips are riskier — more frames = more chances to drift.
   const duration = Number(scene?.duration || 5);

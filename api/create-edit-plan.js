@@ -66,33 +66,29 @@ const RENDER_ENGINES = ["remotion", "runway"];
 // to. Every template ENDS with a hallucination-blocking constraint clause —
 // real estate is one of the few AI-video use cases where any element morphing
 // or imagined feature is a legal liability, not just an aesthetic problem.
-// Motion prompts — REWRITTEN v23.3 for stronger camera moves.
-//
-// The previous version asked for "subtle 6-8% zoom" and "slow deliberate"
-// motion. Runway Gen-4 read those modifiers as "barely move" and produced
-// micro-drift + low-frequency shake instead of a real camera move (the
-// model's prior wants motion; if you ask for almost-none, it adds noise).
-//
-// Real-estate cinematographers don't write "subtle" — they write camera
-// commands: dolly forward, track right, crane up, orbit clockwise. Gen-4
-// responds dramatically better to that vocabulary AND to an explicit
-// motion intensity ("strong 15% push", "confident dolly") versus hedging.
-//
-// The fidelity clause downstream still prevents object hallucination, so
-// asking for real motion here doesn't open the floodgates on morphing.
+// v24.3: REVERTED to v22-era motion prompts — these produced the good
+// homepage hero video on a real luxury listing. The v23.3 rewrite
+// ("confident dolly", "15% zoom", "locked tripod, no handheld jitter")
+// was an over-correction for shake complaints. In practice, the strong
+// language pushed Runway to over-commit to motion and produced more
+// shape morphing on tight interior shots (rentals, small bedrooms).
+// The original "subtle / slow / deliberate" vocabulary lets Gen-4
+// produce gentler, more reliable camera moves that suit real-estate
+// content. If shake recurs on a specific listing, troubleshoot per-
+// scene rather than juicing the global prompts.
 const RUNWAY_MOTION_PROMPTS = {
   push_in:
-    "Smooth dolly push forward into the room, 15% zoom over the shot. Confident architectural-tour move toward the focal subject. Locked tripod, no handheld jitter.",
+    "Slow cinematic camera push toward the focal subject. Subtle 6-8% zoom. Smooth, deliberate motion.",
   pull_out:
-    "Smooth dolly pull-back revealing the full space, 15% reverse zoom. Confident architectural-tour move opening from the focal subject to the whole room. Locked tripod, no handheld jitter.",
+    "Slow cinematic camera pull-back revealing the full space. Subtle 6-8% reverse zoom. Smooth motion.",
   lateral_pan:
-    "Smooth horizontal tracking shot left to right across the space, steady gimbal pace. Camera physically translates, not just rotates. No vertical drift, no handheld jitter.",
+    "Smooth horizontal camera pan from left to right across the space. No vertical drift. Steady pace.",
   vertical_reveal:
-    "Smooth vertical tilt-up from lower foreground revealing the full height of the space. Confident cinematic reveal. Locked tripod, no handheld jitter.",
+    "Slow vertical camera tilt from lower foreground upward, revealing the full space. Cinematic reveal.",
   parallax_zoom:
-    "Smooth dolly push with clear parallax separation between foreground and background, 15% zoom. Architectural-tour move with depth. Locked tripod, no handheld jitter.",
+    "Cinematic parallax push with subtle depth separation between foreground and background elements. 6-8% zoom. Soft.",
   detail_sweep:
-    "Smooth slow tracking move across the architectural feature, 10% lateral travel. Tight framing on the detail. Locked tripod, no handheld jitter."
+    "Slow detail-focused camera move across an architectural feature. Tight framing. Soft, deliberate motion."
 };
 
 // Universal anti-hallucination constraint appended to every Runway prompt.
@@ -110,15 +106,17 @@ const RUNWAY_MOTION_PROMPTS = {
 //                      minor for individual clause tweaks.
 //
 // Changelog (last 5 versions):
+//   v24.3 — REVERTED to v22-era subtle/slow/deliberate motion prompts.
+//           v23.3 strong-language rewrite was over-correcting for shake
+//           complaints and produced more morphing on tight interior shots.
+//           v22 prompts produced the good homepage hero video on a real
+//           luxury listing — match that.
 //   v23.3 — Stronger motion prompts (dolly/track/crane vocab + 15% zoom).
-//           Was producing shake because "subtle slow deliberate" hedging
-//           pushed Gen-4 below its motion floor.
 //   v23.2 — Universal NO-NEW-FANS clause + living-room + outdoor constraints
 //   v23.1 — MLS auto-strict guard, softer LUTs, model-driven photo tour order
 //   v23.0 — Prompt versioning + B-roll integration + voice catalog
 //   v22.0 — Hallucination Guard balanced/strict tiers + kitchen lockout
-//   v21.0 — Per-room constraints expanded (named appliances)
-export const PROMPT_VERSION = "v23.3";
+export const PROMPT_VERSION = "v24.3";
 
 // v23.2 — Universal anti-hallucination clause now leads with the most
 // common failure mode (phantom ceiling fans) AND covers ALL rooms, not
