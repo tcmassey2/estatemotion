@@ -5,13 +5,15 @@
   "type": "module",
   "description": "Remotion render worker for EstateMotion MP4 and thumbnail generation.",
   "scripts": {
-    "check": "node --check src/render-job.mjs && node --check src/runway-job.mjs && node --check server.mjs && node --check render-local.mjs && node --check render-openai-plan.mjs && node --check verify-async-render.mjs",
+    "check": "node --check src/render-job.mjs && node --check src/runway-job.mjs && node --check src/veo-job.mjs && node --check server.mjs && node --check render-local.mjs && node --check render-openai-plan.mjs && node --check verify-async-render.mjs",
     "start": "node server.mjs",
     "render:sample": "node render-local.mjs",
     "render:openai-plan": "node render-openai-plan.mjs",
     "verify:async": "node verify-async-render.mjs"
   },
   "dependencies": {
+    "@google-cloud/storage": "^7.13.0",
+    "@google/genai": "^1.0.0",
     "@remotion/bundler": "^4.0.229",
     "@remotion/renderer": "^4.0.229",
     "@supabase/supabase-js": "^2.45.4",

@@ -1,7 +1,32 @@
 import http from "node:http";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { renderEstateMotionJob } from "./src/render-job.mjs";
 import { renderRunwayJob } from "./src/runway-job.mjs";
 import { regenerateScene } from "./src/regenerate-job.mjs";
+
+// v25 Phase 1: Veo 3.1 Fast bootstrap.
+// Render.com (and most Linux PaaS) won't let us upload arbitrary files,
+// so the service-account JSON for Vertex AI auth ships as a single env
+// var. We write it to /tmp at boot and point ADC at it. The Veo module
+// (src/veo-job.mjs) is lazy-imported so this bootstrap can run before
+// any Veo code touches @google/genai.
+(function bootstrapVeoCredentials() {
+  const json = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
+  if (!json) return; // not configured yet — fine for now
+  const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS
+    || path.join(os.tmpdir(), "gcp-sa.json");
+  try {
+    fs.writeFileSync(credPath, json, { mode: 0o600 });
+    process.env.GOOGLE_APPLICATION_CREDENTIALS = credPath;
+    console.info(`[veo] wrote SA JSON to ${credPath} (${json.length} bytes)`);
+  } catch (err) {
+    console.error(
+      `[veo] failed to write SA JSON to ${credPath}: ${err.message || err}. /test/veo will return VEO_CONFIG_MISSING.`
+    );
+  }
+})();
 
 // v24: depth engine removed from production routing. The files
 // (depth-job.mjs, depth-renderer.mjs, replicate-client.mjs) are
@@ -47,11 +72,20 @@ const server = http.createServer(async (request, response) => {
   // hardening pass so we can confirm the latest fix is live.
   if (request.method === "GET" && request.url === "/version") {
     sendJson(response, 200, {
-      version: "2026.06.03-v24.5",
-      // v24 restored the v22 Runway pipeline. Two engines are live:
-      // remotion (Ken Burns) + runway (Cinematic AI Gen-4 Turbo).
-      // depth engine code is preserved in repo but not routed.
+      version: "2026.06.03-v25.0-phase1",
+      // v25 Phase 1: Veo 3.1 Fast plumbing added (POST /test/veo) but
+      // not yet routed to production. Active production engines remain
+      // remotion + runway until Phase 2.
       engines: ["remotion", "runway"],
+      experimentalEngines: ["veo"],
+      veo: {
+        model: process.env.VEO_MODEL || "veo-3.1-fast-generate-001",
+        location: process.env.GOOGLE_CLOUD_LOCATION || "global",
+        projectConfigured: Boolean(process.env.GOOGLE_CLOUD_PROJECT),
+        credentialsConfigured: Boolean(process.env.GOOGLE_APPLICATION_CREDENTIALS),
+        outputBucketConfigured: Boolean(process.env.VEO_OUTPUT_GCS_BUCKET),
+        testEndpoint: "POST /test/veo"
+      },
       bootedAt: BOOTED_AT,
       uptimeSec: Math.round(process.uptime()),
       activeJobs: jobs.size,
@@ -82,9 +116,23 @@ const server = http.createServer(async (request, response) => {
         "POST /render/sync",
         "GET /render/status/:jobId",
         "POST /regenerate-scene",
-        "POST /regenerate-scene/sync"
+        "POST /regenerate-scene/sync",
+        "POST /test/veo  (v25 Phase 1 — Veo 3.1 Fast smoke test)"
       ]
     });
+    return;
+  }
+
+  // v25 Phase 1: standalone Veo 3.1 Fast smoke test.
+  // Not auth-gated — meant for local testing with the $300 Google Cloud
+  // free credit. Once Phase 2 wires Veo into production, this endpoint
+  // stays as a diagnostic to verify SA credentials + Veo quota.
+  //
+  // POST /test/veo
+  // Body: { imageUrl, prompt, aspectRatio?, duration? }
+  // Returns: { status, clipServePath, gcsUri, veoOpName, durationMs }
+  if (request.method === "POST" && request.url === "/test/veo") {
+    await handleVeoSmokeTest(request, response);
     return;
   }
 
@@ -309,6 +357,68 @@ function publishLocalAssetUrls(result = {}) {
     mp4Url: `${publicBase}/render/assets/${encodeURIComponent(result.jobId)}/estate-motion.mp4`,
     thumbnailUrl: result.localThumbnailPath ? `${publicBase}/render/assets/${encodeURIComponent(result.jobId)}/thumbnail.png` : ""
   };
+}
+
+// v25 Phase 1 — Veo smoke test handler. Generates ONE clip via Veo
+// 3.1 Fast and parks the resulting mp4 under /render/assets/<token>/...
+// so the caller can grab it via a normal HTTP GET. Auth-free on purpose:
+// this is a developer diagnostic, gated by knowing the worker URL.
+async function handleVeoSmokeTest(request, response) {
+  const startedAt = Date.now();
+  let body;
+  try {
+    body = await readJsonBody(request);
+  } catch (err) {
+    sendJson(response, 400, { status: "failed", error: err.message });
+    return;
+  }
+  const imageUrl = String(body?.imageUrl || "").trim();
+  const prompt = String(body?.prompt || "").trim();
+  if (!imageUrl || !prompt) {
+    sendJson(response, 400, {
+      status: "failed",
+      error: "Body requires { imageUrl, prompt }. Optional: aspectRatio, duration."
+    });
+    return;
+  }
+
+  // Park output under the same temp/asset machinery the production
+  // renders use so the existing GET /render/assets/:id/:file serves it.
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "veo-smoke-"));
+  let result;
+  try {
+    const { runVeoSmokeTest } = await import("./src/veo-job.mjs");
+    result = await runVeoSmokeTest({
+      imageUrl,
+      prompt,
+      aspectRatio: body.aspectRatio || "9:16",
+      duration: Number(body.duration) || 5,
+      tempDir
+    });
+  } catch (err) {
+    sendJson(response, 500, {
+      status: "failed",
+      error: err.message || String(err),
+      code: err.code || "VEO_UNKNOWN",
+      durationMs: Date.now() - startedAt
+    });
+    return;
+  }
+
+  // Register the local clip under a one-shot job ID so the existing
+  // /render/assets/:id/render.mp4 path can serve it.
+  const tokenId = `veo-smoke-${Date.now()}`;
+  jobAssets.set(tokenId, { mp4Path: result.clipPath, thumbnailPath: "" });
+
+  sendJson(response, 200, {
+    status: "ok",
+    clipServePath: `/render/assets/${tokenId}/render.mp4`,
+    gcsUri: result.gcsUri,
+    veoOpName: result.veoOpName,
+    durationSec: result.duration,
+    durationMs: Date.now() - startedAt,
+    notes: "Asset is in-memory only — restart the worker and the URL 404s."
+  });
 }
 
 async function serveRenderAsset(request, response) {
