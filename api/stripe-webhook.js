@@ -115,11 +115,48 @@ export default async function handler(request, response) {
 async function onCheckoutCompleted(session) {
   const userId = session.client_reference_id || session.metadata?.user_id;
   if (!userId) return;
+
+  // v26.6: one-off credit-pack purchase (mode=payment). Grant credits and
+  // stop — there's no subscription to activate. Idempotent per session id
+  // via grant_render_credits (credit_grants unique constraint).
+  if (session.mode === "payment") {
+    const credits = Number(session.metadata?.credits || 0);
+    if (credits > 0 && session.payment_status === "paid") {
+      await grantCredits(userId, credits, session.id);
+    }
+    // Make sure we have the customer id on file for future purchases.
+    if (session.customer) {
+      await updateProfile(userId, { stripe_customer_id: session.customer });
+    }
+    return;
+  }
+
   await updateProfile(userId, {
     stripe_customer_id: session.customer || null,
     stripe_subscription_id: session.subscription || null,
     subscription_status: "active"
   });
+}
+
+async function grantCredits(userId, credits, sessionId) {
+  const supabaseUrl = process.env.SUPABASE_URL || "";
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  if (!supabaseUrl || !serviceKey) return;
+  const res = await fetch(`${supabaseUrl}/rest/v1/rpc/grant_render_credits`, {
+    method: "POST",
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ p_user_id: userId, p_credits: credits, p_session_id: sessionId })
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    console.error(`[stripe-webhook] grant_render_credits failed (${res.status}): ${body.slice(0, 200)}`);
+  } else {
+    console.info(`[stripe-webhook] granted ${credits} credits to ${userId} (session ${sessionId}).`);
+  }
 }
 
 async function onSubscriptionChanged(subscription) {

@@ -72,17 +72,28 @@ export default async function handler(request, response) {
     return response.status(503).json({ error: "Billing is not configured. Set STRIPE_SECRET_KEY on Vercel." });
   }
 
+  // v26.6: one-off credit purchases (mode=payment, not subscription).
+  // Inline price_data means no pre-created Stripe products needed — amount
+  // + credit count live here. Webhook grants credits on session metadata.
+  const CREDIT_PACKS = {
+    single: { credits: 1, amount: 10000, label: "1 listing video" },
+    pack5: { credits: 5, amount: 37500, label: "5-video pack" }
+  };
+
   try {
     const body = parseBody(request.body);
     const tier = String(body.tier || "");
-    const priceId = await resolvePriceForTier(tier);
-    if (!priceId) {
+    const isPack = Boolean(CREDIT_PACKS[tier]);
+
+    // Subscriptions resolve a recurring price; packs use inline price_data.
+    const priceId = isPack ? null : await resolvePriceForTier(tier);
+    if (!isPack && !priceId) {
       return response.status(400).json({ error: `Unknown or unconfigured tier: ${tier}.` });
     }
 
     const userId = await verifyUserId(request);
     if (!userId) {
-      return response.status(401).json({ error: "Sign in to start a subscription." });
+      return response.status(401).json({ error: "Sign in to continue." });
     }
 
     const profile = await fetchOrCreateProfile(userId, body.email);
@@ -97,6 +108,28 @@ export default async function handler(request, response) {
 
     const appUrl = process.env.APP_URL || `${request.headers["x-forwarded-proto"] || "https"}://${request.headers.host}`;
     const returnUrl = String(body.returnUrl || `${appUrl}/app`);
+
+    if (isPack) {
+      const pack = CREDIT_PACKS[tier];
+      const session = await stripe("/v1/checkout/sessions", "POST", {
+        "mode": "payment",
+        "customer": customerId,
+        "client_reference_id": userId,
+        "line_items[0][price_data][currency]": "usd",
+        "line_items[0][price_data][unit_amount]": String(pack.amount),
+        "line_items[0][price_data][product_data][name]": `EstateMotion — ${pack.label}`,
+        "line_items[0][quantity]": "1",
+        "payment_intent_data[metadata][user_id]": userId,
+        "payment_intent_data[metadata][credits]": String(pack.credits),
+        "metadata[user_id]": userId,
+        "metadata[credits]": String(pack.credits),
+        "metadata[pack]": tier,
+        "success_url": `${returnUrl}?checkout=success&offer=${encodeURIComponent(tier)}`,
+        "cancel_url": `${returnUrl}?checkout=cancelled`,
+        "allow_promotion_codes": "true"
+      });
+      return response.status(200).json({ url: session.url, sessionId: session.id });
+    }
 
     // Brokerage tier is per-seat. Quantity comes from the request; clamp
     // sensibly so a typo can't 100x the bill. Solo tiers stay at qty=1.

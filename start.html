@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>EstateMotion — Your first listing video, free</title>
+<meta name="description" content="Turn your listing photos into a cinematic video in 3 minutes. Your first video is free. MLS-safe by design." />
+
+<!-- ============================================================
+     META PIXEL — replace PIXEL_ID. Fires PageView on load;
+     Lead on free-signup click; Purchase is fired server-side
+     via CAPI from the Stripe webhook (see AD_CAMPAIGN_REVENUE_PLAN.md).
+     ============================================================ -->
+<script>
+!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
+document,'script','https://connect.facebook.net/en_US/fbevents.js');
+fbq('init','PIXEL_ID');fbq('track','PageView');
+function trackLead(){try{fbq('track','Lead');}catch(e){}}
+</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --bg:#08080A; --bg-soft:#0E0E12; --surface:#15151B; --surface-elevated:#1F1F26;
+  --border:#2A2A33; --border-soft:#1A1A22;
+  --ink:#F8F5EF; --ink-soft:#C4C4C8; --ink-muted:#7C7C82; --ink-dim:#4A4A50;
+  --gold:#C7A76C; --gold-light:#E3BB73; --gold-dim:#9C773B;
+  --success:#5BBE9B;
+  --font-display:"Fraunces","Georgia",serif;
+  --font-body:"Inter",ui-sans-serif,system-ui,-apple-system,sans-serif;
+  --font-mono:"JetBrains Mono","SF Mono",monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-body);line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+a{color:inherit;text-decoration:none}
+.gold{color:var(--gold)}
+.eyebrow{font-family:var(--font-mono);font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--gold)}
+
+/* CTA buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:600;
+  border-radius:12px;padding:16px 28px;font-size:16px;cursor:pointer;border:none;transition:transform .15s,box-shadow .15s;text-align:center}
+.btn-primary{background:linear-gradient(135deg,var(--gold-light),var(--gold-dim));color:#08080A;box-shadow:0 8px 30px rgba(199,167,108,.28)}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 12px 40px rgba(199,167,108,.4)}
+.btn-ghost{background:transparent;color:var(--ink);border:1px solid var(--border)}
+.btn-lg{padding:18px 36px;font-size:18px}
+.btn-block{display:flex;width:100%}
+
+/* Header */
+header{position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);background:rgba(8,8,10,.7);border-bottom:1px solid var(--border-soft)}
+.nav{display:flex;align-items:center;justify-content:space-between;height:64px}
+.logo{font-family:var(--font-display);font-size:22px;font-weight:600;letter-spacing:-.02em}
+.logo span{color:var(--gold)}
+
+/* Hero */
+.hero{padding:64px 0 48px;text-align:center}
+.hero h1{font-family:var(--font-display);font-weight:600;font-size:clamp(34px,6vw,60px);line-height:1.04;letter-spacing:-.02em;margin:18px auto 0;max-width:14ch}
+.hero p.sub{color:var(--ink-soft);font-size:clamp(17px,2.4vw,21px);margin:20px auto 0;max-width:46ch}
+.hero .cta-row{margin-top:32px;display:flex;flex-direction:column;align-items:center;gap:12px}
+.hero .microcopy{font-size:14px;color:var(--ink-muted);font-family:var(--font-mono)}
+.video-frame{margin:40px auto 0;max-width:340px;border-radius:24px;overflow:hidden;border:1px solid var(--border);box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 80px rgba(199,167,108,.1);background:var(--surface)}
+.video-frame video{display:block;width:100%;height:auto;aspect-ratio:9/16;object-fit:cover;background:#000}
+
+/* Trust strip */
+.trust{border-top:1px solid var(--border-soft);border-bottom:1px solid var(--border-soft);background:var(--bg-soft)}
+.trust-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:28px 0;text-align:center}
+.trust-item .n{font-family:var(--font-display);font-size:26px;color:var(--gold);font-weight:600}
+.trust-item .l{font-size:13px;color:var(--ink-muted);margin-top:4px}
+
+/* Sections */
+section.block{padding:64px 0}
+.section-head{text-align:center;max-width:42ch;margin:0 auto 44px}
+.section-head h2{font-family:var(--font-display);font-weight:600;font-size:clamp(26px,4vw,40px);letter-spacing:-.02em}
+.section-head p{color:var(--ink-soft);margin-top:12px;font-size:17px}
+
+/* Steps */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.step{background:var(--surface);border:1px solid var(--border-soft);border-radius:16px;padding:28px}
+.step .num{font-family:var(--font-mono);font-size:13px;color:var(--gold)}
+.step h3{font-family:var(--font-display);font-size:20px;margin:10px 0 8px;font-weight:600}
+.step p{color:var(--ink-muted);font-size:15px}
+
+/* Pricing */
+.pricing{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;max-width:720px;margin:0 auto}
+.price-card{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:32px;display:flex;flex-direction:column}
+.price-card.featured{border-color:var(--gold);box-shadow:0 0 60px rgba(199,167,108,.14)}
+.badge{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--gold);color:#08080A;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 14px;border-radius:20px}
+.price-card .name{font-family:var(--font-mono);font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft)}
+.price-card .amt{font-family:var(--font-display);font-size:44px;font-weight:600;margin:10px 0 2px}
+.price-card .amt small{font-size:16px;color:var(--ink-muted);font-weight:400}
+.price-card .save{color:var(--success);font-size:14px;font-weight:600;margin-bottom:16px}
+.price-card ul{list-style:none;margin:14px 0 24px;display:flex;flex-direction:column;gap:10px}
+.price-card li{font-size:15px;color:var(--ink-soft);padding-left:24px;position:relative}
+.price-card li::before{content:"✓";position:absolute;left:0;color:var(--gold);font-weight:700}
+.price-card .btn{margin-top:auto}
+.sub-link{text-align:center;margin-top:24px;font-size:14px;color:var(--ink-muted)}
+.sub-link a{color:var(--gold);border-bottom:1px solid var(--gold-dim)}
+
+/* FAQ */
+.faq{max-width:680px;margin:0 auto}
+.faq details{border-bottom:1px solid var(--border-soft);padding:20px 0}
+.faq summary{font-weight:600;font-size:17px;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:"+";color:var(--gold);font-size:22px}
+.faq details[open] summary::after{content:"–"}
+.faq p{color:var(--ink-muted);margin-top:12px;font-size:15px;line-height:1.6}
+
+/* Final CTA */
+.final{text-align:center;background:linear-gradient(180deg,var(--bg),var(--bg-soft));padding:80px 0}
+.final h2{font-family:var(--font-display);font-weight:600;font-size:clamp(28px,4.5vw,44px);letter-spacing:-.02em;max-width:16ch;margin:0 auto}
+.final p{color:var(--ink-soft);margin:16px auto 28px;max-width:40ch}
+
+footer{border-top:1px solid var(--border-soft);padding:32px 0;text-align:center;color:var(--ink-dim);font-size:13px}
+
+@media (max-width:720px){
+  .trust-grid{padding:20px 0}
+  .steps{grid-template-columns:1fr}
+  .pricing{grid-template-columns:1fr}
+  .hero{padding:40px 0 32px}
+  section.block{padding:48px 0}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <div class="logo">Estate<span>Motion</span></div>
+    <a href="#start" class="btn btn-ghost" style="padding:10px 18px;font-size:14px" onclick="trackLead()">Start free</a>
+  </div>
+</header>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="wrap">
+    <div class="eyebrow">For real estate agents</div>
+    <h1>Your listing photos, a cinematic video in <span class="gold">3 minutes</span>.</h1>
+    <p class="sub">Upload the photos you already have. EstateMotion directs the motion, music, and pacing — and hands you a scroll-stopping listing video. Your first one is free.</p>
+
+    <!-- Real product output. Swap src to your hosted before/after clip
+         (host on Supabase Storage or your CDN; the file is in
+         marketing/ad-creatives/before-after-real-output.mp4). -->
+    <div class="video-frame">
+      <video src="REPLACE_WITH_HOSTED_VIDEO_URL.mp4" autoplay muted loop playsinline poster="REPLACE_WITH_POSTER.jpg"></video>
+    </div>
+
+    <div class="cta-row" id="start">
+      <a href="https://estatemotion.ai/app/?ref=ad&offer=free" class="btn btn-primary btn-lg" onclick="trackLead()">Get my first video free →</a>
+      <span class="microcopy">No credit card · 1 free video · ready in 3 min</span>
+    </div>
+  </div>
+</section>
+
+<!-- TRUST STRIP -->
+<div class="trust">
+  <div class="wrap trust-grid">
+    <div class="trust-item"><div class="n">3 min</div><div class="l">From upload to finished video</div></div>
+    <div class="trust-item"><div class="n">MLS-safe</div><div class="l">Fidelity guardrails on every scene</div></div>
+    <div class="trust-item"><div class="n">$100</div><div class="l">Per video after your free one</div></div>
+  </div>
+</div>
+
+<!-- HOW IT WORKS -->
+<section class="block">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">How it works</div>
+      <h2>Three taps. No editing.</h2>
+    </div>
+    <div class="steps">
+      <div class="step"><div class="num">01</div><h3>Upload your photos</h3><p>Drop in the 8–24 listing photos you already shot. Drag to set the tour order, or let us order it.</p></div>
+      <div class="step"><div class="num">02</div><h3>Pick a style</h3><p>Cinematic Luxury, Modern Social, MLS Clean, or Investor Tour. Each has its own grade, motion, and music.</p></div>
+      <div class="step"><div class="num">03</div><h3>Review &amp; publish</h3><p>You see every scene before it goes live. Anything off? Regenerate it free. Then download for Reels, TikTok, and Shorts.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section class="block" style="background:var(--bg-soft)">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="eyebrow">Simple pricing</div>
+      <h2>First video free. Then pay per listing.</h2>
+      <p>No subscription required. Buy videos when you list — most agents bill it to the seller as marketing.</p>
+    </div>
+    <div class="pricing">
+      <div class="price-card">
+        <div class="name">Single video</div>
+        <div class="amt">$100<small> / video</small></div>
+        <div class="save" style="visibility:hidden">placeholder</div>
+        <ul>
+          <li>One cinematic listing video</li>
+          <li>All social formats (9:16, 1:1, 16:9)</li>
+          <li>Free scene regeneration</li>
+          <li>Branded outro with your details</li>
+        </ul>
+        <a href="https://estatemotion.ai/app/?ref=ad&offer=single" class="btn btn-ghost btn-block" onclick="trackLead()">Start free, then $100</a>
+      </div>
+      <div class="price-card featured">
+        <div class="badge">Best value</div>
+        <div class="name">5-video pack</div>
+        <div class="amt">$375<small> / 5 videos</small></div>
+        <div class="save">Save $125 — $75 per video</div>
+        <ul>
+          <li>Five cinematic listing videos</li>
+          <li>Credits never expire</li>
+          <li>Everything in single, plus</li>
+          <li>Priority rendering queue</li>
+        </ul>
+        <a href="https://estatemotion.ai/app/?ref=ad&offer=pack5" class="btn btn-primary btn-block" onclick="trackLead()">Get the 5-pack →</a>
+      </div>
+    </div>
+    <div class="sub-link">Listing every week? <a href="https://estatemotion.ai/app/?ref=ad&offer=sub">See monthly plans →</a></div>
+  </div>
+</section>
+
+<!-- FAQ — leads with the real objection -->
+<section class="block">
+  <div class="wrap">
+    <div class="section-head"><div class="eyebrow">Questions</div><h2>The honest answers</h2></div>
+    <div class="faq">
+      <details open>
+        <summary>What if a scene looks wrong?</summary>
+        <p>AI video isn't perfect — occasionally a scene needs a redo. That's why you review every scene before publishing, and regenerating any scene is free. Nothing goes out that you haven't approved. Risky rooms like kitchens and baths are rendered conservatively by design to keep them true to the photo.</p>
+      </details>
+      <details>
+        <summary>Is it really my photos, or AI-invented rooms?</summary>
+        <p>Your photos. EstateMotion animates the actual images you upload — it doesn't invent rooms or features. Fidelity guardrails keep fixtures, counters, and finishes true to what you shot.</p>
+      </details>
+      <details>
+        <summary>Do I need any editing skill?</summary>
+        <p>None. Upload, pick a style, review. The whole thing takes about three minutes and you get a finished, ready-to-post video.</p>
+      </details>
+      <details>
+        <summary>What does the free video include?</summary>
+        <p>A complete cinematic listing video from your photos — full length, your branding, all social formats. No credit card to try it.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- FINAL CTA -->
+<section class="final">
+  <div class="wrap">
+    <h2>See your next listing as a cinematic video.</h2>
+    <p>Free to try. Three minutes. Built for agents who'd rather be selling than editing.</p>
+    <a href="https://estatemotion.ai/app/?ref=ad&offer=free" class="btn btn-primary btn-lg" onclick="trackLead()">Get my first video free →</a>
+    <div class="microcopy" style="margin-top:12px;color:var(--ink-muted)">No credit card required</div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">EstateMotion · Cinematic listing videos for real estate agents · <a href="https://estatemotion.ai" class="gold">estatemotion.ai</a></div>
+</footer>
+
+</body>
+</html>
