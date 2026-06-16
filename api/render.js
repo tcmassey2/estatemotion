@@ -189,7 +189,11 @@ export default async function handler(request, response) {
     // must NOT block the render.
     if (workerResponse.ok && tierGuard.userId) {
       const credits = renderCreditsFor(manifest);
-      bumpUsage(tierGuard.userId, credits).catch((err) => {
+      // v26.7: pass the jobId so the usage ledger (migration 15) can record
+      // exactly what this render consumed — the refund path reverses it by
+      // jobId. Without the jobId the ledger can't match a later refund.
+      const jobId = (payload && payload.jobId) || "";
+      bumpUsage(tierGuard.userId, credits, jobId).catch((err) => {
         console.warn("[render] usage increment failed:", err.message || err);
       });
     }
@@ -383,7 +387,15 @@ async function enforceTierGuard(request, manifest) {
 
   const requestedEngine = String(manifest.engine || "remotion").toLowerCase();
   const available = Array.isArray(state.available_engines) ? state.available_engines : ["remotion"];
-  if (!available.includes(requestedEngine)) {
+  // v26.7: veo and runway are the same entitlement (the worker upgrades
+  // runway→veo). Treat them as interchangeable so a tier that grants either
+  // grants both — this also makes the deploy robust if tier_plans hasn't
+  // been migrated to list 'veo' yet (otherwise every AI render would 402).
+  const AI_ENGINES = new Set(["veo", "runway"]);
+  const entitled =
+    available.includes(requestedEngine) ||
+    (AI_ENGINES.has(requestedEngine) && available.some((e) => AI_ENGINES.has(String(e).toLowerCase())));
+  if (!entitled) {
     // Engine label for the error message — name the actual engine the
     // user asked for instead of hard-coding 'Cinematic AI'. Previously
     // every entitlement failure said 'Cinematic AI requires...' even
@@ -457,7 +469,7 @@ function renderCreditsFor(manifest) {
 // for every tier, and also advances trial_renders_used on trial accounts.
 // Service role required because the function updates quota fields RLS
 // blocks for normal users.
-async function bumpUsage(userId, credits = 1) {
+async function bumpUsage(userId, credits = 1, jobId = "") {
   const supabaseUrl = process.env.SUPABASE_URL || "";
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
   if (!supabaseUrl || !serviceKey || !userId) return;
@@ -468,7 +480,7 @@ async function bumpUsage(userId, credits = 1) {
       Authorization: `Bearer ${serviceKey}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ p_user_id: userId, p_credits: credits })
+    body: JSON.stringify({ p_user_id: userId, p_credits: credits, p_job_id: jobId || null })
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");

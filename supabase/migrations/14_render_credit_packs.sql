@@ -36,13 +36,13 @@ create or replace function public.grant_render_credits(
 returns boolean
 language plpgsql security definer set search_path = public
 as $$
-declare v_inserted boolean;
+declare v_rows integer := 0;
 begin
   insert into public.credit_grants (stripe_session_id, user_id, credits)
   values (p_session_id, p_user_id, p_credits)
   on conflict (stripe_session_id) do nothing;
-  get diagnostics v_inserted = row_count;
-  if not v_inserted then return false; end if; -- already granted
+  get diagnostics v_rows = row_count;
+  if v_rows = 0 then return false; end if; -- already granted
 
   update public.profiles
   set render_credits = coalesce(render_credits, 0) + greatest(p_credits, 0)
