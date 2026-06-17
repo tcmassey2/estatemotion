@@ -199,7 +199,7 @@ export default function DashboardScreen() {
                 <div className="font-mono text-[11px] text-gold mb-2">03</div>
                 <h3 className="text-sm font-semibold mb-1.5 tracking-tightish">Hit Generate</h3>
                 <p className="text-xs text-ink-muted leading-relaxed">
-                  Quick Reel finishes in under 90 seconds. Cinematic AI in three to five minutes.
+                  Your cinematic video is ready in about three minutes. Review every scene, then download.
                 </p>
               </div>
             </div>

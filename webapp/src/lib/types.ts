@@ -205,6 +205,9 @@ export interface UserProfile {
   trial_renders_used: number;
   trial_render_cap: number;
   current_period_end: string | null;  // ISO timestamp for paid users' billing cycle
+  // v26.6 pay-per-video: purchased credit balance (migration 14/15). A user
+  // can have 0 subscription quota but bought credits — they can still render.
+  render_credits?: number;
 }
 
 /* ============================================================

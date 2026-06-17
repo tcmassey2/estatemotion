@@ -146,7 +146,7 @@ export default function SettingsScreen() {
       <div className="flex items-center justify-between mb-10">
         <div>
           <p className="text-xs uppercase tracking-wider text-gold mb-2 font-mono">Settings</p>
-          <h1 className="text-3xl sm:text-4xl font-semibold tracking-tighter2">Account &amp; billing</h1>
+          <h1 className="font-display text-3xl sm:text-4xl font-semibold tracking-tighter2">Account &amp; billing</h1>
         </div>
         <button
           onClick={() => goToScreen("dashboard")}

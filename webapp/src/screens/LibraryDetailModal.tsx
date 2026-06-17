@@ -116,7 +116,7 @@ export default function LibraryDetailModal({
             <p className="text-[10px] uppercase tracking-widest text-gold font-mono mb-1.5">
               {labelText} · {dateLabel}
             </p>
-            <h2 className="text-2xl sm:text-3xl font-semibold tracking-tighter2 truncate">
+            <h2 className="font-display text-2xl sm:text-3xl font-semibold tracking-tighter2 truncate">
               {heading}
             </h2>
             {entry.listingCity && (

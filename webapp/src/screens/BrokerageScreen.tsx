@@ -73,7 +73,7 @@ function CreateOrganizationCard() {
     <div className="max-w-2xl mx-auto px-6 py-12">
       <div className="text-center mb-8">
         <p className="text-xs uppercase tracking-wider text-gold mb-2 font-mono">Brokerage</p>
-        <h1 className="text-3xl sm:text-4xl font-semibold tracking-tighter2 mb-3">
+        <h1 className="font-display text-3xl sm:text-4xl font-semibold tracking-tighter2 mb-3">
           Run your brokerage from here.
         </h1>
         <p className="text-sm text-ink-muted max-w-lg mx-auto leading-relaxed">
@@ -151,7 +151,7 @@ function BrokerageHeader() {
         <p className="text-xs uppercase tracking-wider text-gold mb-2 font-mono">
           {tierLabel[organization.tier] || "Brokerage"}
         </p>
-        <h1 className="text-3xl sm:text-4xl font-semibold tracking-tighter2">{organization.name}</h1>
+        <h1 className="font-display text-3xl sm:text-4xl font-semibold tracking-tighter2">{organization.name}</h1>
         <p className="text-sm text-ink-muted mt-1.5">
           {[
             organization.state,

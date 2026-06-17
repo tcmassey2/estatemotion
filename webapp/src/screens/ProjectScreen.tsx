@@ -51,7 +51,7 @@ export default function ProjectScreen() {
           value={projectTitle}
           onChange={(e) => setProjectTitle(e.target.value)}
           placeholder="Untitled listing"
-          className="bg-transparent border-0 outline-none text-3xl sm:text-4xl font-semibold tracking-tighter2 text-ink placeholder:text-ink-dim w-full"
+          className="bg-transparent border-0 outline-none font-display text-3xl sm:text-4xl font-semibold tracking-tighter2 text-ink placeholder:text-ink-dim w-full"
         />
         <p className="text-sm text-ink-muted leading-relaxed">
           Tell us about the listing, drop in your photos, pick a style — your cinematic video is ready in about 3 minutes.
@@ -2880,7 +2880,7 @@ function ActiveRenderPanel() {
               >
                 2
               </span>
-              <span className="text-2xl sm:text-3xl font-semibold text-gold-dim leading-none">%</span>
+              <span className="font-display text-2xl sm:text-3xl font-semibold text-gold-dim leading-none">%</span>
             </div>
             {eta && (
               <div className="text-[11px] text-ink-muted mt-2 font-mono uppercase tracking-wider">

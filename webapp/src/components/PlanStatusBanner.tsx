@@ -62,17 +62,36 @@ export default function PlanStatusBanner({ onUpgrade }: { onUpgrade?: () => void
   if (!usage) return null;
 
   const isTrial = usage.tier === "trial";
-  const trialEndsAt = usage.trial_ends_at ? new Date(usage.trial_ends_at) : null;
+  const credits = usage.render_credits ?? 0;
   const now = new Date();
+  const trialEndsAt = usage.trial_ends_at ? new Date(usage.trial_ends_at) : null;
   const daysLeft = trialEndsAt
     ? Math.max(0, Math.ceil((trialEndsAt.getTime() - now.getTime()) / 86_400_000))
     : 0;
   const rendersLeft = Math.max(
     0,
-    (usage.trial_render_cap ?? 3) - (usage.trial_renders_used ?? 0)
+    (usage.trial_render_cap ?? 1) - (usage.trial_renders_used ?? 0)
   );
-  const trialExpired = isTrial && (!usage.can_render || daysLeft === 0 || rendersLeft === 0);
   const tierLabel = TIER_LABELS[usage.tier] || usage.tier;
+
+  // v26.6: pay-per-video. If the user holds purchased credits, that's the
+  // truth regardless of trial state — show a credits banner, not "trial over."
+  if (credits > 0) {
+    return (
+      <div className="rounded-xl border border-edge bg-surface p-4 sm:p-5 mb-6 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-5">
+        <div className="flex-1 min-w-0">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-gold mb-1.5">Video credits</div>
+          <div className="text-base sm:text-lg font-semibold tracking-tightish">
+            {credits} {credits === 1 ? "video credit" : "video credits"} ready
+          </div>
+          <div className="text-xs text-ink-muted mt-0.5">Credits never expire. A 60-second video uses 2.</div>
+        </div>
+        <UpgradeButton onUpgrade={onUpgrade} label="Buy more" primary={false} />
+      </div>
+    );
+  }
+
+  const trialExpired = isTrial && (!usage.can_render || daysLeft === 0 || rendersLeft === 0);
 
   if (isTrial && trialExpired) {
     return (
@@ -82,13 +101,13 @@ export default function PlanStatusBanner({ onUpgrade }: { onUpgrade?: () => void
             Trial complete
           </div>
           <div className="text-base sm:text-lg font-semibold tracking-tightish">
-            Your free trial wrapped — pick a plan to keep rendering.
+            You've used your free video — buy videos to keep rendering.
           </div>
           <div className="text-xs text-ink-muted mt-0.5">
-            {usage.reason || "Upgrade unlocks higher quotas and the Cinematic AI engine."}
+            {usage.reason || "$100 per video, or save with a pack. Credits never expire."}
           </div>
         </div>
-        <UpgradeButton onUpgrade={onUpgrade} primary />
+        <UpgradeButton onUpgrade={onUpgrade} label="Buy videos" primary />
       </div>
     );
   }
@@ -112,16 +131,16 @@ export default function PlanStatusBanner({ onUpgrade }: { onUpgrade?: () => void
             <span>{daysLeft} {daysLeft === 1 ? "day" : "days"} left</span>
             <span className="text-ink-dim">·</span>
             <span>
-              {rendersLeft} of {usage.trial_render_cap ?? 3} {rendersLeft === 1 ? "render" : "renders"} left
+              {rendersLeft} of {usage.trial_render_cap ?? 1} free {rendersLeft === 1 ? "video" : "videos"} left
             </span>
           </div>
           <div className="text-xs text-ink-muted mt-1">
             {lowOnEither
-              ? "Lock in a plan now so you don't lose the momentum on your next listing."
-              : "Render as much as you want during the trial. Upgrade anytime to unlock Cinematic AI."}
+              ? "Buy videos any time — $100 each, or less in a pack. Credits never expire."
+              : "Your first video's on us. After that it's $100 per video, no subscription."}
           </div>
         </div>
-        <UpgradeButton onUpgrade={onUpgrade} primary={lowOnEither} />
+        <UpgradeButton onUpgrade={onUpgrade} label="Buy videos" primary={lowOnEither} />
       </div>
     );
   }
@@ -192,7 +211,7 @@ function UpgradeButton({
           : "bg-surface-input border border-edge hover:border-gold text-ink hover:text-gold")
       }
     >
-      {label || "View plans"}
+      {label || "Buy videos"}
     </button>
   );
 }

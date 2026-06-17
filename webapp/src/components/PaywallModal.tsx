@@ -151,9 +151,9 @@ export default function PaywallModal({ open, onClose, reason }: PaywallModalProp
                   </span>
                 )}
                 <div className="text-sm font-semibold tracking-tightish text-ink">{pack.name}</div>
-                <div className="text-3xl font-bold tracking-tight text-ink">
+                <div className="font-display text-4xl font-semibold tracking-tighter2 text-ink">
                   {pack.price}
-                  <span className="text-sm font-medium text-ink-muted ml-1">/ {pack.unit}</span>
+                  <span className="font-sans text-sm font-medium text-ink-muted ml-1">/ {pack.unit}</span>
                 </div>
                 {pack.save
                   ? <div className="text-xs font-semibold text-emerald-400 -mt-1">{pack.save}</div>
