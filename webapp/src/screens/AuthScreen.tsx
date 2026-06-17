@@ -180,7 +180,7 @@ export default function AuthScreen() {
     : mode === "totp"   ? "Two-factor required."
     : "Set a new password.";
   const subhead =
-    mode === "signup" ? "Free 7-day trial · 3 videos · No credit card."
+    mode === "signup" ? "Your first video is free. No credit card."
     : mode === "signin" ? "Pick up where you left off."
     : mode === "forgot" ? "We'll email you a secure link to set a new one."
     : mode === "totp"   ? "Enter the 6-digit code from your authenticator app."
@@ -195,21 +195,32 @@ export default function AuthScreen() {
   const showPassword = mode !== "forgot" && mode !== "totp";
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <header className="px-6 py-5">
-        <a href="/" className="inline-flex items-center gap-2 text-ink hover:text-gold-light transition-colors">
-          <span className="grid place-items-center w-7 h-7 rounded-md bg-gradient-to-br from-gold-light to-gold-dim text-paper font-bold italic">
+    <div className="min-h-screen flex flex-col relative">
+      {/* v2 revamp: ambient filmic glow so auth feels like entering a studio,
+          not a plain form. Matches the marketing landing's backdrop. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0"
+        style={{
+          background:
+            "radial-gradient(900px 480px at 70% -8%, rgba(199,167,108,0.10), transparent 60%), radial-gradient(700px 400px at 0% 105%, rgba(199,167,108,0.05), transparent 55%)"
+        }}
+      />
+      <header className="px-6 py-5 relative">
+        <a href="/" className="inline-flex items-center gap-2.5 text-ink hover:text-gold-light transition-colors">
+          <span className="grid place-items-center w-8 h-8 rounded-lg bg-gradient-to-br from-gold-light to-gold-dim text-paper font-display font-semibold italic">
             E
           </span>
-          <span className="font-semibold tracking-tightish">EstateMotion</span>
+          <span className="font-display text-lg font-semibold tracking-tightish">EstateMotion</span>
         </a>
       </header>
 
-      <div className="flex-1 grid place-items-center px-6 pb-16">
+      <div className="flex-1 grid place-items-center px-6 pb-16 relative">
         <div className="w-full max-w-md">
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-semibold tracking-tighter2">{heading}</h1>
-            <p className="text-ink-muted text-sm mt-2">{subhead}</p>
+            <div className="font-mono text-[11px] uppercase tracking-[0.22em] text-gold mb-3">EstateMotion</div>
+            <h1 className="font-display text-4xl sm:text-[2.75rem] leading-[1.05] font-semibold tracking-tighter2">{heading}</h1>
+            <p className="text-ink-soft text-[15px] mt-3">{subhead}</p>
           </div>
 
           <div className="bg-surface border border-edge rounded-2xl p-6 sm:p-8">

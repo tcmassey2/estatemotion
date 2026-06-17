@@ -34,7 +34,11 @@ export default {
       },
       fontFamily: {
         sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
-        mono: ["JetBrains Mono", "ui-monospace", "monospace"]
+        mono: ["JetBrains Mono", "ui-monospace", "monospace"],
+        // v2 revamp: cinematic display serif for headline moments (auth, the
+        // finished-video reveal, render progress) — mirrors the marketing
+        // site so app + landing read as one product.
+        display: ["Fraunces", "Georgia", "serif"]
       },
       letterSpacing: {
         tightish: "-0.015em",
