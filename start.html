@@ -161,6 +161,37 @@ section.block{padding:88px 0}
 footer{border-top:1px solid var(--edge);padding:38px 0;text-align:center;color:var(--ink-dim);font-size:13px}
 footer .logo{justify-content:center;font-size:18px;margin-bottom:10px;opacity:.8}
 
+/* ============================================================
+   v2.1 motion layer — high-performance micro-interactions.
+   All transform/opacity only (GPU-composited, 60fps). Guarded by
+   prefers-reduced-motion + pointer:fine in JS so touch/keyboard and
+   motion-sensitive users get a calm, static experience.
+   ============================================================ */
+/* Scroll progress accent bar */
+.scrollbar{position:fixed;top:0;left:0;height:2px;width:100%;transform:scaleX(0);transform-origin:0 50%;
+  background:linear-gradient(90deg,var(--gold-deep),var(--gold-light));z-index:60;will-change:transform}
+/* 3D parallax tilt */
+.tilt{transform-style:preserve-3d;transition:transform .4s var(--ease)}
+.tilt.armed{transition:transform .08s linear}
+.tilt-inner{transform:translateZ(40px)}
+/* Magnetic button */
+.magnetic{will-change:transform}
+/* Button click ripple / micro-reward */
+.btn{position:relative;overflow:hidden}
+.ripple{position:absolute;border-radius:50%;background:rgba(255,255,255,.35);transform:translate(-50%,-50%) scale(0);pointer-events:none;animation:ripple .55s var(--ease) forwards}
+@keyframes ripple{to{transform:translate(-50%,-50%) scale(1);opacity:0}}
+/* Card sheen on hover */
+.pcard{transition:transform .35s var(--ease),border-color .35s var(--ease),box-shadow .35s var(--ease)}
+.pcard:hover{transform:translateY(-6px)}
+.step{transition:transform .35s var(--ease),border-color .35s var(--ease)}
+.step:hover{transform:translateY(-4px);border-color:var(--edge-strong)}
+@media (prefers-reduced-motion:reduce){
+  .scrollbar{display:none}
+  .tilt,.tilt-inner,.magnetic{transform:none!important;transition:none!important}
+  .pcard:hover,.step:hover{transform:none}
+  .ripple{display:none}
+}
+
 @media (max-width:880px){
   .hero{grid-template-columns:1fr;gap:40px;padding:56px 0 48px;text-align:center}
   .hero .sub{margin-left:auto;margin-right:auto}
@@ -339,15 +370,97 @@ footer .logo{justify-content:center;font-size:18px;margin-bottom:10px;opacity:.8
   </div>
 </footer>
 
+<div class="scrollbar" id="scrollbar" aria-hidden="true"></div>
+
 <script>
-  // Reveal-on-scroll (respects reduced-motion via CSS).
-  const io = new IntersectionObserver((entries) => {
-    entries.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+(function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var finePointer = window.matchMedia('(pointer: fine)').matches;
+
+  /* 1. Reveal-on-scroll — always on (CSS handles reduced-motion). */
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
   }, { threshold: 0.12 });
-  document.querySelectorAll('.reveal').forEach((el, i) => {
+  document.querySelectorAll('.reveal').forEach(function (el, i) {
     el.style.transitionDelay = (Math.min(i % 4, 3) * 60) + 'ms';
     io.observe(el);
   });
+
+  /* 2. Scroll progress accent bar — rAF-throttled, transform only. */
+  var bar = document.getElementById('scrollbar');
+  if (bar && !reduce) {
+    var ticking = false;
+    var onScroll = function () {
+      if (ticking) return; ticking = true;
+      requestAnimationFrame(function () {
+        var h = document.documentElement.scrollHeight - window.innerHeight;
+        var p = h > 0 ? window.scrollY / h : 0;
+        bar.style.transform = 'scaleX(' + p.toFixed(4) + ')';
+        ticking = false;
+      });
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+  }
+
+  /* Motion below only for fine pointers + motion-OK users. */
+  if (reduce || !finePointer) return;
+
+  /* 3. 3D parallax tilt on cards (mouse-coordinate based). */
+  var MAX = 7; // degrees
+  document.querySelectorAll('.pcard, .step').forEach(function (card) {
+    var parent = card.parentElement;
+    if (parent) parent.style.perspective = '1000px';
+    var raf = null;
+    card.addEventListener('pointerenter', function () { card.classList.add('armed'); });
+    card.addEventListener('pointermove', function (ev) {
+      if (raf) return;
+      raf = requestAnimationFrame(function () {
+        var r = card.getBoundingClientRect();
+        var px = (ev.clientX - r.left) / r.width - 0.5;
+        var py = (ev.clientY - r.top) / r.height - 0.5;
+        card.style.transform = 'rotateY(' + (px * MAX).toFixed(2) + 'deg) rotateX(' + (-py * MAX).toFixed(2) + 'deg) translateY(-6px)';
+        raf = null;
+      });
+    });
+    card.addEventListener('pointerleave', function () {
+      card.classList.remove('armed');
+      card.style.transform = '';
+    });
+  });
+
+  /* 4. Magnetic primary CTAs — gently pull toward the cursor when near. */
+  document.querySelectorAll('.btn-primary').forEach(function (btn) {
+    btn.classList.add('magnetic');
+    var raf = null;
+    btn.addEventListener('pointermove', function (ev) {
+      if (raf) return;
+      raf = requestAnimationFrame(function () {
+        var r = btn.getBoundingClientRect();
+        var x = ev.clientX - (r.left + r.width / 2);
+        var y = ev.clientY - (r.top + r.height / 2);
+        btn.style.transform = 'translate(' + (x * 0.18).toFixed(1) + 'px,' + (y * 0.28).toFixed(1) + 'px)';
+        raf = null;
+      });
+    });
+    btn.addEventListener('pointerleave', function () { btn.style.transform = ''; });
+  });
+
+  /* 5. Click micro-reward — ripple from the click point on every button. */
+  document.querySelectorAll('.btn').forEach(function (btn) {
+    btn.addEventListener('pointerdown', function (ev) {
+      var r = btn.getBoundingClientRect();
+      var d = Math.max(r.width, r.height) * 1.4;
+      var s = document.createElement('span');
+      s.className = 'ripple';
+      s.style.width = s.style.height = d + 'px';
+      s.style.left = (ev.clientX - r.left) + 'px';
+      s.style.top = (ev.clientY - r.top) + 'px';
+      btn.appendChild(s);
+      setTimeout(function () { s.remove(); }, 600);
+    });
+  });
+})();
 </script>
 </body>
 </html>

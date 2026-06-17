@@ -194,6 +194,10 @@ export default function AuthScreen() {
   const showEmail = mode !== "reset" && mode !== "totp";
   const showPassword = mode !== "forgot" && mode !== "totp";
 
+  // v2.1 dynamic input feedback: green glow when a field is validly filled.
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  const passwordValid = password.length >= 8;
+
   return (
     <div className="min-h-screen flex flex-col relative">
       {/* v2 revamp: ambient filmic glow so auth feels like entering a studio,
@@ -262,7 +266,7 @@ export default function AuthScreen() {
                     spellCheck={false}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="h-11 px-3.5 bg-surface-input border border-edge rounded-lg text-ink placeholder:text-ink-dim focus:outline-none focus:border-gold focus:ring-2 focus:ring-gold/15 transition-colors"
+                    className={`h-11 px-3.5 bg-surface-input border border-edge rounded-lg text-ink placeholder:text-ink-dim focus:outline-none focus:border-gold focus:ring-2 focus:ring-gold/15 transition-all ${emailValid ? "input-valid" : ""}`}
                     placeholder="agent@example.com"
                   />
                 </label>
@@ -293,7 +297,7 @@ export default function AuthScreen() {
                     autoComplete={mode === "signup" || mode === "reset" ? "new-password" : "current-password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="h-11 px-3.5 bg-surface-input border border-edge rounded-lg text-ink placeholder:text-ink-dim focus:outline-none focus:border-gold focus:ring-2 focus:ring-gold/15 transition-colors"
+                    className={`h-11 px-3.5 bg-surface-input border border-edge rounded-lg text-ink placeholder:text-ink-dim focus:outline-none focus:border-gold focus:ring-2 focus:ring-gold/15 transition-all ${passwordValid && (mode === "signup" || mode === "reset") ? "input-valid" : ""}`}
                     placeholder={mode === "signup" || mode === "reset" ? "At least 8 characters" : "Your password"}
                   />
                 </label>
@@ -337,7 +341,7 @@ export default function AuthScreen() {
               )}
 
               {error && (
-                <div className="px-3 py-2.5 rounded-lg border border-red-500/30 bg-red-500/10 text-sm text-red-300">
+                <div key={error} className="shake px-3 py-2.5 rounded-lg border border-red-500/30 bg-red-500/10 text-sm text-red-300">
                   {error}
                 </div>
               )}

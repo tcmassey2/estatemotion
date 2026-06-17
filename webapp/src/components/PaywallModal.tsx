@@ -114,7 +114,7 @@ export default function PaywallModal({ open, onClose, reason }: PaywallModalProp
         role="dialog"
         aria-modal="true"
         aria-label="Buy a video"
-        className="relative w-full max-w-3xl bg-surface rounded-2xl border border-edge shadow-2xl my-6"
+        className="spring-in relative w-full max-w-3xl bg-surface rounded-2xl border border-edge shadow-2xl my-6"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between px-6 sm:px-8 py-5 border-b border-edge-soft">
