@@ -8,6 +8,7 @@ import { cn } from "../lib/cn";
 import { resolveTrack } from "../lib/music-catalog";
 import { isAiVideoEngine } from "../lib/engine-labels";
 import MusicSelector from "../components/MusicSelector";
+import { fireConfetti } from "../lib/confetti";
 import PaywallModal from "../components/PaywallModal";
 
 const STYLES: Array<{
@@ -2506,6 +2507,18 @@ function RenderControls() {
    ============================================================ */
 function RenderStatusPanel() {
   const renderJob = useStore((s) => s.renderJob);
+
+  // v2.1: one-time confetti reward when a render lands successfully. Keyed on
+  // jobId so it fires once per finished video, not on every re-render.
+  const celebratedRef = useRef<string>("");
+  const doneJobId = renderJob?.status === "completed" && renderJob.mp4Url ? renderJob.jobId : "";
+  useEffect(() => {
+    if (doneJobId && celebratedRef.current !== doneJobId) {
+      celebratedRef.current = doneJobId;
+      fireConfetti(0.5, 0.28);
+    }
+  }, [doneJobId]);
+
   if (!renderJob) return null;
 
   // Render completed but no master MP4 URL — almost always a Supabase

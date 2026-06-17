@@ -185,8 +185,39 @@ footer .logo{justify-content:center;font-size:18px;margin-bottom:10px;opacity:.8
 .pcard:hover{transform:translateY(-6px)}
 .step{transition:transform .35s var(--ease),border-color .35s var(--ease)}
 .step:hover{transform:translateY(-4px);border-color:var(--edge-strong)}
+/* Magnetic custom cursor (fine pointers only; JS adds .has-cursor to body) */
+.has-cursor{cursor:none}
+.has-cursor a,.has-cursor button,.has-cursor summary,.has-cursor .pcard{cursor:none}
+.cursor-dot,.cursor-ring{position:fixed;top:0;left:0;pointer-events:none;z-index:9999;border-radius:50%;will-change:transform;opacity:0}
+.cursor-dot{width:6px;height:6px;margin:-3px 0 0 -3px;background:var(--gold-light)}
+.cursor-ring{width:32px;height:32px;margin:-16px 0 0 -16px;border:1px solid rgba(199,167,108,.55);
+  transition:width .22s var(--ease),height .22s var(--ease),margin .22s var(--ease),background .22s var(--ease),border-color .22s var(--ease)}
+.cursor-ring.snap{width:56px;height:56px;margin:-28px 0 0 -28px;background:rgba(199,167,108,.12);border-color:var(--gold-light)}
+
+/* Horizontal scroll gallery */
+.hgallery{height:420vh;position:relative}
+.hsticky{position:sticky;top:0;height:100vh;overflow:hidden;display:flex;align-items:center}
+.htrack{display:flex;gap:28px;padding:0 max(24px,calc((100vw - 1120px)/2 + 24px));will-change:transform}
+.hpanel{flex:0 0 auto;width:min(420px,78vw);display:flex;flex-direction:column;justify-content:center}
+.hpanel h2{font-family:var(--font-display);font-weight:600;font-size:clamp(34px,5vw,56px);letter-spacing:-.025em;line-height:1.02;margin:14px 0}
+.hpanel h2 em{font-style:italic;color:var(--gold-light)}
+.hpanel p{color:var(--ink-muted);font-family:var(--font-mono);font-size:13px}
+.hcard{flex:0 0 auto;width:min(420px,82vw);height:62vh;border-radius:24px;border:1px solid var(--edge);overflow:hidden;
+  background:linear-gradient(155deg,var(--c1),var(--c2));display:flex;flex-direction:column;justify-content:flex-end;position:relative}
+.hcard-tag{position:absolute;top:20px;left:22px;font-family:var(--font-mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold)}
+.hcard-body{padding:28px}
+.hcard-body h3{font-size:28px;font-weight:600;letter-spacing:-.02em;margin-bottom:8px}
+.hcard-body p{color:var(--ink-soft);font-size:15px;line-height:1.55}
+/* Touch / reduced-motion fallback: native horizontal scroll-snap, no jacking */
+.hgallery.native{height:auto}
+.hgallery.native .hsticky{position:static;height:auto;overflow-x:auto;scroll-snap-type:x mandatory;padding:32px 0;-webkit-overflow-scrolling:touch}
+.hgallery.native .htrack{transform:none!important}
+.hgallery.native .hcard,.hgallery.native .hpanel{scroll-snap-align:center;height:auto;min-height:360px}
+
 @media (prefers-reduced-motion:reduce){
   .scrollbar{display:none}
+  .cursor-dot,.cursor-ring{display:none}
+  .has-cursor,.has-cursor *{cursor:auto}
   .tilt,.tilt-inner,.magnetic{transform:none!important;transition:none!important}
   .pcard:hover,.step:hover{transform:none}
   .ripple{display:none}
@@ -277,6 +308,36 @@ footer .logo{justify-content:center;font-size:18px;margin-bottom:10px;opacity:.8
     <div class="step reveal"><div class="num">01</div><h3>Upload your photos</h3><p>Drop in 8–24 listing photos. Drag to set the tour order, or let us order it for you.</p></div>
     <div class="step reveal"><div class="num">02</div><h3>Pick a style</h3><p>Cinematic Luxury, Modern Social, MLS Clean, or Investor Tour — each with its own grade and music.</p></div>
     <div class="step reveal"><div class="num">03</div><h3>Review &amp; publish</h3><p>See every scene before it goes live. Anything off? Regenerate it free. Then post to Reels, TikTok, Shorts.</p></div>
+  </div>
+</section>
+
+<!-- HORIZONTAL STYLE GALLERY — vertical scroll locks into horizontal pan.
+     Falls back to a native scroll-snap strip on touch / reduced-motion. -->
+<section class="hgallery" id="hgallery" aria-label="Styles">
+  <div class="hsticky">
+    <div class="htrack" id="htrack">
+      <div class="hpanel hintro">
+        <div class="eyebrow">Four styles</div>
+        <h2 class="serif">One product.<br><em>Every look.</em></h2>
+        <p>Keep scrolling →</p>
+      </div>
+      <div class="hcard" style="--c1:#1d1a14;--c2:#0e0e12">
+        <div class="hcard-tag">01 · Cinematic Luxury</div>
+        <div class="hcard-body"><h3 class="serif">Cinematic Luxury</h3><p>Warm golden grade, slow deliberate moves, editorial pacing. For $1M+ listings.</p></div>
+      </div>
+      <div class="hcard" style="--c1:#13181c;--c2:#0e0e12">
+        <div class="hcard-tag">02 · Modern Social</div>
+        <div class="hcard-body"><h3 class="serif">Modern Social</h3><p>Bright, punchy, scroll-stopping energy. Built for Reels &amp; TikTok.</p></div>
+      </div>
+      <div class="hcard" style="--c1:#15140f;--c2:#0e0e12">
+        <div class="hcard-tag">03 · MLS Clean</div>
+        <div class="hcard-body"><h3 class="serif">MLS Clean</h3><p>True-to-life neutral color, no stylization. Exactly as a buyer would see it.</p></div>
+      </div>
+      <div class="hcard" style="--c1:#161616;--c2:#0e0e12">
+        <div class="hcard-tag">04 · Investor Tour</div>
+        <div class="hcard-body"><h3 class="serif">Investor Tour</h3><p>Factual, even, efficient. Clear sightlines for deal-flow agents.</p></div>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -403,10 +464,58 @@ footer .logo{justify-content:center;font-size:18px;margin-bottom:10px;opacity:.8
     onScroll();
   }
 
+  /* 3. Horizontal style gallery. On touch / reduced-motion we DON'T scroll-jack
+        (it's the jankiest pattern + bad on touch) — fall back to a native,
+        momentum-smooth scroll-snap strip. Only fine-pointer + motion-OK users
+        get the vertical→horizontal lock. */
+  var gallery = document.getElementById('hgallery');
+  var track = document.getElementById('htrack');
+  if (gallery && track && !reduce && finePointer) {
+    var gTicking = false;
+    var panGallery = function () {
+      if (gTicking) return; gTicking = true;
+      requestAnimationFrame(function () {
+        var rect = gallery.getBoundingClientRect();
+        var scrollable = gallery.offsetHeight - window.innerHeight;
+        var progress = scrollable > 0 ? Math.min(1, Math.max(0, -rect.top / scrollable)) : 0;
+        var dist = track.scrollWidth - window.innerWidth;
+        track.style.transform = 'translate3d(' + (-dist * progress).toFixed(1) + 'px,0,0)';
+        gTicking = false;
+      });
+    };
+    window.addEventListener('scroll', panGallery, { passive: true });
+    window.addEventListener('resize', panGallery, { passive: true });
+    panGallery();
+  } else if (gallery) {
+    gallery.classList.add('native'); // native scroll-snap strip
+  }
+
   /* Motion below only for fine pointers + motion-OK users. */
   if (reduce || !finePointer) return;
 
-  /* 3. 3D parallax tilt on cards (mouse-coordinate based). */
+  /* 4. Magnetic custom cursor — dot follows instantly, ring trails (lerp),
+        snaps larger over interactive elements. */
+  var dot = document.createElement('div'); dot.className = 'cursor-dot';
+  var ring = document.createElement('div'); ring.className = 'cursor-ring';
+  document.body.appendChild(dot); document.body.appendChild(ring);
+  document.body.classList.add('has-cursor');
+  var mx = window.innerWidth / 2, my = window.innerHeight / 2, rx = mx, ry = my, shown = false;
+  window.addEventListener('pointermove', function (ev) {
+    mx = ev.clientX; my = ev.clientY;
+    if (!shown) { shown = true; dot.style.opacity = ring.style.opacity = '1'; }
+    dot.style.transform = 'translate3d(' + mx + 'px,' + my + 'px,0)';
+  }, { passive: true });
+  (function ringLoop() {
+    rx += (mx - rx) * 0.18; ry += (my - ry) * 0.18;
+    ring.style.transform = 'translate3d(' + rx.toFixed(1) + 'px,' + ry.toFixed(1) + 'px,0)';
+    requestAnimationFrame(ringLoop);
+  })();
+  document.querySelectorAll('a, button, summary, .pcard, .hcard').forEach(function (el) {
+    el.addEventListener('pointerenter', function () { ring.classList.add('snap'); });
+    el.addEventListener('pointerleave', function () { ring.classList.remove('snap'); });
+  });
+
+  /* 5. 3D parallax tilt on cards (mouse-coordinate based). */
   var MAX = 7; // degrees
   document.querySelectorAll('.pcard, .step').forEach(function (card) {
     var parent = card.parentElement;

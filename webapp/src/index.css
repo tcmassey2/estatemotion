@@ -11,11 +11,22 @@
   }
 
   body {
-    background:
-      radial-gradient(ellipse 70% 40% at 50% -10%, rgba(199, 167, 108, 0.05), transparent 70%),
-      #0E0E10;
-    background-attachment: fixed;
+    /* v2.1 scroll-perf fix: a flat base color only. The ambient glow is
+       painted ONCE by a fixed, GPU-composited pseudo-layer below — never
+       repainted on scroll. background-attachment:fixed was forcing a
+       full-gradient repaint every scroll frame (the pre-revamp lag). */
+    background: #0E0E10;
     color: theme("colors.ink.DEFAULT");
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(ellipse 70% 40% at 50% -10%, rgba(199, 167, 108, 0.05), transparent 70%);
   }
 
   ::selection {
