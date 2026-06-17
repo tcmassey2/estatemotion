@@ -260,8 +260,12 @@
       <!-- Style cards are CSS-only renderings until we ship per-style demo
            reels. Each card has its own gradient + motion language so the
            cards feel distinct without leaning on stock footage. -->
-      <div class="styles-grid">
-        <div class="style-card style-card-luxury">
+      <!-- Hover-to-play style previews. Each card plays a real EstateMotion
+           clip of that style on hover (muted loop, loads only on hover). Drop
+           a hosted MP4 into data-src + a poster JPG into data-poster for each
+           card; until set, the card gracefully shows its gradient art. -->
+      <div class="styles-grid" id="styles-grid">
+        <div class="style-card style-card-luxury" data-src="" data-poster="">
           <div class="style-card-art" aria-hidden="true">
             <div class="style-card-art-grid"></div>
             <div class="style-card-art-glow"></div>
@@ -277,7 +281,7 @@
             <div class="style-card-desc">Slow camera moves, editorial tone, premium feel.</div>
           </div>
         </div>
-        <div class="style-card style-card-social">
+        <div class="style-card style-card-social" data-src="" data-poster="">
           <div class="style-card-art" aria-hidden="true">
             <div class="style-card-art-grid"></div>
             <div class="style-card-art-glow"></div>
@@ -293,7 +297,7 @@
             <div class="style-card-desc">Punchy pacing built for scroll-stop on Reels.</div>
           </div>
         </div>
-        <div class="style-card style-card-mls">
+        <div class="style-card style-card-mls" data-src="" data-poster="">
           <div class="style-card-art" aria-hidden="true">
             <div class="style-card-art-grid"></div>
             <div class="style-card-art-glow"></div>
@@ -309,7 +313,7 @@
             <div class="style-card-desc">Neutral, factual, broker-compliant.</div>
           </div>
         </div>
-        <div class="style-card style-card-investor">
+        <div class="style-card style-card-investor" data-src="" data-poster="">
           <div class="style-card-art" aria-hidden="true">
             <div class="style-card-art-grid"></div>
             <div class="style-card-art-glow"></div>
@@ -326,6 +330,40 @@
           </div>
         </div>
       </div>
+
+      <script>
+        /* Hover-to-play style previews. Lazy: the <video> is created and its
+           source loaded only on first hover (fine pointers, motion-OK). If a
+           card has no data-src yet, or the clip errors, the gradient art stays
+           — never a broken state. */
+        (function () {
+          var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+          var fine = window.matchMedia('(pointer: fine)').matches;
+          if (reduce || !fine) return;
+          document.querySelectorAll('#styles-grid .style-card').forEach(function (card) {
+            var src = card.getAttribute('data-src');
+            if (!src) return; // no clip yet — keep the gradient
+            var vid = null;
+            card.addEventListener('pointerenter', function () {
+              if (!vid) {
+                vid = document.createElement('video');
+                vid.className = 'style-card-video';
+                vid.muted = true; vid.loop = true; vid.playsInline = true; vid.preload = 'none';
+                var poster = card.getAttribute('data-poster'); if (poster) vid.poster = poster;
+                vid.src = src;
+                vid.addEventListener('error', function () { card.classList.remove('playing'); });
+                card.insertBefore(vid, card.firstChild);
+              }
+              card.classList.add('playing');
+              var pr = vid.play(); if (pr && pr.catch) pr.catch(function () {});
+            });
+            card.addEventListener('pointerleave', function () {
+              card.classList.remove('playing');
+              if (vid) { vid.pause(); vid.currentTime = 0; }
+            });
+          });
+        })();
+      </script>
     </div>
   </section>
 
