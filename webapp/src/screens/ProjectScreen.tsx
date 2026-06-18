@@ -1149,11 +1149,9 @@ function BrandKitArea({ userId }: { userId: string }) {
         </div>
       </div>
 
-      {/* Voice clone — the differentiator. Reel-e.ai ships silent reels.
-          EstateMotion narrates every video in the agent's actual voice. */}
-      <div className="pt-5 border-t border-edge-soft">
-        <VoiceCloneCard />
-      </div>
+      {/* v26.9: VoiceCloneCard moved to the Audio panel (under the narration
+          toggle) where agents look for voiceover — it was buried here in the
+          brand kit and went undiscovered. */}
     </div>
   );
 }
@@ -1949,6 +1947,22 @@ function AudioControls() {
           <div className="text-xs text-ink-muted">Plays your selected track throughout the video</div>
         </button>
       </div>
+
+      {/* v26.9: "use your own voice" surfaced HERE, under the narration toggle,
+          where agents look for it — instead of buried in the brand-kit panel.
+          Record once → every future listing narrates in your actual voice. */}
+      {narrationEnabled && (
+        <div className="p-4 rounded-lg border border-gold/30 bg-gold/[0.04]">
+          <div className="flex items-baseline justify-between mb-1">
+            <span className="text-sm font-semibold tracking-tightish">Whose voice?</span>
+            <span className="text-[10px] font-mono uppercase tracking-wider text-gold">Your voice</span>
+          </div>
+          <p className="text-[11px] text-ink-muted mb-3 leading-relaxed">
+            Use our professional narrator by default — or record once and narrate every listing in your own voice, automatically.
+          </p>
+          <VoiceCloneCard />
+        </div>
+      )}
 
       {musicEnabled && (
         <div className="p-3 rounded-lg border border-edge bg-surface-input/30">
