@@ -1459,9 +1459,16 @@ function validateRunwayManifest(manifest) {
     const imageUrl = pickImageUrl(scene, photo);
     if (!imageUrl) throw new Error(`Runway scene ${scene.photoId} missing durable image URL.`);
     if (String(imageUrl).startsWith("blob:") || String(imageUrl).startsWith("data:")) {
-      throw new Error(`Runway scene ${scene.photoId} has browser-only URL (blob:/data:). Re-upload first.`);
+      throw new Error(`Scene ${scene.photoId} has browser-only URL (blob:/data:). Re-upload first.`);
     }
-    if (!scene.runwayPrompt) throw new Error(`Runway scene ${scene.photoId} missing runwayPrompt — regenerate edit plan with engine=runway.`);
+    // v26.9: this validator runs for BOTH the veo and runway paths (the job is
+    // engine-agnostic now). The Veo per-scene generator uses veoPrompt, falls
+    // back to runwayPrompt, and finally to a constrained prompt — so a scene is
+    // valid as long as it has ANY prompt (and even none is recoverable). Only
+    // hard-require a prompt; never demand the legacy runwayPrompt specifically.
+    if (!scene.veoPrompt && !scene.veo_prompt && !scene.runwayPrompt && !scene.runway_prompt) {
+      throw new Error(`Scene ${scene.photoId} has no motion prompt — regenerate the edit plan.`);
+    }
   }
 }
 

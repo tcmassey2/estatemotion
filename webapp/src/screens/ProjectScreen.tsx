@@ -2143,7 +2143,12 @@ function RenderControls() {
         listing,
         selectedStyle: styleLabel,
         exportFormat: "vertical",
-        engine: renderEngine,
+        // v26.9 FIX: single Veo engine. The store's renderEngine still
+        // defaults to "remotion" (the toggle that set it was removed), and
+        // an edit plan generated for "remotion" carries NO motion prompts —
+        // so the Veo render then failed validation ("missing prompt"). Always
+        // request the plan as "veo" so veoPrompt is generated per scene.
+        engine: "veo",
         brandKit: branding,
         targetDurationSec
       });
