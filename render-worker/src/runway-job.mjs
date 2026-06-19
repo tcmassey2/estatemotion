@@ -448,17 +448,23 @@ export async function generateClip(scene, manifest, tempDir, sceneIndex) {
 // Room types whose constrained prompt needs special handling beyond the
 // generic locked-tripod language. Pools get a water-shimmer allowance
 // (a fully frozen pool looks like a photo, defeating the point).
+// v27 hallucination fix: the opening used to read "Locked tripod shot" — Veo
+// 3.1 rendered the word "tripod" as a literal object (a tripod, and an operator
+// to use it) into the room. Describe the camera STATE only, never equipment.
 const CONSTRAINED_PROMPTS = {
   generic:
-    "Locked tripod shot, very slow 4% push-in only. No camera drift. " +
+    "Completely static, locked-off camera. Extremely slow forward push of about 4% only, " +
+    "with no other movement and no drift. " +
     "Preserve every surface, fixture, appliance, label, and object exactly as photographed. " +
     "Nothing in the scene moves.",
   pool:
-    "Locked tripod shot, very slow 4% push-in only. No camera drift. " +
+    "Completely static, locked-off camera. Extremely slow forward push of about 4% only, " +
+    "with no other movement and no drift. " +
     "Water surface may shimmer gently, but pool shape, tile, coping, deck, and all " +
     "surroundings stay exactly as photographed. Nothing else moves.",
   exterior:
-    "Locked tripod shot, very slow 4% push-in only. No camera drift. " +
+    "Completely static, locked-off camera. Extremely slow forward push of about 4% only, " +
+    "with no other movement and no drift. " +
     "Foliage may sway very subtly in a light breeze, but the structure, roofline, windows, " +
     "and all hardscape stay exactly as photographed."
 };

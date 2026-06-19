@@ -144,7 +144,7 @@ const RUNWAY_CONSTRAINT_CLAUSE =
   "Fridges keep their doors. Walls stay put — no new partitions or panels. " +
   "DO NOT add, remove, duplicate, morph, or redesign any object, plant, person, animal, vehicle, sign, text, water, fire, or particle. " +
   "Preserve original lighting, time of day, weather, sky. " +
-  "Real estate documentary. MLS compliant.";
+  "Real estate film. MLS compliant.";
 
 // Per-room anti-hallucination clauses. Injected into the prompt only when
 // the scene's roomType matches. Gen-4 Turbo responds much better to
@@ -192,10 +192,14 @@ const RUNWAY_STYLE_PROMPTS = {
    v26.0 — Veo 3.1 Fast prompt system (Phase 2 engine swap)
 
    Veo differs from Runway in three ways that shape these prompts:
-   1. It follows explicit cinematography vocabulary (dolly, tripod,
-      gimbal) accurately instead of over-committing — the June 9
-      bake-off validated "locked tripod, slow push-in" language with
-      zero hallucination on the known failure scenes.
+   1. It follows the prompt LITERALLY — and the Jan-2026 Veo 3.1 update
+      sharpened that further. Naming camera equipment ("tripod", "dolly",
+      "slider") or a filming scenario ("documentary footage", "social
+      reel") makes Veo RENDER it — a tripod, a crew, an operator — into
+      the room. v27: describe camera MOVEMENT and the property as a
+      "film" only; never name a rig or a shoot. (The June-9 bake-off ran
+      on the older, less-literal Veo, which is why "locked tripod" passed
+      then and hallucinates now.)
    2. It rewards scene-level art direction (lighting, atmosphere,
       lens feel), so style notes are written as a DP would brief.
    3. No 1000-char API limit, so we don't have to choose between
@@ -203,42 +207,54 @@ const RUNWAY_STYLE_PROMPTS = {
       clause is appended WORKER-SIDE (VEO_FIDELITY_SUFFIX in
       runway-job.mjs) so it can never be dropped by prompt assembly.
    ================================================================= */
+// v27 hallucination fix: motion described as camera MOVEMENT only, never by
+// equipment ("dolly", "slider", "tripod"). The Jan-2026 Veo 3.1 update sharply
+// improved prompt adherence, so naming a rig makes Veo render the rig (and an
+// operator). These describe the move and the stability, with no nouns to render.
 const VEO_MOTION_PROMPTS = {
   push_in:
-    "Smooth dolly-in toward the focal point of the room, slow and steady, about 6% total travel. " +
-    "Tripod-stable, no handheld sway, no vertical drift.",
+    "The camera moves slowly and smoothly forward toward the focal point of the room, " +
+    "about 6% total travel. Perfectly stable, no handheld sway, no vertical drift.",
   pull_out:
-    "Slow dolly-back revealing the full space, about 6% total travel. " +
-    "Tripod-stable, constant speed, no drift.",
+    "The camera moves slowly backward to reveal the full space, about 6% total travel. " +
+    "Perfectly stable, constant speed, no drift.",
   lateral_pan:
-    "Slow lateral tracking move from left to right on a slider, level horizon throughout. " +
+    "The camera moves slowly sideways from left to right, level horizon throughout. " +
     "No rotation, no vertical movement.",
   vertical_reveal:
-    "Gentle tilt-up from the lower foreground to reveal the full height of the space. " +
-    "Slow, constant speed, tripod-mounted.",
+    "The view tilts gently upward from the lower foreground to reveal the full height of " +
+    "the space. Slow, constant speed, perfectly stable.",
   parallax_zoom:
-    "Subtle dolly-in with natural depth parallax between foreground and background. " +
-    "About 6% travel. Stable, deliberate, no shake.",
+    "The camera moves slowly forward with natural depth parallax between foreground and " +
+    "background. About 6% travel. Stable, deliberate, no shake.",
   detail_sweep:
-    "Slow close-range slider move across the architectural detail, shallow depth of field, " +
-    "tight framing. Constant speed."
+    "The camera moves slowly across the architectural detail at close range, shallow depth " +
+    "of field, tight framing. Constant speed."
 };
 
 // Per-mode art direction, written as a DP brief. Each mode also carries a
 // pacing hint the Motion Director sees when planning scene order.
+// v27 hallucination fix: these are written to mirror "Cinematic Luxury" (the
+// style that's been rendering perfectly). The old wording for the other three
+// named a FILMING SCENARIO — "documentary footage", "social-media reel",
+// "walkthrough documentation", "camera work" — which Veo 3.1 (a generative
+// image-to-video model) rendered literally as a person/crew with a tripod. We
+// keep the look (light, color, pacing) but only ever describe the property as a
+// "film", never a shoot. No equipment or filming-scene nouns.
 const VEO_STYLE_PROMPTS = {
   "Cinematic Luxury":
     "Editorial luxury real-estate film. Warm golden-hour light quality, soft contrast, " +
     "gentle highlight rolloff. 35mm lens feel. Unhurried, premium pacing.",
   "Modern Social":
-    "Bright contemporary social-media real-estate reel. Clean daylight white balance, " +
-    "crisp detail, lightly lifted contrast. Energetic but stable.",
+    "Bright, contemporary real-estate film. Clean daylight white balance, crisp detail, " +
+    "lightly lifted contrast. 35mm lens feel. Energetic yet smooth, stable pacing.",
   "MLS Clean":
-    "Accurate documentary real-estate footage. True-to-life neutral color, no stylization, " +
-    "no atmosphere effects. The room must look exactly as a buyer would see it in person.",
+    "Clean, accurate real-estate film. True-to-life neutral color, no stylization, no " +
+    "atmosphere effects. Natural lens feel. The room looks exactly as a buyer would see it " +
+    "in person. Steady, even pacing.",
   "Investor Tour":
-    "Factual walkthrough documentation. Neutral grade, even exposure, clear sightlines. " +
-    "Steady, efficient camera work without flourish."
+    "Factual, neutral real-estate film. Even exposure, clear sightlines, true-to-life color. " +
+    "35mm lens feel. Steady, efficient pacing without flourish."
 };
 
 function buildVeoPrompt(scene, photos, context = {}) {
@@ -531,7 +547,7 @@ function buildOpenAIRequest({ allPhotos, visionPhotos, listingDetails, selectedS
                 // clips to 6 seconds — plan with 6s scenes so the 30s/60s
                 // duration budget yields the right scene count (5 scenes per
                 // 30s, not 6).
-                ? "Engine is Cinematic AI (Veo image-to-video). Set scene duration to 6 seconds. Pick subtle, tripod-stable motion appropriate to each room."
+                ? "Engine is Cinematic AI (Veo image-to-video). Set scene duration to 6 seconds. Pick subtle, stable camera motion appropriate to each room."
                 : "Engine is Quick Reel (Ken Burns photo motion). Scene duration 2.0–3.0s for kitchen/living, 1.6–2.4s for detail shots, 2.6–3.2s for hero shots.",
               narrationGuidance,
               "Return strict JSON only."
