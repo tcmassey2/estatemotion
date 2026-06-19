@@ -2134,6 +2134,7 @@ function RenderControls() {
   const projectId = useStore((s) => s.projectId);
   const projectTitle = useStore((s) => s.projectTitle);
   const setRenderJob = useStore((s) => s.setRenderJob);
+  const setLastRenderManifest = useStore((s) => s.setLastRenderManifest);
   const setError = useStore((s) => s.setError);
   const setLoading = useStore((s) => s.setLoading);
   const setEditPlan = useStore((s) => s.setEditPlan);
@@ -2273,6 +2274,10 @@ function RenderControls() {
         // instead of Ken Burns — always on, no user-facing safety picker.
         hallucinationGuard: "balanced"
       };
+
+      // v27: capture the manifest so the Edit Studio can re-render a single
+      // scene against this exact job. Purely additive — never affects render.
+      setLastRenderManifest(manifest);
 
       // 3. Submit
       const submitted = await submitRender(manifest);
@@ -2553,6 +2558,7 @@ function RenderControls() {
    ============================================================ */
 function RenderStatusPanel() {
   const renderJob = useStore((s) => s.renderJob);
+  const goToScreen = useStore((s) => s.goToScreen);
 
   // v2.1: one-time confetti reward when a render lands successfully. Keyed on
   // jobId so it fires once per finished video, not on every re-render.
@@ -2639,6 +2645,19 @@ function RenderStatusPanel() {
           className="w-full max-h-[600px] rounded-xl bg-black ring-1 ring-edge"
           style={{ boxShadow: "0 30px 80px rgba(0,0,0,0.5), 0 0 60px rgba(199,167,108,0.08)" }}
         />
+
+        {/* v27: Edit Studio — fix a single scene without re-rendering the whole video */}
+        {Array.isArray(renderJob.scenes) && renderJob.scenes.length > 0 && (
+          <button
+            onClick={() => goToScreen("editStudio")}
+            className="card-press w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-gold/30 bg-gold/[0.06] text-gold hover:bg-gold/[0.12] transition-colors text-sm font-semibold"
+          >
+            <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+            </svg>
+            A scene not perfect? Open Edit Studio
+          </button>
+        )}
 
         {/* Format bundle — one render, every aspect ratio */}
         <div>

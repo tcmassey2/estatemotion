@@ -17,8 +17,9 @@ import type {
 } from "./types";
 import { onAuthChange, getSession, fetchBrandKit, saveBrandKit } from "./supabase";
 import { fetchOrganization } from "./api";
+import type { RenderManifest } from "./api";
 
-export type Screen = "auth" | "dashboard" | "project" | "brokerage" | "settings";
+export type Screen = "auth" | "dashboard" | "project" | "brokerage" | "settings" | "editStudio";
 
 // Render Safety levels — the only knob users have to think about for
 // hallucination control. The manifest builder maps these to the worker's
@@ -98,6 +99,9 @@ interface AppState {
   renderSafety: RenderSafety;
   editPlan: EditPlan | null;
   renderJob: RenderJobStatus | null;
+  // v27 Edit Studio: the manifest used for the current render, captured so the
+  // Edit Studio can re-render a single scene against the same job.
+  lastRenderManifest: RenderManifest | null;
 
   // UI
   loading: string;
@@ -141,6 +145,7 @@ interface AppState {
   setRenderSafety: (level: RenderSafety) => void;
   setEditPlan: (plan: EditPlan | null) => void;
   setRenderJob: (job: RenderJobStatus | null) => void;
+  setLastRenderManifest: (m: RenderManifest | null) => void;
   setLoading: (msg: string) => void;
   setError: (msg: string) => void;
   setToast: (msg: string) => void;
@@ -296,7 +301,8 @@ const emptyProject = () => ({
   // anywhere mentioning fans/parallel surfaces).
   renderSafety: "smart" as RenderSafety,
   editPlan: null as EditPlan | null,
-  renderJob: null as RenderJobStatus | null
+  renderJob: null as RenderJobStatus | null,
+  lastRenderManifest: null as RenderManifest | null
 });
 
 export const useStore = create<AppState>((set, get) => ({
@@ -474,6 +480,7 @@ export const useStore = create<AppState>((set, get) => ({
   setRenderSafety: (level) => set({ renderSafety: level, editPlan: null }),
   setEditPlan: (plan) => set({ editPlan: plan }),
   setRenderJob: (job) => set({ renderJob: job }),
+  setLastRenderManifest: (m) => set({ lastRenderManifest: m }),
   setLoading: (msg) => set({ loading: msg }),
   setError: (msg) => set({ error: msg }),
   setToast: (msg) => {
