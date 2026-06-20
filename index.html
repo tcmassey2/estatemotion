@@ -40,11 +40,6 @@
   }
   </script>
 
-  <script defer data-domain="vistalia.ai" src="https://plausible.io/js/script.outbound-links.tagged-events.js" id="plausible-script"></script>
-  <script>
-    window.plausible = window.plausible || function () { (window.plausible.q = window.plausible.q || []).push(arguments); };
-  </script>
-
 <style>
 :root{
   --bg:#0B0B0D; --bg-1:#101014; --surface:#16161B; --surface-2:#1C1C23;
@@ -438,15 +433,10 @@ footer{border-top:1px solid var(--edge);padding:40px 0 48px}
 
 <script src="/api/env" onerror="window.ESTATEMOTION_API_ENV_UNAVAILABLE=true"></script>
 <script type="module">
-  // Auth-aware nav: swap CTAs to "dashboard" when a session exists; retarget
-  // Plausible to the prod domain from /api/env. Fails silent.
+  // Auth-aware nav: swap CTAs to "dashboard" when a session exists. Fails silent.
   (async () => {
     try {
       const env = window.ESTATEMOTION_ENV;
-      if (env && env.PLAUSIBLE_DOMAIN) {
-        const el = document.getElementById('plausible-script');
-        if (el) el.setAttribute('data-domain', env.PLAUSIBLE_DOMAIN);
-      }
       if (!env || !env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return;
       const { createClient } = await import(env.SUPABASE_JS_URL || "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm");
       const sb = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY);
