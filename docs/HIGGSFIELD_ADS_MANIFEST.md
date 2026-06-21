@@ -26,6 +26,24 @@ reveals; hooks/text/VO/end-cards assembled in post. Ad mapping: `marketing/VISTA
 *All 9: faceless, no text/logos baked in (added in post). Rendered via plain Kling
 text-to-video — NOT marketing_studio_video, which forces a presenter.*
 
+## Vistalia — UGC TALKING-HEAD BATCH (June 21) — consistent AI spokesperson
+Production hybrid UGC ads. **Spokesperson identity (reuse for all future UGC):** base
+portrait job `7708a15b-e647-4a46-925b-7a456e69de7b` (`vistalia-spokesperson-base_7708a15b.png`)
+— warm female agent, late 30s, cream blazer. Generated via **soul_2**, then used as the
+`image` reference to place her in each setting; animated with **kling3_0** (sound on) so she
+speaks the hook. Finished ads = UGC hook → matched reveal → V end card, captions + ducked
+music. Voice is the AI persona's, NOT Troy's (founder stays off-camera).
+
+| Finished ad (in `marketing/assembled/`) | Hook clip | Reveal used | Hook job ID |
+|---|---|---|---|
+| `vistalia-ugc-car-confessional.mp4` | `vistalia-ugc-hook-car_a784f177.mp4` | hero mansion flip | a784f177-f83c-4f1d-b4e3-3cdc57290740 |
+| `vistalia-ugc-referral.mp4` | `vistalia-ugc-hook-referral_fc5e3e58.mp4` | interior walkthrough | fc5e3e58-e42b-4fe8-949e-8f0defb384a5 |
+| `vistalia-ugc-no-subscription.mp4` | `vistalia-ugc-hook-nosub_2c8db6d6.mp4` | photo-wakes-up | 2c8db6d6-dc1f-4339-b663-930f3186e7b0 |
+| `vistalia-ugc-coffee-speedrun.mp4` | `vistalia-ugc-hook-coffee_d134bdd8.mp4` | dive-into-phone | d134bdd8-642e-4d87-854b-9e36e78b2265 |
+
+*Audio: ElevenLabs music beds via sonilo_music (12s `8ed5f06b`, 16s `6e6cfb91`). Dive-in
+solo ad (`vistalia-ad-dive-in.mp4`) uses pro-narrator VO `df3f7919` (Sloane).*
+
 ## EstateMotion (the SaaS — prior brand name)
 
 | File | What it is | Mode | Date | Job ID |
