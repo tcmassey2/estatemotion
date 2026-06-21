@@ -5,9 +5,28 @@ Catalog of all Higgsfield Marketing Studio generations. **Local backups** live i
 pushes). **Canonical cloud copies** remain in the Higgsfield account library. CDN URLs
 below are the originals (may expire over time — the local files are the durable copy).
 
-Last backed up: June 19, 2026.
+Last backed up: June 21, 2026.
 
-## EstateMotion (the SaaS — current brand)
+## Vistalia — LAUNCH BATCH (Kling 3.0 Turbo, June 21) — faceless 9:16 1080p reveals
+Production launch set (brand is now **Vistalia**). Faceless Scottsdale desert-modern
+reveals; hooks/text/VO/end-cards assembled in post. Ad mapping: `marketing/VISTALIA_LAUNCH_ADS.md`.
+
+| File | Concept / use | Model | Job ID |
+|---|---|---|---|
+| `vistalia-reveal-hero-mansion-flip_391da4d6.mp4` | C1 hero — dusk exterior → double-height foyer sweep | kling3_0_turbo | 391da4d6-aa03-4897-8cda-704d50cfc7a8 |
+| `vistalia-reveal-interior-walkthrough_056450eb.mp4` | A1 own-voice — kitchen → great-room glide | kling3_0_turbo | 056450eb-fa89-4a8d-9edd-7c6ece2ec70c |
+| `vistalia-reveal-room-blooms_4a08e6cf.mp4` | B1 silent-vs-sound — room comes alive | kling3_0_turbo | 4a08e6cf-9f55-4624-91db-dd73b0c7d267 |
+| `vistalia-standout-photo-wakes-up_7548b2bb.mp4` | D1 — flat photo ripples into motion | kling3_0_turbo | 7548b2bb-e6ce-4496-a7d3-b81a2240c5f6 |
+| `vistalia-standout-dive-into-phone_cc9bdbfc.mp4` | C2 scroll-stopper — camera dives into phone | kling3_0_turbo | cc9bdbfc-11ef-4e92-811a-258fafb52337 |
+| `vistalia-standout-bedroom-bloom_f60a30c7.mp4` | B2 sound-on test — flat → alive bloom | kling3_0_turbo | f60a30c7-da9a-4ba9-8500-2a144b1ecb0b |
+| `vistalia-fresh-vista-reveal_4bc613d6.mp4` | A2 / anthem — glass opens to desert vista (brand-name beat) | kling3_0_turbo | 4bc613d6-2ff6-45ab-bde0-80e4080b2ff6 |
+| `vistalia-fresh-twilight-pool_73bee506.mp4` | D2 / anthem — twilight infinity pool | kling3_0_turbo | 73bee506-b42f-4256-9780-e6c9a641275d |
+| `vistalia-endcard-bed_a6e9dd0d.mp4` | End-card backdrop — negative space for the V logo | kling3_0_turbo | a6e9dd0d-5c63-4439-be9c-f007ee8cbd68 |
+
+*All 9: faceless, no text/logos baked in (added in post). Rendered via plain Kling
+text-to-video — NOT marketing_studio_video, which forces a presenter.*
+
+## EstateMotion (the SaaS — prior brand name)
 
 | File | What it is | Mode | Date | Job ID |
 |---|---|---|---|---|
