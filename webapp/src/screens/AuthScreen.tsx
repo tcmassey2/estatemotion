@@ -418,7 +418,10 @@ export default function AuthScreen() {
 
             {mode === "signup" && (
               <p className="text-xs text-ink-dim text-center mt-5 leading-relaxed">
-                By creating an account you agree to our terms and privacy policy.
+                By creating an account you agree to our{" "}
+                <a href="/legal/terms.html" target="_blank" rel="noopener" className="text-gold-light hover:underline">Terms of Service</a>{" "}
+                and{" "}
+                <a href="/legal/privacy.html" target="_blank" rel="noopener" className="text-gold-light hover:underline">Privacy Policy</a>.
               </p>
             )}
           </div>
