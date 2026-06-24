@@ -182,23 +182,50 @@ export async function generateVeoClip({
     safetyTolerance
   });
 
+  // v26.11 FIX: fal.subscribe() has NO internal deadline. If fal's queue stalls
+  // on a scene (a real, intermittent provider hiccup), the await blocks forever
+  // and freezes the entire render at "scene N/N" — this was the 60-second-video
+  // hang at scene 9/10. Race the subscribe against a timeout so a stalled scene
+  // REJECTS instead of hanging; that rejection trips the retry-once-constrained
+  // path in runway-job.mjs (and, if the retry also stalls, the clean refund).
+  // The orphaned fal job simply finishes unused on fal's side.
+  const SUBSCRIBE_TIMEOUT_MS = Number(process.env.FAL_SCENE_TIMEOUT_MS) || 360000; // 6 min
   let result;
+  let timeoutTimer = null;
   try {
     // subscribe() blocks until the queue completes (60-180s typical for
     // Veo 3 Fast). It internally handles status polling so we don't have
     // to roll our own poll loop like we did with Vertex AI direct.
-    result = await fal.subscribe(model, {
-      input,
-      logs: true,
-      onQueueUpdate: (update) => {
-        if (update.status === "IN_PROGRESS" && Array.isArray(update.logs)) {
-          for (const log of update.logs) {
-            console.info(`[fal/${model}] scene ${sceneIndex + 1}: ${log.message}`);
+    result = await Promise.race([
+      fal.subscribe(model, {
+        input,
+        logs: true,
+        onQueueUpdate: (update) => {
+          if (update.status === "IN_PROGRESS" && Array.isArray(update.logs)) {
+            for (const log of update.logs) {
+              console.info(`[fal/${model}] scene ${sceneIndex + 1}: ${log.message}`);
+            }
           }
         }
-      }
-    });
+      }),
+      new Promise((_, reject) => {
+        timeoutTimer = setTimeout(() => {
+          const e = new Error(
+            `fal.subscribe for scene ${sceneIndex + 1} on ${model} exceeded ` +
+            `${Math.round(SUBSCRIBE_TIMEOUT_MS / 1000)}s — treating the scene as a stalled job.`
+          );
+          e.code = "FAL_TIMEOUT";
+          reject(e);
+        }, SUBSCRIBE_TIMEOUT_MS);
+      })
+    ]);
   } catch (err) {
+    // A stall/timeout is already a clean, typed error — surface it as-is so the
+    // retry path and logs stay legible (no body to parse on a timeout).
+    if (err?.code === "FAL_TIMEOUT") {
+      err.httpStatus = 504;
+      throw err;
+    }
     // v26.4: surface fal's error BODY, not just the HTTP status text.
     // "Forbidden" alone cost us a debugging round on June 9 — the body
     // distinguishes balance exhaustion vs content policy vs bad input.
@@ -214,6 +241,9 @@ export async function generateVeoClip({
     wrapped.httpStatus = err?.status || err?.cause?.status;
     wrapped.cause = err;
     throw wrapped;
+  } finally {
+    // Always clear the watchdog so it can't fire late or keep the event loop alive.
+    if (timeoutTimer) clearTimeout(timeoutTimer);
   }
 
   // Output schema:
