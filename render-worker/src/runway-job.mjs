@@ -481,8 +481,10 @@ function buildConstrainedVeoPrompt(scene) {
 // this is the per-scene guardrail, independent of the edit plan.
 const VEO_FIDELITY_SUFFIX =
   " Photorealistic. Do not add, remove, or alter any object, surface, fixture, or " +
-  "architectural feature. No people, no animals, no text or logos. The scene must remain " +
-  "exactly as photographed apart from the camera motion described.";
+  "architectural feature. No people, no animals. Absolutely NO text, captions, words, " +
+  "letters, numbers, signage, watermarks, on-screen UI, or graphic overlays of any kind " +
+  "anywhere in the frame. The scene must remain exactly as photographed apart from the " +
+  "camera motion described.";
 
 // Per-scene Veo generation, mapped to the same clipResults shape that
 // generateClip / generateKenBurnsFallback return so the stitch pipeline

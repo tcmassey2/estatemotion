@@ -81,15 +81,23 @@ export async function applyVoiceNarration({ masterMp4, scenes, sceneDurationsByP
   const synthesized = new Array(photoScenes.length).fill(null);
   const synthErrors = [];
   let completed = 0;
+  // v27.1: attach each line's neighbors for request-stitching (consistent voice).
+  const narrationWithCtx = narrationScenes.map((it, p) => ({
+    ...it,
+    previousText: p > 0 ? (narrationScenes[p - 1].scene.narrationLine || "").trim() : "",
+    nextText: p < narrationScenes.length - 1 ? (narrationScenes[p + 1].scene.narrationLine || "").trim() : ""
+  }));
   await pMap(
-    narrationScenes,
-    async ({ scene, index }) => {
+    narrationWithCtx,
+    async ({ scene, index, previousText, nextText }) => {
       const mp3Path = path.join(tempDir, `${jobId}-n-${String(index).padStart(3, "0")}.mp3`);
       try {
         await synthesizeToFile({
           text: scene.narrationLine.trim(),
           voiceId,
-          outPath: mp3Path
+          outPath: mp3Path,
+          previousText,
+          nextText
         });
         synthesized[index] = { mp3Path, scene };
       } catch (err) {
@@ -300,7 +308,7 @@ export async function applyVoiceNarration({ masterMp4, scenes, sceneDurationsByP
    Helpers
    ============================================================ */
 
-async function synthesizeToFile({ text, voiceId, outPath }) {
+async function synthesizeToFile({ text, voiceId, outPath, previousText = "", nextText = "" }) {
   const response = await fetchWithTimeout(
     `${ELEVENLABS_BASE}/text-to-speech/${encodeURIComponent(voiceId)}`,
     {
@@ -313,10 +321,18 @@ async function synthesizeToFile({ text, voiceId, outPath }) {
       body: JSON.stringify({
         text,
         model_id: DEFAULT_MODEL,
+        // v27.1 request-stitching: give each line the surrounding lines as
+        // context so ElevenLabs keeps tone/prosody consistent across scenes
+        // (independent per-line calls drifted and sounded like the voice
+        // changed mid-video).
+        ...(previousText ? { previous_text: previousText } : {}),
+        ...(nextText ? { next_text: nextText } : {}),
+        // v27.1 expressiveness: lower stability + higher style read as a warm,
+        // natural human read instead of the old flat/monotone 0.55/0.18.
         voice_settings: {
-          stability: 0.55,
+          stability: 0.45,
           similarity_boost: 0.85,
-          style: 0.18,
+          style: 0.30,
           use_speaker_boost: true
         }
       })
