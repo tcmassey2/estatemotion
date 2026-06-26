@@ -38,11 +38,12 @@ const TIER_FROM_PRICE = (priceId, productId) => {
 };
 
 const QUOTA_FOR_TIER = {
-  trial: 1,        // v26.5: one free trial video
-  launch: 8,       // $99/mo
-  pro: 25,         // $249/mo
-  studio: 50,      // $499/mo
-  // Legacy tiers — retired from sale, honored until subscriptions lapse.
+  trial: 1,        // one free first video
+  // q6 launch lineup (v26.11):
+  pro: 5,          // $49/mo  — 5 videos / month
+  studio: 10,      // $99/mo  — 10 videos / month
+  // Legacy tiers — retired from sale, honored until existing subs lapse.
+  launch: 8,       // old $99/mo, 8 renders
   quick_reel: 10,
   cinematic_ai: 25,
   cinematic_4k: 60
