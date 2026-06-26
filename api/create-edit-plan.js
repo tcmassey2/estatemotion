@@ -18,7 +18,7 @@ const DEFAULT_TIMEOUT_MS = 60000; // bumped from 35s to 60s (matches the longer 
 // ~$0.024 per render. Photos beyond this cap are still INCLUDED in the edit
 // plan — OpenAI just orders them via metadata (filename, upload order, etc.)
 // instead of visual quality scoring.
-const OPENAI_VISION_PHOTO_LIMIT = 12;
+const OPENAI_VISION_PHOTO_LIMIT = 16;
 // v24 rebrand: target 30s default / 60s max per render. Each Cinematic AI
 // scene is ~5 sec of Runway-rendered video, so 6 scenes = 30s and 12 scenes
 // = 60s. Quick Reel scenes are shorter (~2-3s each) so 30s = ~10-12 scenes.
@@ -247,7 +247,8 @@ const VEO_STYLE_PROMPTS = {
     "gentle highlight rolloff. 35mm lens feel. Unhurried, premium pacing.",
   "Modern Social":
     "Bright, contemporary real-estate film. Clean daylight white balance, crisp detail, " +
-    "lightly lifted contrast. 35mm lens feel. Energetic yet smooth, stable pacing.",
+    "lightly lifted contrast. 35mm lens feel. Calm, smooth, stable camera motion — the " +
+    "modern energy comes from the bright, crisp grade, NOT from fast or dynamic movement.",
   "MLS Clean":
     "Clean, accurate real-estate film. True-to-life neutral color, no stylization, no " +
     "atmosphere effects. Natural lens feel. The room looks exactly as a buyer would see it " +
@@ -591,7 +592,7 @@ function buildOpenAIRequest({ allPhotos, visionPhotos, listingDetails, selectedS
             {
               type: "input_image",
               image_url: photo.url,
-              detail: "low"
+              detail: "high"
             }
           ])
         ]
