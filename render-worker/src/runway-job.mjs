@@ -57,8 +57,12 @@ const ENCODE_CRF_MASTER = "19";
 const ENCODE_CRF_DERIVED = "20";
 const X264_PARAMS = "rc-lookahead=10:ref=2:bframes=2:keyint=60:scenecut=0";
 const BUFSIZE = "2M";
+// v28: Veo 4s/6s clips render at 720p (1080p needs 8s) and are lanczos-upscaled
+// to the 1080x1920 master, which reads soft. A stronger luma unsharp recovers
+// apparent edge detail on that upscale without visible haloing (0.6→0.9 luma,
+// 0.3→0.4 chroma). The real native-1080p path is a separate cost decision.
 const COLOR_GRADE =
-  "eq=contrast=1.08:saturation=0.95:gamma=1.03,colorbalance=rs=0.05:bs=-0.025,unsharp=5:5:0.6:3:3:0.3";
+  "eq=contrast=1.08:saturation=0.95:gamma=1.03,colorbalance=rs=0.05:bs=-0.025,unsharp=5:5:0.9:3:3:0.4";
 
 export async function renderRunwayJob(body, options = {}) {
   const { manifest, requestedFormat } = body || {};
@@ -465,8 +469,9 @@ const CONSTRAINED_PROMPTS = {
   exterior:
     "Completely static, locked-off camera. Extremely slow forward push of about 4% only, " +
     "with no other movement and no drift. " +
-    "Foliage may sway very subtly in a light breeze, but the structure, roofline, windows, " +
-    "and all hardscape stay exactly as photographed."
+    "Trees, foliage, leaves, and branches stay completely still and hold their exact shape — " +
+    "no swaying, morphing, rippling, or regenerating. The structure, roofline, windows, and " +
+    "all hardscape stay exactly as photographed."
 };
 
 function buildConstrainedVeoPrompt(scene) {
@@ -499,7 +504,16 @@ export async function generateVeoSceneClip(scene, manifest, tempDir, sceneIndex,
   const basePrompt = constrained
     ? buildConstrainedVeoPrompt(scene)
     : (scene.veoPrompt || scene.veo_prompt || scene.runwayPrompt || scene.runway_prompt || buildConstrainedVeoPrompt(scene));
-  const prompt = basePrompt + VEO_FIDELITY_SUFFIX;
+  // v28: exteriors are where Veo morphs worst — it "animates" foliage under any
+  // camera move (leaves rippling, branches growing/regenerating). For outdoor
+  // scenes, append an explicit foliage lock + minimal-motion bias on top of the
+  // universal fidelity suffix. Applies to ALL four modes.
+  const roomStr = String(scene.roomType || "").toLowerCase();
+  const isExteriorScene = /exterior|backyard|outdoor|front|yard|patio|pool|garden|landscap|deck/.test(roomStr);
+  const foliageLock = isExteriorScene
+    ? " Trees, plants, hedges, leaves, and branches must hold their exact shape, count, and position — foliage must NOT morph, ripple, shimmer, multiply, grow, or regenerate. Keep camera movement minimal so foliage stays perfectly stable."
+    : "";
+  const prompt = basePrompt + foliageLock + VEO_FIDELITY_SUFFIX;
 
   const config = manifest.runwayConfig || {};
   const ratio = config.ratio === "16:9" || config.ratio === "wide" ? "16:9" : "9:16";

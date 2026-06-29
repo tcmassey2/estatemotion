@@ -140,6 +140,17 @@ export async function applyVoiceNarration({ masterMp4, scenes, sceneDurationsByP
   }
   const totalDurationSec = cursor;
 
+  // v28: the master video usually continues past the last PHOTO scene into a
+  // silent brand-outro card. The closing CTA line was being hard-clipped at the
+  // photo-scene boundary even though there was silent outro video right after
+  // it — that's the "voice cut off at the end". Probe the real master duration
+  // so the FINAL line can ring out into that outro room. Falls back to the
+  // photo-scene total if the probe fails (no regression on outro-less renders).
+  const masterDurSec = await probeMediaDuration(masterMp4);
+  const narrationTrackDurSec = masterDurSec > totalDurationSec ? masterDurSec : totalDurationSec;
+  let lastNarrIndex = -1;
+  for (let i = 0; i < synthesized.length; i++) if (synthesized[i]) lastNarrIndex = i;
+
   // v24.4: BULLETPROOFED voice scheduling. Earlier fix used atrim only;
   // this version also (a) tightens the safety buffer to 0.8s tail, (b)
   // caps narration at 80% of the scene duration as a second guard, (c)
@@ -158,14 +169,21 @@ export async function applyVoiceNarration({ masterMp4, scenes, sceneDurationsByP
     .map((entry, i) => {
       if (!entry) return null;
       const sceneDur = sceneDurs[i];
-      // Two guards: subtractive (sceneDur - leadIn - tail) AND
-      // proportional (90% of sceneDur). Min of the two is the hard cap.
-      // For 6s scene:   min(6 - 0.35 - 0.5, 6 * 0.9)   = min(5.15, 5.40)  = 5.15s
-      // For 2.8s scene: min(2.8 - 0.35 - 0.5, 2.8*0.9) = min(1.95, 2.52)  = 1.95s
-      const cap1 = sceneDur - leadInSec - TAIL_BUFFER_SEC;
-      const cap2 = sceneDur * 0.90;
+      // The LAST line has no following line to overlap, and the master video
+      // continues into the silent brand-outro card — so let it use ALL the room
+      // up to the master end (minus a tail) instead of the tight per-scene cap.
+      // Every other line stays strictly inside its scene window so it can never
+      // bleed into the next line.
+      const isLast = i === lastNarrIndex;
+      const windowEndSec = isLast
+        ? Math.max(sceneStarts[i] + sceneDur, narrationTrackDurSec)
+        : sceneStarts[i] + sceneDur;
+      // Two guards: subtractive (window - leadIn - tail) AND, for non-final
+      // lines only, proportional (90% of sceneDur). Min of the two is the cap.
+      const cap1 = windowEndSec - sceneStarts[i] - leadInSec - TAIL_BUFFER_SEC;
+      const cap2 = isLast ? Infinity : sceneDur * 0.90;
       const maxNarrationSec = Math.max(0.6, Math.min(cap1, cap2));
-      const sceneEndMs = Math.round((sceneStarts[i] + sceneDur) * 1000);
+      const sceneEndMs = Math.round(windowEndSec * 1000);
       return {
         mp3Path: entry.mp3Path,
         sceneStartSec: sceneStarts[i],
@@ -188,7 +206,12 @@ export async function applyVoiceNarration({ masterMp4, scenes, sceneDurationsByP
   );
 
   const narrationActiveWindows = synthesized
-    .map((entry, i) => entry ? [sceneStarts[i] + leadInSec, sceneStarts[i] + sceneDurs[i] - 0.2] : null)
+    .map((entry, i) => {
+      if (!entry) return null;
+      // Keep music ducked through the (possibly extended) last line.
+      const endSec = (i === lastNarrIndex ? narrationTrackDurSec : sceneStarts[i] + sceneDurs[i]) - 0.2;
+      return [sceneStarts[i] + leadInSec, endSec];
+    })
     .filter(Boolean);
 
   // Build the filter_complex graph. Inputs:
@@ -221,20 +244,20 @@ export async function applyVoiceNarration({ masterMp4, scenes, sceneDurationsByP
     })
     .join(";");
   const mixInputs = placedNarrations.map((_, i) => `[n${i}]`).join("");
-  const filterComplex = `${adelaySteps};[0:a]${mixInputs}amix=inputs=${placedNarrations.length + 1}:duration=first:dropout_transition=0,atrim=duration=${totalDurationSec}[narr]`;
+  const filterComplex = `${adelaySteps};[0:a]${mixInputs}amix=inputs=${placedNarrations.length + 1}:duration=first:dropout_transition=0,atrim=duration=${narrationTrackDurSec}[narr]`;
 
   const narrationTrackPath = path.join(tempDir, `${jobId}-narration-track.mp3`);
   const narrationArgs = [
     "-y",
     "-threads", "1",
     "-f", "lavfi",
-    "-i", `anullsrc=channel_layout=stereo:sample_rate=44100:duration=${totalDurationSec}`,
+    "-i", `anullsrc=channel_layout=stereo:sample_rate=44100:duration=${narrationTrackDurSec}`,
     ...placedNarrations.flatMap((n) => ["-i", n.mp3Path]),
     "-filter_complex", filterComplex,
     "-map", "[narr]",
     "-c:a", "libmp3lame",
     "-b:a", "128k",
-    "-t", String(totalDurationSec),
+    "-t", String(narrationTrackDurSec),
     narrationTrackPath
   ];
   await runFFmpeg(narrationArgs, { timeoutMs: 90000, label: "voice:adelay-mix" });
@@ -362,6 +385,28 @@ async function detectAudioStream(filePath) {
     proc.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
     proc.on("close", () => resolve(Boolean(stdout.trim())));
     proc.on("error", () => resolve(false));
+  });
+}
+
+// Probe a media file's total duration in seconds. Used to measure how much
+// video exists past the last photo scene (the brand-outro card) so the final
+// narration line can finish there instead of being clipped. Returns 0 on
+// failure, in which case the caller falls back to the photo-scene total.
+async function probeMediaDuration(filePath) {
+  return new Promise((resolve) => {
+    const proc = spawn("ffprobe", [
+      "-v", "error",
+      "-show_entries", "format=duration",
+      "-of", "default=nw=1:nk=1",
+      filePath
+    ], { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    proc.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
+    proc.on("close", () => {
+      const d = parseFloat(stdout.trim());
+      resolve(Number.isFinite(d) && d > 0 ? d : 0);
+    });
+    proc.on("error", () => resolve(0));
   });
 }
 
