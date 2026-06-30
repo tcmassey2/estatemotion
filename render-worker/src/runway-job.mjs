@@ -57,12 +57,14 @@ const ENCODE_CRF_MASTER = "19";
 const ENCODE_CRF_DERIVED = "20";
 const X264_PARAMS = "rc-lookahead=10:ref=2:bframes=2:keyint=60:scenecut=0";
 const BUFSIZE = "2M";
-// v28: Veo 4s/6s clips render at 720p (1080p needs 8s) and are lanczos-upscaled
-// to the 1080x1920 master, which reads soft. A stronger luma unsharp recovers
-// apparent edge detail on that upscale without visible haloing (0.6→0.9 luma,
-// 0.3→0.4 chroma). The real native-1080p path is a separate cost decision.
+// v28.2: output is now NATIVE 1080p (8s Veo @ 1080p, trimmed) — no upscale. The
+// heavy unsharp added for the old 720p→1080p path was over-sharpening already-
+// sharp footage and amplifying Veo's fine grain, which read as "grainy". So:
+// (1) a light hqdn3d denoise FIRST to knock grain down, then (2) a much gentler
+// unsharp (0.9→0.4 luma, 0.4→0.2 chroma) to re-crisp without re-introducing
+// noise. Both kept light to avoid a smeared/plastic look.
 const COLOR_GRADE =
-  "eq=contrast=1.08:saturation=0.95:gamma=1.03,colorbalance=rs=0.05:bs=-0.025,unsharp=5:5:0.9:3:3:0.4";
+  "hqdn3d=1.5:1.2:4:4,eq=contrast=1.08:saturation=0.95:gamma=1.03,colorbalance=rs=0.05:bs=-0.025,unsharp=5:5:0.4:3:3:0.2";
 
 export async function renderRunwayJob(body, options = {}) {
   const { manifest, requestedFormat } = body || {};
