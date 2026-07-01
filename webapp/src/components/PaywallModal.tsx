@@ -1,16 +1,20 @@
 import { useEffect, useState } from "react";
-import { startCheckout, type CheckoutTier } from "../lib/api";
+import { startCheckout, fetchUsage, type CheckoutTier } from "../lib/api";
 import { useStore } from "../lib/store";
 
 /**
- * PaywallModal — the free-video → paid moment (q6 subscription model).
+ * PaywallModal — the free-video → paid moment (q7 pricing, see
+ * docs/PRICING_Q7.md).
  *
- * Two plans (Pro / Studio), billed monthly or annually, plus a $39 one-off
- * "pay as you go" video. Annual is the DEFAULT toggle: it shows a lower
- * monthly-equivalent headline (Reel-E plays this exact card) and ~2 months
- * free vs paying monthly. Tier slugs map to Stripe in create-checkout-session:
+ * Two plans (Pro $69 / Studio $149), billed monthly or annually, plus a $39
+ * one-off "pay as you go" video. Annual is the DEFAULT toggle: it shows a
+ * lower monthly-equivalent headline (Reel-E plays this exact card) and a
+ * 41-45% discount vs monthly — annual deliberately held at q6 prices.
+ * Active subscribers who hit their quota see a $12 overage row instead of
+ * being pushed to re-subscribe. Tier slugs map to create-checkout-session:
  *   pro / pro_annual / studio / studio_annual  → subscriptions
  *   payg                                        → one-time $39 (1 credit)
+ *   overage                                     → $12/credit, subscribers only
  */
 
 interface PaywallModalProps {
@@ -27,32 +31,37 @@ interface Plan {
   videos: string;
   popular?: boolean;
   monthly: { price: number; tier: CheckoutTier };
-  annual: { perMo: number; yearly: number; tier: CheckoutTier };
+  annual: { perMo: number; yearly: number; savePct: number; tier: CheckoutTier };
   features: string[];
 }
 
+// q7: monthly raised ($49→$69, $99→$149), annual HELD at q6 ($490/$990) — the
+// widened gap (41%/45% off) is the annual pull. Keep perMo/savePct in sync if
+// prices move again: perMo = round(yearly/12), savePct = 1 - yearly/(12*price).
 const PLANS: Plan[] = [
   {
     name: "Pro",
     videos: "5 videos / month",
     popular: true,
-    monthly: { price: 49, tier: "pro" },
-    annual: { perMo: 41, yearly: 490, tier: "pro_annual" },
+    monthly: { price: 69, tier: "pro" },
+    annual: { perMo: 41, yearly: 490, savePct: 41, tier: "pro_annual" },
     features: [
       "5 cinematic listing videos / month",
       "Narrated in your own cloned voice",
       "60-second tours + all formats",
+      "Extra videos $12 each",
       "Priority rendering"
     ]
   },
   {
     name: "Studio",
     videos: "10 videos / month",
-    monthly: { price: 99, tier: "studio" },
-    annual: { perMo: 83, yearly: 990, tier: "studio_annual" },
+    monthly: { price: 149, tier: "studio" },
+    annual: { perMo: 83, yearly: 990, savePct: 45, tier: "studio_annual" },
     features: [
       "10 cinematic listing videos / month",
       "Everything in Pro",
+      "Extra videos $12 each",
       "Front-of-queue rendering",
       "Priority support"
     ]
@@ -64,6 +73,9 @@ export default function PaywallModal({ open, onClose, reason }: PaywallModalProp
   const [billing, setBilling] = useState<Billing>("annual"); // default = annual
   const [busy, setBusy] = useState<CheckoutTier | null>(null);
   const [error, setError] = useState("");
+  // q7: active subscribers who hit quota get the $12 overage row — a far
+  // better answer than the $39 one-off or "wait until next cycle".
+  const [isSubscriber, setIsSubscriber] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -71,6 +83,18 @@ export default function PaywallModal({ open, onClose, reason }: PaywallModalProp
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
+
+  useEffect(() => {
+    if (!open) return;
+    fetchUsage()
+      .then((u) => {
+        setIsSubscriber(
+          ["pro", "studio"].includes(String(u?.tier || "")) &&
+          ["active", "trialing"].includes(String(u?.subscription_status || ""))
+        );
+      })
+      .catch(() => setIsSubscriber(false));
+  }, [open]);
 
   if (!open) return null;
 
@@ -149,7 +173,7 @@ export default function PaywallModal({ open, onClose, reason }: PaywallModalProp
             </button>
           </div>
           <span className="text-[11px] font-semibold text-emerald-400">
-            {billing === "annual" ? "2 months free" : "Save with annual"}
+            {billing === "annual" ? "Save up to 45%" : "Save with annual"}
           </span>
         </div>
 
@@ -179,7 +203,7 @@ export default function PaywallModal({ open, onClose, reason }: PaywallModalProp
                 </div>
                 <div className="text-xs -mt-1 h-4">
                   {isAnnual
-                    ? <span className="text-emerald-400 font-semibold">billed ${plan.annual.yearly}/yr · 2 months free</span>
+                    ? <span className="text-emerald-400 font-semibold">billed ${plan.annual.yearly}/yr · save {plan.annual.savePct}%</span>
                     : <span className="text-ink-muted">{plan.videos}</span>}
                 </div>
                 <ul className="flex flex-col gap-2 text-xs text-ink-muted leading-relaxed flex-1">
@@ -208,6 +232,24 @@ export default function PaywallModal({ open, onClose, reason }: PaywallModalProp
           })}
         </div>
 
+        {/* Subscriber overage — the right answer when a plan's quota is hit */}
+        {isSubscriber && (
+          <div className="mx-6 sm:mx-8 mb-3 rounded-xl border border-gold/40 bg-gold/5 px-5 py-4 flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <div className="text-sm font-semibold text-ink">Out of videos this month?</div>
+              <div className="text-xs text-ink-muted mt-0.5">Add extra credits to your plan — no waiting for the next cycle.</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleBuy("overage")}
+              disabled={busy === "overage" || !!busy}
+              className="card-press h-10 px-4 rounded-lg text-sm font-semibold bg-gold text-paper hover:bg-gold-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+            >
+              {busy === "overage" ? "Opening Stripe…" : "$12 / video →"}
+            </button>
+          </div>
+        )}
+
         {/* One-off pay-as-you-go */}
         <div className="mx-6 sm:mx-8 mb-2 rounded-xl border border-edge bg-surface-input px-5 py-4 flex items-center justify-between gap-4 flex-wrap">
           <div>
@@ -231,7 +273,7 @@ export default function PaywallModal({ open, onClose, reason }: PaywallModalProp
         )}
 
         <div className="px-6 sm:px-8 pb-6 pt-2 flex items-center justify-between gap-4 flex-wrap">
-          <span className="text-xs text-ink-muted">Cancel anytime. Your first video was on us.</span>
+          <span className="text-xs text-ink-muted">Cancel anytime. Your first video was on us. 60-second videos use 2 credits.</span>
           <span className="text-[11px] text-ink-dim">Payments by Stripe. We never see your card.</span>
         </div>
       </div>

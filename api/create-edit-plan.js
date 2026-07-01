@@ -26,8 +26,9 @@ const OPENAI_VISION_PHOTO_LIMIT = 16;
 // targetSceneCountFor() picks the actual count based on manifest.targetDurationSec.
 // MAX_PLAN_SCENES drives the upper bound. v24.1 bumped from 12 to 16
 // because predicted-Ken-Burns scenes are 2.8s (not 5s) so we need more
-// of them to hit the 60s ceiling.
-const MAX_PLAN_SCENES = 16;
+// of them to hit the 60s ceiling. v31 bumped 16 → 18: Veo scenes now
+// average 3.5s, so a 60s target needs ~17 scenes.
+const MAX_PLAN_SCENES = 18;
 const DEFAULT_TARGET_DURATION_SEC = 30;
 const MAX_TARGET_DURATION_SEC = 60;
 
@@ -51,10 +52,12 @@ function predictKenBurnsFallback(roomType) {
 // target render length. Cinematic AI scenes that pass the guard are 5s
 // (Runway native). Predicted fallbacks are 2.8s (Quick Reel Ken Burns).
 function avgSecPerScene({ engine, hasKitchen, hasBathroom }) {
-  // v26.9: Veo renders 6s clips with NO Ken Burns fallback (risky rooms get
-  // constrained prompts, still 6s). So 30s → 5 scenes, 60s → 10. Without this
-  // veo hit the 2.8s branch → ~11 scenes → ~66s video at ~2x COGS.
-  if (engine === "veo") return 6.0;
+  // v31 (720p pivot): Veo scenes are now planned at 3-4s (3.5 avg) and
+  // generated in 4s/6s buckets at 720p. 30s → ~8-9 scenes, 60s → ~17.
+  // Denser cuts fit the beat cadences (1.5-2.6s targets) far better than the
+  // old 5x6s plan, large listings get real coverage, and a 4s bucket costs
+  // $0.60 vs the old forced 8s@1080p $1.20 — more scenes AND lower COGS.
+  if (engine === "veo") return 3.5;
   if (engine !== "runway") return 2.8;
   // Mixed-engine math: assume a typical listing has ~1 kitchen + ~1
   // bathroom scene that will fall back. The rest are 5s Runway clips.
@@ -527,7 +530,7 @@ function buildOpenAIRequest({ allPhotos, visionPhotos, listingDetails, selectedS
   const narrationGuidance = includeNarration
     ? [
         `Add narrationLine to EVERY scene — all ${targetSceneCount} of them. Continuous narration sounds more professional than sparse voice with long silent gaps.`,
-        `Keep EVERY line short enough to be spoken comfortably within its scene's length at a natural pace (~2 words/sec): a 4s scene fits ~6-8 words, a 6s scene ~10-12, an 8s scene ~14 max. A line must finish with a beat of breathing room before its scene ends — never write a line that would run past its scene. Vary cadence: mix 4-8 word observations ("Crown molding throughout", "Quartz countertops, soft-close cabinets") with slightly longer lines only on the longest hero scenes.`,
+        `Keep EVERY line short enough to be spoken comfortably within its scene's length at a natural pace (~2 words/sec): a 3s scene fits ~4-5 words, a 4s scene ~6-8, a 5-6s hero scene ~10-12 max. A line must finish with a beat of breathing room before its scene ends — never write a line that would run past its scene. Vary cadence: mix 3-6 word observations ("Crown molding throughout", "Quartz counters, soft-close cabinets") with slightly longer lines only on the longest hero scenes.`,
         `Scene 1 is the intro — name the property briefly. The FINAL scene is the CTA — keep it short and punchy (≤8 words) so it finishes cleanly BEFORE the closing brand card ("Schedule your private tour today"). Middle scenes describe what's on screen.`,
         `The agent's name is "${brandKit.fullName || "the listing agent"}", brokerage "${brandKit.brokerage || "their brokerage"}". Refer to them only on scene 1 and the outro CTA — don't repeat the name throughout.`,
         `Narration MUST stay grounded in the listing facts provided (price, beds, baths, sq ft, address) and what is visible in the photo. Never invent features, views, schools, or neighborhoods.`,
@@ -555,11 +558,12 @@ function buildOpenAIRequest({ allPhotos, visionPhotos, listingDetails, selectedS
               `Allowed transition values: ${TRANSITIONS.join(", ")}.`,
               "Prefer vertical 9:16 pacing.",
               isCinematicAI
-                // v26.0: production AI engine is Veo 3.1 Fast, which buckets
-                // clips to 6 seconds — plan with 6s scenes so the 30s/60s
-                // duration budget yields the right scene count (5 scenes per
-                // 30s, not 6).
-                ? "Engine is Cinematic AI (Veo image-to-video). Set scene duration to 6 seconds. Pick subtle, stable camera motion appropriate to each room."
+                // v31 (720p pivot): scenes are planned at 3-4s and generated
+                // in 4s/6s Veo buckets. Bias toward 3-3.5s (lands in the
+                // cheap 4s bucket after xfade compensation); allow 4-6s only
+                // for hero shots. Faster cutting also matches Reels/TikTok
+                // pacing and the per-style beat cadences.
+                ? "Engine is Cinematic AI (Veo image-to-video). Set scene duration to 3-3.5 seconds for most scenes; the exterior hero and one or two showcase rooms may run 4-6 seconds; never exceed 6. Pick subtle, stable camera motion appropriate to each room."
                 : "Engine is Quick Reel (Ken Burns photo motion). Scene duration 2.0–3.0s for kitchen/living, 1.6–2.4s for detail shots, 2.6–3.2s for hero shots.",
               narrationGuidance,
               "Return strict JSON only."
@@ -893,12 +897,11 @@ function normalizeEditPlan(plan, photos, context) {
   const engine = RENDER_ENGINES.includes(context.engine) ? context.engine : "remotion";
   // Cinematic AI: clip duration up to 10 (worker decides 5 vs 10 based on >5.5 boundary).
   // Quick Reel: clip duration capped at 5 (Ken Burns shouldn't sit on one photo longer).
-  // v26.9: Veo clips are 6s native (4/6/8 buckets). Treat veo as an AI video
-  // engine with a 6s default and an 8s ceiling — NOT like Ken Burns (which
-  // was the bug: veo fell through to the 2.4s default / 5s cap, so scenes
-  // desynced from the actual 6s Veo clips).
+  // v31 (720p pivot): Veo scenes plan at 3-4s (3.5 default), generated in
+  // 4s/6s/8s buckets at 720p and trimmed. Ceiling stays 8 — the beat snapper
+  // also caps at 8 (MAX_D), and 8 is the largest fal bucket.
   const maxDuration = engine === "runway" ? 10 : engine === "veo" ? 8 : 5;
-  const defaultDuration = engine === "runway" ? 5 : engine === "veo" ? 6 : 2.4;
+  const defaultDuration = engine === "runway" ? 5 : engine === "veo" ? 3.5 : 2.4;
   // Resolve the music track (explicit, else the style default) and derive its
   // per-track beat-snap unit: the style sets a target cadence, the track's own
   // tempo decides whether that lands on beats, half-bars, bars, or 2-bars.
@@ -1202,8 +1205,14 @@ function qualityScore(photo, index) {
 }
 
 function durationFor(roomType, style, index, engine = "remotion") {
-  // v26.9: Veo clips are 6s native — every scene, no Ken Burns fallback.
-  if (engine === "veo") return 6;
+  // v31 (720p pivot): Veo scenes plan at 3-4s. Hero (scene 1) gets 4s, big
+  // showcase rooms 3.5s, everything else 3s — the beat snapper then nudges
+  // each to the track's grid. Keeps most scenes inside the cheap 4s bucket.
+  if (engine === "veo") {
+    if (index === 0) return 4;
+    if (roomType === "kitchen" || roomType === "living" || roomType === "exterior") return 3.5;
+    return 3;
+  }
   // v24.1: Cinematic AI scene durations depend on whether the scene
   // will fall back to Ken Burns. Predicted-fallback scenes (kitchens,
   // bathrooms) get 2.8s — Ken Burns motion is more interesting at

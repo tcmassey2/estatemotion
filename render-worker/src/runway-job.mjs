@@ -57,16 +57,21 @@ const ENCODE_CRF_MASTER = "19";
 const ENCODE_CRF_DERIVED = "20";
 const X264_PARAMS = "rc-lookahead=10:ref=2:bframes=2:keyint=60:scenecut=0";
 const BUFSIZE = "2M";
-// v28.2: output is now NATIVE 1080p (8s Veo @ 1080p, trimmed) — no upscale.
-// v30.1: still reading "grainy / too much definition", so pull the grade
-// further toward smooth: (1) stronger hqdn3d denoise (1.5/1.2/4/4 → 2.2/1.6/6/6,
-// mostly the TEMPORAL terms, which crush Veo's shimmering fine grain without
-// smearing detail), (2) gentler unsharp (0.4→0.15 luma, 0.2→0.08 chroma) so we
-// stop re-crisping the noise back in, and (3) a touch less contrast (1.08→1.05),
-// since over-contrast was accentuating the grain in shadows. Net: cleaner,
-// softer footage that still looks sharp, not plastic.
+// v31 (720p pivot): Veo now generates 720p and the normalize pass upscales to
+// the 1080x1920 master. The grade is split around the scale so it behaves:
+//   PRE_SCALE_DENOISE — hqdn3d BEFORE the upscale. Denoising at native 720p is
+//     cheaper AND prevents lanczos from magnifying Veo's temporal shimmer into
+//     1080p-sized grain (the old upscale path denoised after, which is partly
+//     why it read "grainy"). Temporal terms (6/6) do the heavy lifting.
+//   COLOR_GRADE — post-scale: same eq/colorbalance as v30.1, unsharp nudged
+//     0.15→0.28 luma / 0.08→0.12 chroma to recover the mild softness the
+//     upscale adds. THIS is the tunable knob if the phone test reads soft
+//     (raise toward 0.35) or grainy/crispy (drop toward 0.15). The old
+//     "resolution looks poor" era used 0.4+ on an un-denoised upscale — do
+//     not go back there.
+const PRE_SCALE_DENOISE = "hqdn3d=2.2:1.6:6:6";
 const COLOR_GRADE =
-  "hqdn3d=2.2:1.6:6:6,eq=contrast=1.05:saturation=0.96:gamma=1.02,colorbalance=rs=0.05:bs=-0.025,unsharp=5:5:0.15:3:3:0.08";
+  "eq=contrast=1.05:saturation=0.96:gamma=1.02,colorbalance=rs=0.05:bs=-0.025,unsharp=5:5:0.28:3:3:0.12";
 
 export async function renderRunwayJob(body, options = {}) {
   const { manifest, requestedFormat } = body || {};
@@ -521,9 +526,17 @@ export async function generateVeoSceneClip(scene, manifest, tempDir, sceneIndex,
 
   const config = manifest.runwayConfig || {};
   const ratio = config.ratio === "16:9" || config.ratio === "wide" ? "16:9" : "9:16";
-  // v28 native 1080p: Veo 3.1 Fast only emits 1080p at an 8s duration. Always
-  // generate 8s @ 1080p, then trim back to the scene's intended length in the
-  // normalize step (resolution maps 1:1 onto the 1080x1920 master, no upscale).
+  // v31 COGS pivot: generate at 720p in the smallest 4s/6s/8s bucket that
+  // covers the scene, then upscale in the normalize pass (lanczos scale to the
+  // 1080x1920 master + tuned grade). Rationale: the product ships to phone
+  // screens where upscaled 720p is indistinguishable from native 1080p; native
+  // 1080p forced a full 8s generation per scene ($1.20) regardless of shown
+  // length. A 3.5s scene now costs $0.60 (4s @ $0.15/sec) instead of $1.20 —
+  // this is what makes 8-10 scenes per 30s video affordable. The earlier
+  // "resolution looks poor" complaint was over-sharpening on the OLD upscale
+  // grade, not 720p itself — see COLOR_GRADE notes.
+  // Rollback: set FAL_RESOLUTION=1080p on the worker → forces 8s buckets
+  // (fal only emits 1080p at 8s), restoring v28 behavior without a deploy.
   //
   // v30 beat-sync: HONOR the plan's beat-snapped scene.duration. The old
   // `> 6.5 ? 8 : 6` quantization pinned every scene to 6/8s and DISCARDED the
@@ -539,14 +552,21 @@ export async function generateVeoSceneClip(scene, manifest, tempDir, sceneIndex,
   const useXfade = manifest?.runwayConfig?.useCrossfades !== false;
   const snappedDur = Number(scene.duration) > 0 ? Number(scene.duration) : 6;
   const targetDuration = clamp(useXfade ? snappedDur + XFADE_COMP_SEC : snappedDur, 1.6, 8);
+  const resolution = process.env.FAL_RESOLUTION || "720p";
+  // Smallest fal duration bucket that covers what we'll actually keep.
+  // 1080p only exists at 8s on fal — pin the bucket there on rollback.
+  const bucketSec = resolution === "1080p" ? 8
+    : targetDuration <= 4 ? 4
+    : targetDuration <= 6 ? 6
+    : 8;
 
   const { generateVeoClip } = await import("./veo-job.mjs");
   const result = await generateVeoClip({
     imageUrl,
     prompt,
     aspectRatio: ratio,
-    duration: "8s",
-    resolution: "1080p",
+    duration: `${bucketSec}s`,
+    resolution,
     sceneIndex,
     photoId: scene.photoId,
     tempDir
@@ -771,6 +791,9 @@ export async function stitchClipsAndOverlays(clipResults, manifest, outputPath, 
     const trimArgs = Number(clip.duration) > 0 ? ["-t", String(clip.duration)] : [];
     const baseFilters = [
       `fps=30`,
+      // v31: denoise at the clip's NATIVE resolution (720p for Veo) before the
+      // lanczos upscale to master size — see PRE_SCALE_DENOISE notes up top.
+      PRE_SCALE_DENOISE,
       `scale=${dimensions.width}:${dimensions.height}:force_original_aspect_ratio=increase:flags=lanczos`,
       `crop=${dimensions.width}:${dimensions.height}`,
       colorGrade,

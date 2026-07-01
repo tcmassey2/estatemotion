@@ -39,9 +39,9 @@ const TIER_FROM_PRICE = (priceId, productId) => {
 
 const QUOTA_FOR_TIER = {
   trial: 1,        // one free first video
-  // q6 launch lineup (v26.11):
-  pro: 5,          // $49/mo  — 5 videos / month
-  studio: 10,      // $99/mo  — 10 videos / month
+  // q7 lineup (docs/PRICING_Q7.md) — quotas unchanged from q6, prices raised:
+  pro: 5,          // $69/mo ($490/yr) — 5 credits / month
+  studio: 10,      // $149/mo ($990/yr) — 10 credits / month
   // Legacy tiers — retired from sale, honored until existing subs lapse.
   launch: 8,       // old $99/mo, 8 renders
   quick_reel: 10,

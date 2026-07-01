@@ -427,10 +427,11 @@ export async function openBillingPortal(): Promise<BillingPortalResponse> {
    On success the user lands back on returnUrl?checkout=success.
 */
 
-// q6 lineup: pro/studio subscriptions (monthly + _annual) + payg one-off ($39).
-// Legacy slugs (single/pack5/pack10/quick_reel/etc.) retained so old billing-
-// portal / grandfathered flows don't 500; not offered in the UI.
-export type CheckoutTier = "payg" | "pro" | "pro_annual" | "studio" | "studio_annual" | "single" | "pack5" | "pack10" | "launch" | "quick_reel" | "cinematic_ai" | "cinematic_4k" | "brokerage";
+// q7 lineup: pro/studio subscriptions (monthly + _annual), payg one-off ($39),
+// and `overage` — subscriber-only $12 extra credit (accepts `quantity` 1-10).
+// single/pack5/pack10 removed with the packs (retired SKUs, server 400s them).
+// Legacy subscription slugs retained so grandfathered flows don't 500.
+export type CheckoutTier = "payg" | "overage" | "pro" | "pro_annual" | "studio" | "studio_annual" | "launch" | "quick_reel" | "cinematic_ai" | "cinematic_4k" | "brokerage";
 
 export interface CheckoutResponse {
   url?: string;
@@ -445,6 +446,8 @@ export async function startCheckout(args: {
   // Brokerage tier only — number of seats (clamped 3-100 server-side).
   seats?: number;
   organizationId?: string;
+  // Overage tier only — number of $12 credits (clamped 1-10 server-side).
+  quantity?: number;
 }): Promise<CheckoutResponse> {
   const headers = await authHeaders();
   const body = {
@@ -452,7 +455,8 @@ export async function startCheckout(args: {
     email: args.email || "",
     returnUrl: args.returnUrl || `${window.location.origin}/app/`,
     ...(args.seats ? { seats: args.seats } : {}),
-    ...(args.organizationId ? { organizationId: args.organizationId } : {})
+    ...(args.organizationId ? { organizationId: args.organizationId } : {}),
+    ...(args.quantity ? { quantity: args.quantity } : {})
   };
   const res = await fetch("/api/create-checkout-session", {
     method: "POST",

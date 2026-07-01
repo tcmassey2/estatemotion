@@ -6,9 +6,11 @@
 //
 // Required env vars on Vercel:
 //   STRIPE_SECRET_KEY                     - Stripe secret key (sk_live_… or sk_test_…)
-//   STRIPE_PRICE_QUICK_REEL              - price_… id for $79/mo
-//   STRIPE_PRICE_CINEMATIC_AI            - price_… id for $149/mo
-//   STRIPE_PRICE_CINEMATIC_4K            - price_… id for $299/mo
+//   STRIPE_PRICE_PRO_MONTHLY             - price_… id, q7 Pro $69/mo
+//   STRIPE_PRICE_PRO_YEARLY              - price_… id, Pro $490/yr (REQUIRED for annual)
+//   STRIPE_PRICE_STUDIO_MONTHLY          - price_… id, q7 Studio $149/mo
+//   STRIPE_PRICE_STUDIO_YEARLY           - price_… id, Studio $990/yr (REQUIRED for annual)
+//   (legacy: STRIPE_PRICE_QUICK_REEL / _CINEMATIC_AI / _CINEMATIC_4K — retired tiers)
 //   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY  - to fetch / update user profile
 //   APP_URL                              - your public site URL, e.g. https://estatemotion.vercel.app
 
@@ -46,6 +48,7 @@ async function resolvePriceForTier(tier) {
   const explicit = envName ? (process.env[envName] || "") : "";
   if (explicit) return explicit;
   // Fallback: the product's default price (legacy / monthly default).
+  // NOTE: annual tiers have no product fallback — their env vars are required.
   const productId = TIER_TO_PRODUCT[tier];
   if (productId) {
     const res = await fetch(`https://api.stripe.com/v1/products/${productId}`, {
@@ -57,8 +60,9 @@ async function resolvePriceForTier(tier) {
       ? product.default_price
       : product.default_price?.id || "";
   }
-  const envName = TIER_TO_PRICE_ENV[tier];
-  return envName ? process.env[envName] || "" : "";
+  // q7 fix: this tail used to re-declare `const envName` — a SyntaxError that
+  // 500'd EVERY checkout call. The env check already ran above; nothing left.
+  return "";
 }
 
 export default async function handler(request, response) {
@@ -85,11 +89,13 @@ export default async function handler(request, response) {
   // v26.6: one-off credit purchases (mode=payment, not subscription).
   // Inline price_data means no pre-created Stripe products needed — amount
   // + credit count live here. Webhook grants credits on session metadata.
+  // q7: retired single/$100, pack5/$375, pack10/$650 ($65-75/video relics of
+  // the $100-video era — see docs/PRICING_Q7.md). Those slugs now 400 like any
+  // unknown tier. `overage` is the subscriber-only $12 extra credit; it
+  // accepts `quantity` (1-10) and replaces bulk packs.
   const CREDIT_PACKS = {
     payg: { credits: 1, amount: 3900, label: "1 listing video" },
-    single: { credits: 1, amount: 10000, label: "1 listing video" },
-    pack5: { credits: 5, amount: 37500, label: "5-video pack" },
-    pack10: { credits: 10, amount: 65000, label: "10-video pack" }
+    overage: { credits: 1, amount: 1200, label: "Extra video credit", subscriberOnly: true }
   };
 
   try {
@@ -123,6 +129,24 @@ export default async function handler(request, response) {
 
     if (isPack) {
       const pack = CREDIT_PACKS[tier];
+      // q7: overage is a subscriber perk — the $12 price only makes sense
+      // against an active plan. Everyone else gets pointed at payg ($39).
+      if (pack.subscriberOnly) {
+        const subTier = String(profile.tier || "");
+        const subStatus = String(profile.subscription_status || "");
+        const isActiveSub = ["pro", "studio"].includes(subTier) && ["active", "trialing"].includes(subStatus);
+        if (!isActiveSub) {
+          return response.status(403).json({
+            error: "Extra credits are for active subscribers. Grab the $39 single video instead."
+          });
+        }
+      }
+      // Multi-credit overage in one checkout: quantity 1-10, clamped so a
+      // typo can't 10x the charge. payg stays qty=1.
+      const qty = pack.subscriberOnly
+        ? Math.max(1, Math.min(10, Math.round(Number(body.quantity) || 1)))
+        : 1;
+      const totalCredits = pack.credits * qty;
       const session = await stripe("/v1/checkout/sessions", "POST", {
         "mode": "payment",
         "customer": customerId,
@@ -130,11 +154,11 @@ export default async function handler(request, response) {
         "line_items[0][price_data][currency]": "usd",
         "line_items[0][price_data][unit_amount]": String(pack.amount),
         "line_items[0][price_data][product_data][name]": `Vistalia — ${pack.label}`,
-        "line_items[0][quantity]": "1",
+        "line_items[0][quantity]": String(qty),
         "payment_intent_data[metadata][user_id]": userId,
-        "payment_intent_data[metadata][credits]": String(pack.credits),
+        "payment_intent_data[metadata][credits]": String(totalCredits),
         "metadata[user_id]": userId,
-        "metadata[credits]": String(pack.credits),
+        "metadata[credits]": String(totalCredits),
         "metadata[pack]": tier,
         "success_url": `${returnUrl}?checkout=success&offer=${encodeURIComponent(tier)}`,
         "cancel_url": `${returnUrl}?checkout=cancelled`,
