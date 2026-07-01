@@ -327,6 +327,11 @@ export default async function handler(request, response) {
   const listingDetails = normalizeListingDetails(body.listingDetails || {});
   const brandKit = normalizeBrandKitForPrompt(body.brandKit || {});
   const selectedStyle = String(body.selectedStyle || "Cinematic Luxury");
+  // v30 beat-sync: the CHOSEN music track filename (from the webapp's music
+  // selector) so scene cuts snap to THIS track's beat grid, not the style
+  // default. Was missing → snapping always used the style default's tempo,
+  // so a non-default track played out of sync.
+  const musicTrack = String(body.musicTrack || "").trim();
   const exportFormat = String(body.exportFormat || "vertical");
   const engine = RENDER_ENGINES.includes(String(body.engine || "")) ? String(body.engine) : "remotion";
   // v23.2: ALWAYS request narration lines in the edit plan. The worker
@@ -373,7 +378,7 @@ export default async function handler(request, response) {
       status: "fallback",
       reason,
       errorCategory: "missing_openai_api_key",
-      editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat, engine, includeNarration, targetDurationSec })
+      editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, musicTrack, exportFormat, engine, includeNarration, targetDurationSec })
     });
     return;
   }
@@ -391,7 +396,7 @@ export default async function handler(request, response) {
         status: "fallback",
         reason,
         errorCategory: "inaccessible_image_url",
-        editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat, engine, includeNarration, targetDurationSec })
+        editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, musicTrack, exportFormat, engine, includeNarration, targetDurationSec })
       });
       return;
     }
@@ -426,7 +431,7 @@ export default async function handler(request, response) {
         reason,
         errorCategory: openaiError.category,
         requestId: openaiError.requestId,
-        editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat, engine, includeNarration, targetDurationSec })
+        editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, musicTrack, exportFormat, engine, includeNarration, targetDurationSec })
       });
       return;
     }
@@ -444,7 +449,7 @@ export default async function handler(request, response) {
         status: "fallback",
         reason: `Motion Director unavailable: schema validation failed. ${validation.error}`,
         errorCategory: "schema_validation",
-        editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat, engine, includeNarration, targetDurationSec })
+        editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, musicTrack, exportFormat, engine, includeNarration, targetDurationSec })
       });
       return;
     }
@@ -460,7 +465,7 @@ export default async function handler(request, response) {
     // OpenAI response shape — duplicate function declarations under ESM
     // strict mode threw SyntaxError and 500'd every request.)
     const preNormalizeValidation = validateNormalizedPlan(parsed, photos);
-    const normalizedPlan = normalizeEditPlan(parsed, photos, { listingDetails, selectedStyle, exportFormat, engine, includeNarration });
+    const normalizedPlan = normalizeEditPlan(parsed, photos, { listingDetails, selectedStyle, musicTrack, exportFormat, engine, includeNarration });
     const postNormalizeValidation = validateNormalizedPlan(normalizedPlan, photos);
     if (!preNormalizeValidation.ok) {
       logMotionDirector("warn", "Pre-normalize validation found issues; normalize step repaired them.", {
@@ -491,7 +496,7 @@ export default async function handler(request, response) {
       status: "fallback",
       reason,
       errorCategory: category,
-      editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat, engine, includeNarration, targetDurationSec })
+      editPlan: deterministicEditPlan({ photos, listingDetails, selectedStyle, musicTrack, exportFormat, engine, includeNarration, targetDurationSec })
     });
   }
 }
@@ -702,7 +707,7 @@ function editPlanSchema(photoIds, targetSceneCount, { includeNarration = false }
   };
 }
 
-function deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFormat, engine = "remotion", includeNarration = false, targetDurationSec = DEFAULT_TARGET_DURATION_SEC }) {
+function deterministicEditPlan({ photos, listingDetails, selectedStyle, musicTrack = "", exportFormat, engine = "remotion", includeNarration = false, targetDurationSec = DEFAULT_TARGET_DURATION_SEC }) {
   const ranked = photos
     .map((photo, index) => ({
       ...photo,
@@ -758,7 +763,7 @@ function deterministicEditPlan({ photos, listingDetails, selectedStyle, exportFo
       subline: listingDetails.brokerage || listingDetails.cta || "Contact the listing agent"
     },
     scenes
-  }, photos, { listingDetails, selectedStyle, exportFormat, engine });
+  }, photos, { listingDetails, selectedStyle, musicTrack, exportFormat, engine });
 }
 
 function validateEditPlan(plan, photos) {
@@ -818,25 +823,59 @@ const STYLE_DEFAULT_TRACK = {
   "MLS Clean": "nastelbom-corporate-soft-488321.mp3",
   "Investor Tour": "the_mountain-corporate-455905.mp3"
 };
-const STYLE_SNAP_MODE = { "Modern Social": "bar" }; // everything else → "beat"
+// Per-style TARGET cut cadence (seconds between cuts). This is the editorial
+// "feel" of each style; the actual snap unit is derived PER TRACK from its
+// tempo (below), so a 55-BPM cinematic bed and a 130-BPM pop track each land
+// on their own musical grid instead of a blanket beat/bar rule.
+//   Luxury  → slow, editorial ~2-3s      Social   → punchy, Reels-fast ~1-1.5s
+//   MLS     → calm, unobtrusive ~2-2.5s   Investor → confident ~2s
+const STYLE_TARGET_CADENCE = {
+  "Cinematic Luxury": 2.6,
+  "Modern Social": 1.5,
+  "MLS Clean": 2.2,
+  "Investor Tour": 2.0
+};
+const DEFAULT_TARGET_CADENCE = 2.2;
+
+// Pick the snap unit (in seconds) for a track: the musical subdivision —
+// 1 beat, half-bar (2), bar (4), or 2-bar (8 beats) — whose length is closest
+// to the style's target cadence. Uses the track's MEASURED beat/bar, so the
+// choice adapts to tempo: fast tracks land on half-bars/bars (still punchy at
+// their BPM), slow tracks on beats/half-bars (so cuts don't drift too far
+// apart). Returns 0 if the grid is unusable → caller skips snapping.
+function chooseSnapUnitSec(grid, targetSec) {
+  if (!grid || !(grid.beat > 0)) return 0;
+  const bar = grid.bar > 0 ? grid.bar : grid.beat * 4;
+  const candidates = [grid.beat, grid.beat * 2, bar, bar * 2]; // 1, 2, 4, 8 beats
+  return candidates.reduce(
+    (best, c) => (Math.abs(c - targetSec) < Math.abs(best - targetSec) ? c : best),
+    candidates[0]
+  );
+}
 
 // Snap scene cut points to the music beat grid so transitions land on the beat.
-// Works on cumulative boundaries; each scene stays within [MIN, 8s]. Fail-safe:
-// returns input unchanged if the grid is missing/invalid, so a render can never
-// break on this.
-function snapDurationsToBeat(durations, grid, mode) {
-  if (!grid) return durations;
-  const unit = mode === "bar" ? grid.bar : grid.beat;
-  if (!(unit > 0)) return durations;
-  const MIN_D = mode === "bar" ? Math.max(2, unit) : 2.0;
+// `unit` is the per-track snap interval (seconds) from chooseSnapUnitSec. Each
+// scene stays within [MIN, 8s] and — importantly — snapped boundaries stay
+// grid-aligned even when clamped (MIN is a whole number of units, not a flat
+// floor). Fail-safe: returns input unchanged if grid/unit is invalid, so a
+// render can never break on this.
+function snapDurationsToBeat(durations, grid, unit) {
+  if (!grid || !(unit > 0)) return durations;
   const MAX_D = 8;
+  // Minimum scene = the fewest whole units that clear ~1.6s, so short scenes
+  // still snap to a real grid point instead of an off-grid flat minimum.
+  const minUnits = Math.max(1, Math.ceil(1.6 / unit));
+  const MIN_D = Math.min(minUnits * unit, MAX_D);
   const out = [];
   let cum = 0;
   for (let i = 0; i < durations.length; i++) {
     const targetEnd = cum + durations[i];
-    let k = Math.round((targetEnd - grid.firstBeat) / unit);
+    const k = Math.round((targetEnd - grid.firstBeat) / unit);
     let d = grid.firstBeat + k * unit - cum;
-    if (d < MIN_D) d = MIN_D;
+    if (d < MIN_D) {
+      const kMin = Math.ceil((cum + MIN_D - grid.firstBeat) / unit);
+      d = grid.firstBeat + kMin * unit - cum;
+    }
     if (d > MAX_D) {
       const k2 = Math.floor((cum + MAX_D - grid.firstBeat) / unit);
       const d2 = grid.firstBeat + k2 * unit - cum;
@@ -860,11 +899,13 @@ function normalizeEditPlan(plan, photos, context) {
   // desynced from the actual 6s Veo clips).
   const maxDuration = engine === "runway" ? 10 : engine === "veo" ? 8 : 5;
   const defaultDuration = engine === "runway" ? 5 : engine === "veo" ? 6 : 2.4;
-  // Resolve the music track (explicit, else the style default) and how hard to
-  // snap cuts to its beat — Modern Social = punchy downbeats, others = subtle.
+  // Resolve the music track (explicit, else the style default) and derive its
+  // per-track beat-snap unit: the style sets a target cadence, the track's own
+  // tempo decides whether that lands on beats, half-bars, bars, or 2-bars.
   const trackFile = String(context.musicTrack || STYLE_DEFAULT_TRACK[context.selectedStyle] || "").trim();
   const beatGrid = BEAT_GRID[trackFile] || null;
-  const snapMode = STYLE_SNAP_MODE[context.selectedStyle] || "beat";
+  const targetCadence = STYLE_TARGET_CADENCE[context.selectedStyle] || DEFAULT_TARGET_CADENCE;
+  const snapUnit = chooseSnapUnitSec(beatGrid, targetCadence);
 
   const baseScenes = [...(plan.scenes || [])]
     .filter((scene) => photoIds.has(scene.photoId))
@@ -891,8 +932,8 @@ function normalizeEditPlan(plan, photos, context) {
   // v29 beat-timed transitions: snap each scene's CUT to the music beat grid so
   // transitions land on the beat. Done BEFORE narration sizing so the voice
   // still fits its (snapped) scene. Fail-safe: durations unchanged if no grid.
-  const snappedDurations = beatGrid
-    ? snapDurationsToBeat(baseScenes.map((s) => s.duration), beatGrid, snapMode)
+  const snappedDurations = beatGrid && snapUnit > 0
+    ? snapDurationsToBeat(baseScenes.map((s) => s.duration), beatGrid, snapUnit)
     : baseScenes.map((s) => s.duration);
 
   const scenes = baseScenes.map((s, index) => {

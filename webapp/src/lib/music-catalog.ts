@@ -35,7 +35,7 @@ export const MUSIC_CATALOG: MusicTrack[] = [
   {
     id: "luxury-poradovskyi",
     filename: "luxury-poradovskyi.mp3",
-    label: "Poradovskyi — Luxury Real Estate",
+    label: "Grand Reveal",
     vibe: "Refined cinematic, modern restraint — verified Pixabay",
     style: "cinematic-luxury",
     isStyleDefault: true,
@@ -45,7 +45,7 @@ export const MUSIC_CATALOG: MusicTrack[] = [
   {
     id: "lux-leberch-piano",
     filename: "leberch-piano-516448.mp3",
-    label: "Piano — Leberch",
+    label: "Golden Hour",
     vibe: "Bright cinematic piano, gentle forward motion",
     style: "cinematic-luxury",
     isStyleDefault: false,
@@ -54,7 +54,7 @@ export const MUSIC_CATALOG: MusicTrack[] = [
   {
     id: "lux-emotional",
     filename: "jonasblakewood-emotional-527472.mp3",
-    label: "Emotional",
+    label: "Homecoming",
     vibe: "Warm ambient swell — heartfelt, unhurried",
     style: "cinematic-luxury",
     isStyleDefault: false,
@@ -63,7 +63,7 @@ export const MUSIC_CATALOG: MusicTrack[] = [
   {
     id: "lux-inspiring",
     filename: "tunetank-inspiring-cinematic-music-409347.mp3",
-    label: "Inspiring Cinematic",
+    label: "Horizon",
     vibe: "Slow, wide, uplifting build",
     style: "cinematic-luxury",
     isStyleDefault: false,
@@ -72,7 +72,7 @@ export const MUSIC_CATALOG: MusicTrack[] = [
   {
     id: "lux-softness",
     filename: "atlasaudio-cinematic-softness-511863.mp3",
-    label: "Cinematic Softness",
+    label: "Soft Light",
     vibe: "Soft, elegant, whisper-quiet under narration",
     style: "cinematic-luxury",
     isStyleDefault: false,
@@ -81,7 +81,7 @@ export const MUSIC_CATALOG: MusicTrack[] = [
   {
     id: "lux-paulyudin-piano",
     filename: "paulyudin-piano-piano-music-508963.mp3",
-    label: "Piano — PaulYudin",
+    label: "Quiet Luxury",
     vibe: "Reflective solo piano, refined restraint",
     style: "cinematic-luxury",
     isStyleDefault: false,
@@ -92,7 +92,7 @@ export const MUSIC_CATALOG: MusicTrack[] = [
   {
     id: "social-mountain-pop",
     filename: "the_mountain-pop-490010.mp3",
-    label: "Pop — The_Mountain",
+    label: "Open House",
     vibe: "Bright soft-house pop, high energy",
     style: "modern-social",
     isStyleDefault: true,
@@ -101,7 +101,7 @@ export const MUSIC_CATALOG: MusicTrack[] = [
   {
     id: "social-jbw-pop",
     filename: "jonasblakewood-pop-524132.mp3",
-    label: "Pop — JonasBlakewood",
+    label: "Curb Appeal",
     vibe: "Punchy, scroll-stopping pop",
     style: "modern-social",
     isStyleDefault: false,
@@ -110,7 +110,7 @@ export const MUSIC_CATALOG: MusicTrack[] = [
   {
     id: "social-friends-freq",
     filename: "jonasblakewood-pop-dance-friends-frequencies-445891.mp3",
-    label: "Pop Dance — Friends Frequencies",
+    label: "Weekend Tour",
     vibe: "Feel-good dance-pop groove",
     style: "modern-social",
     isStyleDefault: false,
@@ -119,7 +119,7 @@ export const MUSIC_CATALOG: MusicTrack[] = [
   {
     id: "social-uplifting-pop",
     filename: "eliveta-uplifting-pop-491240.mp3",
-    label: "Uplifting Pop",
+    label: "Sunny Side",
     vibe: "Sunny, optimistic, energetic",
     style: "modern-social",
     isStyleDefault: false,
@@ -128,7 +128,7 @@ export const MUSIC_CATALOG: MusicTrack[] = [
   {
     id: "social-prettyjohn-pop",
     filename: "prettyjohn1-pop-pop-music-503314.mp3",
-    label: "Pop — prettyjohn1",
+    label: "Quick Tour",
     vibe: "Short, snappy pop hit",
     style: "modern-social",
     isStyleDefault: false,
@@ -139,7 +139,7 @@ export const MUSIC_CATALOG: MusicTrack[] = [
   {
     id: "mls-corporate-soft",
     filename: "nastelbom-corporate-soft-488321.mp3",
-    label: "Corporate Soft",
+    label: "Clean Slate",
     vibe: "Gentle, neutral bed — steps out of the way",
     style: "mls-clean",
     isStyleDefault: true,
@@ -148,7 +148,7 @@ export const MUSIC_CATALOG: MusicTrack[] = [
   {
     id: "mls-leberch-corporate",
     filename: "leberch-corporate-509707.mp3",
-    label: "Corporate — Leberch",
+    label: "Walkthrough",
     vibe: "Clean, steady, professional",
     style: "mls-clean",
     isStyleDefault: false,
@@ -157,7 +157,7 @@ export const MUSIC_CATALOG: MusicTrack[] = [
   {
     id: "mls-elegant-brand",
     filename: "daily-business-anthe-elegant-corporate-brand-541377.mp3",
-    label: "Elegant Corporate Brand",
+    label: "Signature",
     vibe: "Polished, brand-forward, light",
     style: "mls-clean",
     isStyleDefault: false,
@@ -166,7 +166,7 @@ export const MUSIC_CATALOG: MusicTrack[] = [
   {
     id: "mls-corporate-bg",
     filename: "jonasblakewood-corporate-background-524146.mp3",
-    label: "Corporate Background",
+    label: "Backdrop",
     vibe: "Understated bed — vanishes under VO",
     style: "mls-clean",
     isStyleDefault: false,
@@ -177,7 +177,7 @@ export const MUSIC_CATALOG: MusicTrack[] = [
   {
     id: "investor-mountain-corp",
     filename: "the_mountain-corporate-455905.mp3",
-    label: "Corporate — The_Mountain",
+    label: "The Deal",
     vibe: "Confident, assured, mid-tempo",
     style: "investor-tour",
     isStyleDefault: true,
@@ -186,7 +186,7 @@ export const MUSIC_CATALOG: MusicTrack[] = [
   {
     id: "investor-atlas-corp",
     filename: "atlasaudio-corporate-corporate-music-507826.mp3",
-    label: "Corporate — AtlasAudio",
+    label: "Market Move",
     vibe: "Driving, business-forward",
     style: "investor-tour",
     isStyleDefault: false,
@@ -195,7 +195,7 @@ export const MUSIC_CATALOG: MusicTrack[] = [
   {
     id: "investor-energetic",
     filename: "prettyjohn1-corporate-corporate-music-483403.mp3",
-    label: "Corporate Energetic",
+    label: "Momentum",
     vibe: "Upbeat momentum for numbers",
     style: "investor-tour",
     isStyleDefault: false,
@@ -204,7 +204,7 @@ export const MUSIC_CATALOG: MusicTrack[] = [
   {
     id: "investor-upbeat-corp",
     filename: "jonasblakewood-upbeat-corporate-533853.mp3",
-    label: "Upbeat Corporate",
+    label: "Closing Day",
     vibe: "Optimistic, forward-driving",
     style: "investor-tour",
     isStyleDefault: false,
@@ -261,4 +261,70 @@ export function tracksGroupedByStyle(): { style: StyleId; tracks: MusicTrack[] }
       .filter((t) => t.style === style)
       .sort((a, b) => Number(b.isStyleDefault) - Number(a.isStyleDefault))
   }));
+}
+
+/* ============================================================
+   Beat-sync (display only)
+
+   The render pipeline snaps each scene's CUT to the music beat grid so
+   transitions land on the beat (api/create-edit-plan.js). The snap interval
+   for a track = the musical subdivision (beat / half-bar / bar / 2-bar) whose
+   length is closest to the render style's target cadence. We recompute that
+   here PURELY to show it in the UI — the actual render uses its own copy.
+
+   ⚠️  BEAT_GRID and STYLE_TARGET_CADENCE below MIRROR the constants in
+       api/create-edit-plan.js (same librosa measurements). Keep them in sync
+       when adding/removing tracks or retuning cadence.
+   ============================================================ */
+
+type BeatGrid = { beat: number; bar: number };
+
+const BEAT_GRID: Record<string, BeatGrid> = {
+  "luxury-poradovskyi.mp3": { beat: 0.627, bar: 2.508 },
+  "leberch-piano-516448.mp3": { beat: 0.372, bar: 1.486 },
+  "jonasblakewood-emotional-527472.mp3": { beat: 0.511, bar: 2.043 },
+  "tunetank-inspiring-cinematic-music-409347.mp3": { beat: 1.091, bar: 4.365 },
+  "atlasaudio-cinematic-softness-511863.mp3": { beat: 0.813, bar: 3.251 },
+  "paulyudin-piano-piano-music-508963.mp3": { beat: 0.488, bar: 1.950 },
+  "the_mountain-pop-490010.mp3": { beat: 0.511, bar: 2.043 },
+  "jonasblakewood-pop-524132.mp3": { beat: 0.464, bar: 1.858 },
+  "jonasblakewood-pop-dance-friends-frequencies-445891.mp3": { beat: 0.650, bar: 2.601 },
+  "eliveta-uplifting-pop-491240.mp3": { beat: 0.720, bar: 2.879 },
+  "prettyjohn1-pop-pop-music-503314.mp3": { beat: 0.488, bar: 1.950 },
+  "nastelbom-corporate-soft-488321.mp3": { beat: 0.604, bar: 2.415 },
+  "leberch-corporate-509707.mp3": { beat: 0.534, bar: 2.136 },
+  "daily-business-anthe-elegant-corporate-brand-541377.mp3": { beat: 0.534, bar: 2.136 },
+  "jonasblakewood-corporate-background-524146.mp3": { beat: 0.511, bar: 2.043 },
+  "the_mountain-corporate-455905.mp3": { beat: 0.511, bar: 2.043 },
+  "atlasaudio-corporate-corporate-music-507826.mp3": { beat: 0.372, bar: 1.486 },
+  "prettyjohn1-corporate-corporate-music-483403.mp3": { beat: 0.580, bar: 2.322 },
+  "jonasblakewood-upbeat-corporate-533853.mp3": { beat: 0.534, bar: 2.136 }
+};
+
+const STYLE_TARGET_CADENCE: Record<StyleId, number> = {
+  "cinematic-luxury": 2.6,
+  "modern-social": 1.5,
+  "mls-clean": 2.2,
+  "investor-tour": 2.0
+};
+
+export type BeatSync = { unitSec: number; label: string; bpm: number };
+
+// The beat-sync cadence a track will use UNDER a given render style. Returns
+// null if we have no grid for the track (older/unmeasured file) — callers hide
+// the indicator rather than guess.
+export function beatSyncFor(track: MusicTrack, styleId: StyleId): BeatSync | null {
+  const g = BEAT_GRID[track.filename];
+  if (!g || !(g.beat > 0)) return null;
+  const bar = g.bar > 0 ? g.bar : g.beat * 4;
+  const target = STYLE_TARGET_CADENCE[styleId] ?? 2.2;
+  const candidates: BeatSync[] = [
+    { unitSec: g.beat, label: "beat", bpm: Math.round(60 / g.beat) },
+    { unitSec: g.beat * 2, label: "½-bar", bpm: Math.round(60 / g.beat) },
+    { unitSec: bar, label: "bar", bpm: Math.round(60 / g.beat) },
+    { unitSec: bar * 2, label: "2-bar", bpm: Math.round(60 / g.beat) }
+  ];
+  return candidates.reduce((best, c) =>
+    Math.abs(c.unitSec - target) < Math.abs(best.unitSec - target) ? c : best
+  );
 }

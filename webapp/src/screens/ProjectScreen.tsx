@@ -2189,7 +2189,10 @@ function RenderControls() {
         // request the plan as "veo" so veoPrompt is generated per scene.
         engine: "veo",
         brandKit: branding,
-        targetDurationSec
+        targetDurationSec,
+        // v30 beat-sync: send the SAME track the manifest will use (below), so
+        // the plan snaps scene cuts to this track's actual beat grid.
+        musicTrack: resolveTrack(selectedMusicTrackId, selectedStyleId).filename
       });
       if (!planResult.editPlan) {
         throw new Error(planResult.reason || "We couldn't draft an edit plan. Try again in a moment.");

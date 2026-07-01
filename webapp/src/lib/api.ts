@@ -74,6 +74,10 @@ export interface CreateEditPlanArgs {
   // v24: target video length in seconds. 30s default (social-first),
   // 60s max. Drives the scene count in the edit plan generator.
   targetDurationSec?: 30 | 60;
+  // v30 beat-sync: chosen music track filename so the plan snaps scene cuts
+  // to THIS track's beat grid (not the style default). Must match the
+  // manifest.musicTrack sent at render time.
+  musicTrack?: string;
 }
 
 export interface CreateEditPlanResult {
@@ -103,7 +107,8 @@ export async function createEditPlan(args: CreateEditPlanArgs): Promise<CreateEd
       exportFormat: args.exportFormat,
       engine: args.engine,
       brandKit: args.brandKit || null,
-      targetDurationSec: args.targetDurationSec || 30
+      targetDurationSec: args.targetDurationSec || 30,
+      musicTrack: args.musicTrack || ""
     })
   });
   if (!res.ok) {

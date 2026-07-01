@@ -57,14 +57,16 @@ const ENCODE_CRF_MASTER = "19";
 const ENCODE_CRF_DERIVED = "20";
 const X264_PARAMS = "rc-lookahead=10:ref=2:bframes=2:keyint=60:scenecut=0";
 const BUFSIZE = "2M";
-// v28.2: output is now NATIVE 1080p (8s Veo @ 1080p, trimmed) — no upscale. The
-// heavy unsharp added for the old 720p→1080p path was over-sharpening already-
-// sharp footage and amplifying Veo's fine grain, which read as "grainy". So:
-// (1) a light hqdn3d denoise FIRST to knock grain down, then (2) a much gentler
-// unsharp (0.9→0.4 luma, 0.4→0.2 chroma) to re-crisp without re-introducing
-// noise. Both kept light to avoid a smeared/plastic look.
+// v28.2: output is now NATIVE 1080p (8s Veo @ 1080p, trimmed) — no upscale.
+// v30.1: still reading "grainy / too much definition", so pull the grade
+// further toward smooth: (1) stronger hqdn3d denoise (1.5/1.2/4/4 → 2.2/1.6/6/6,
+// mostly the TEMPORAL terms, which crush Veo's shimmering fine grain without
+// smearing detail), (2) gentler unsharp (0.4→0.15 luma, 0.2→0.08 chroma) so we
+// stop re-crisping the noise back in, and (3) a touch less contrast (1.08→1.05),
+// since over-contrast was accentuating the grain in shadows. Net: cleaner,
+// softer footage that still looks sharp, not plastic.
 const COLOR_GRADE =
-  "hqdn3d=1.5:1.2:4:4,eq=contrast=1.08:saturation=0.95:gamma=1.03,colorbalance=rs=0.05:bs=-0.025,unsharp=5:5:0.4:3:3:0.2";
+  "hqdn3d=2.2:1.6:6:6,eq=contrast=1.05:saturation=0.96:gamma=1.02,colorbalance=rs=0.05:bs=-0.025,unsharp=5:5:0.15:3:3:0.08";
 
 export async function renderRunwayJob(body, options = {}) {
   const { manifest, requestedFormat } = body || {};
@@ -519,13 +521,24 @@ export async function generateVeoSceneClip(scene, manifest, tempDir, sceneIndex,
 
   const config = manifest.runwayConfig || {};
   const ratio = config.ratio === "16:9" || config.ratio === "wide" ? "16:9" : "9:16";
-  // Veo 3.1 Fast buckets to 4s/6s/8s; our 5s scenes round up to 6s.
   // v28 native 1080p: Veo 3.1 Fast only emits 1080p at an 8s duration. Always
-  // generate 8s @ 1080p, then trim back to the scene's intended length
-  // (targetDuration) in the normalize step. targetDuration keeps the EXACT prior
-  // pacing (6s default / 8s for long scenes) — only resolution changes: the clip
-  // now maps 1:1 onto the 1080x1920 master instead of being upscaled from 720p.
-  const targetDuration = clamp(Number(scene.duration || 5) > 6.5 ? 8 : 6, 4, 8);
+  // generate 8s @ 1080p, then trim back to the scene's intended length in the
+  // normalize step (resolution maps 1:1 onto the 1080x1920 master, no upscale).
+  //
+  // v30 beat-sync: HONOR the plan's beat-snapped scene.duration. The old
+  // `> 6.5 ? 8 : 6` quantization pinned every scene to 6/8s and DISCARDED the
+  // snap — which is exactly why beat-timed transitions weren't visible. Now the
+  // trim length = the beat-aligned duration create-edit-plan computed.
+  //
+  // Crossfade compensation: when xfade is on, stitch.mjs eats `f`=0.5s of
+  // overlap per transition (offset += prevDur - f), which drags every cut
+  // earlier and off the beat. We add that 0.5s back per clip so the snapped
+  // boundaries survive the crossfade and still land on the grid. Hard-cut
+  // renders (useCrossfades:false) need no compensation.
+  const XFADE_COMP_SEC = 0.5;
+  const useXfade = manifest?.runwayConfig?.useCrossfades !== false;
+  const snappedDur = Number(scene.duration) > 0 ? Number(scene.duration) : 6;
+  const targetDuration = clamp(useXfade ? snappedDur + XFADE_COMP_SEC : snappedDur, 1.6, 8);
 
   const { generateVeoClip } = await import("./veo-job.mjs");
   const result = await generateVeoClip({
