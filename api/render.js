@@ -91,7 +91,7 @@ export default async function handler(request, response) {
       return;
     }
 
-    const manifestError = validateManifestForServerRender(manifest, { live: !readFlag("MOCK_RENDERING", true) });
+    const manifestError = validateManifestForServerRender(manifest, { live: !mockRendering() });
     if (manifestError) {
       response.status(400).json({ status: "failed", error: manifestError });
       return;
@@ -144,7 +144,7 @@ export default async function handler(request, response) {
       manifest._autoDowngrade4K = true; // surfaced in response so the UI can toast
     }
 
-    if (readFlag("MOCK_RENDERING", true)) {
+    if (mockRendering()) {
       response.status(503).json({
         status: "failed",
         mock: true,
@@ -230,6 +230,18 @@ function readFlag(key, fallback) {
   const value = process.env[key];
   if (value === undefined || value === null || value === "") return fallback;
   return value === true || value === "true" || value === "1";
+}
+
+// Launch fix: MOCK_RENDERING used to default TRUE when unset, so deleting the
+// stale env var flipped production into mock mode ("Video rendering is not
+// connected yet") even with a live worker configured. Mirror env.js's
+// auto-detection: mock only when no worker URL exists. An explicit
+// MOCK_RENDERING=true still forces mock for staging tests.
+function mockRendering() {
+  return readFlag(
+    "MOCK_RENDERING",
+    !(process.env.RENDER_WORKER_URL || process.env.RENDER_ENDPOINT)
+  );
 }
 
 // v26.2: accept either secret name. health.js and the worker itself have

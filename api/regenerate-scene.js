@@ -82,7 +82,10 @@ export default async function handler(request, response) {
       return;
     }
 
-    if (readFlag("MOCK_RENDERING", true)) {
+    // Launch fix: default to LIVE whenever a worker URL is configured (the old
+    // hardcoded `true` fallback put production in mock mode when the stale
+    // MOCK_RENDERING var was deleted). Explicit MOCK_RENDERING=true still wins.
+    if (readFlag("MOCK_RENDERING", !(process.env.RENDER_WORKER_URL || process.env.RENDER_ENDPOINT))) {
       response.status(503).json({
         status: "failed",
         mock: true,
