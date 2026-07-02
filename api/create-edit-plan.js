@@ -468,7 +468,7 @@ export default async function handler(request, response) {
     // OpenAI response shape — duplicate function declarations under ESM
     // strict mode threw SyntaxError and 500'd every request.)
     const preNormalizeValidation = validateNormalizedPlan(parsed, photos);
-    const normalizedPlan = normalizeEditPlan(parsed, photos, { listingDetails, selectedStyle, musicTrack, exportFormat, engine, includeNarration });
+    const normalizedPlan = normalizeEditPlan(parsed, photos, { listingDetails, selectedStyle, musicTrack, exportFormat, engine, includeNarration, targetDurationSec });
     const postNormalizeValidation = validateNormalizedPlan(normalizedPlan, photos);
     if (!preNormalizeValidation.ok) {
       logMotionDirector("warn", "Pre-normalize validation found issues; normalize step repaired them.", {
@@ -767,7 +767,7 @@ function deterministicEditPlan({ photos, listingDetails, selectedStyle, musicTra
       subline: listingDetails.brokerage || listingDetails.cta || "Contact the listing agent"
     },
     scenes
-  }, photos, { listingDetails, selectedStyle, musicTrack, exportFormat, engine });
+  }, photos, { listingDetails, selectedStyle, musicTrack, exportFormat, engine, includeNarration, targetDurationSec });
 }
 
 function validateEditPlan(plan, photos) {
@@ -866,9 +866,17 @@ function chooseSnapUnitSec(grid, targetSec) {
 function snapDurationsToBeat(durations, grid, unit) {
   if (!grid || !(unit > 0)) return durations;
   const MAX_D = 8;
+  // v31 pipeline-audit fix: EPS guards on every boundary comparison. Without
+  // them, float error (d = 2.9719999999999995 vs MIN_D = 2.972) tripped the
+  // MIN branch, whose ceil() of a value an epsilon ABOVE a whole number then
+  // jumped a full extra unit — silently DOUBLING random scenes on tracks
+  // whose unit divides evenly (e.g. leberch-piano at 2.972s). Doubled scenes
+  // broke pacing, overshot the target duration by up to ~35%, and pushed 4s
+  // fal buckets to 8s (2x COGS on those scenes).
+  const EPS = 1e-6;
   // Minimum scene = the fewest whole units that clear ~1.6s, so short scenes
   // still snap to a real grid point instead of an off-grid flat minimum.
-  const minUnits = Math.max(1, Math.ceil(1.6 / unit));
+  const minUnits = Math.max(1, Math.ceil(1.6 / unit - EPS));
   const MIN_D = Math.min(minUnits * unit, MAX_D);
   const out = [];
   let cum = 0;
@@ -876,14 +884,14 @@ function snapDurationsToBeat(durations, grid, unit) {
     const targetEnd = cum + durations[i];
     const k = Math.round((targetEnd - grid.firstBeat) / unit);
     let d = grid.firstBeat + k * unit - cum;
-    if (d < MIN_D) {
-      const kMin = Math.ceil((cum + MIN_D - grid.firstBeat) / unit);
+    if (d < MIN_D - EPS) {
+      const kMin = Math.ceil((cum + MIN_D - grid.firstBeat) / unit - EPS);
       d = grid.firstBeat + kMin * unit - cum;
     }
-    if (d > MAX_D) {
-      const k2 = Math.floor((cum + MAX_D - grid.firstBeat) / unit);
+    if (d > MAX_D + EPS) {
+      const k2 = Math.floor((cum + MAX_D - grid.firstBeat) / unit + EPS);
       const d2 = grid.firstBeat + k2 * unit - cum;
-      d = d2 >= MIN_D && d2 <= MAX_D ? d2 : MAX_D;
+      d = d2 >= MIN_D - EPS && d2 <= MAX_D + EPS ? d2 : MAX_D;
     }
     d = Number(d.toFixed(3));
     out.push(d);
@@ -935,9 +943,27 @@ function normalizeEditPlan(plan, photos, context) {
   // v29 beat-timed transitions: snap each scene's CUT to the music beat grid so
   // transitions land on the beat. Done BEFORE narration sizing so the voice
   // still fits its (snapped) scene. Fail-safe: durations unchanged if no grid.
-  const snappedDurations = beatGrid && snapUnit > 0
+  let snappedDurations = beatGrid && snapUnit > 0
     ? snapDurationsToBeat(baseScenes.map((s) => s.duration), beatGrid, snapUnit)
     : baseScenes.map((s) => s.duration);
+  // v31 pipeline-audit guard: on a few grid/cadence combos (e.g. a fast piano
+  // track whose chosen unit sits just under the scene length) round() pushes
+  // most scenes up a whole extra unit and a 60s target renders ~80s at ~1.5x
+  // COGS. If the snapped total overshoots the requested duration by >20%,
+  // rescale the pre-snap durations toward the target and re-snap ONCE —
+  // still fully on-grid, just biased down. (1 of 456 simulated configs.)
+  const targetTotal = Number(context.targetDurationSec) || 0;
+  if (targetTotal > 0 && beatGrid && snapUnit > 0) {
+    const total = snappedDurations.reduce((a, b) => a + b, 0);
+    if (total > targetTotal * 1.2) {
+      const scale = targetTotal / total;
+      snappedDurations = snapDurationsToBeat(
+        baseScenes.map((s) => Math.max(1.2, s.duration * scale)),
+        beatGrid,
+        snapUnit
+      );
+    }
+  }
 
   const scenes = baseScenes.map((s, index) => {
     const duration = snappedDurations[index];

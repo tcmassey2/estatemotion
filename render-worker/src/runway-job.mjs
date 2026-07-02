@@ -5,8 +5,10 @@
 //
 // Cost guardrails (Runway Gen-3 Turbo, image_to_video, ~$0.05/sec billed):
 //   12 scenes * 5s = 60s of generated video = ~$3.00 per render
-//   25 scenes * 5s = 125s = ~$6.25 per render
-// MAX_SCENES caps a single job at $7.50 to prevent runaway billing.
+// v31 economics: scenes generate at 720p in 4s/6s/8s fal buckets
+// ($0.60/$0.90/$1.20). Plans cap at MAX_PLAN_SCENES=18 upstream; this
+// worker-side MAX_SCENES=30 is the belt against a hand-crafted manifest —
+// absolute worst case 30 × $1.20 = $36 per job.
 
 import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -291,6 +293,14 @@ export async function renderRunwayJob(body, options = {}) {
           masterMp4: finalMp4,
           scenes: manifest.scenes,
           sceneDurationsByPhoto: actualDurationsByPhoto,
+          // v31 pipeline-audit fix: with crossfades on, every join consumes
+          // 0.5s of clip, so a scene's VISIBLE window is (clipDuration - 0.5)
+          // and scene k starts at Σ(visible) — not Σ(clipDuration). The mixer
+          // summed raw clip durations, so line k started (k-1)*0.5s late vs
+          // picture: ~2s worst-case at v30's 5 scenes (masked by short
+          // lines), fatal at v31's 8-17 scenes where late lines get chopped
+          // by their own scene-window caps.
+          crossfadeOverlapSec: manifest?.runwayConfig?.useCrossfades !== false ? 0.5 : 0,
           brandKit: manifest.brandKit || {},
           tempDir,
           jobId,

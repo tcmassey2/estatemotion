@@ -41,7 +41,7 @@ const DUCK_LEVEL = Number(process.env.DUCK_LEVEL ?? 0.30);
 // manifest.voiceLevel.
 const VOICE_WEIGHT = Number(process.env.VOICE_LEVEL ?? 1.4);
 
-export async function applyVoiceNarration({ masterMp4, scenes, sceneDurationsByPhoto, brandKit, tempDir, jobId, onProgress }) {
+export async function applyVoiceNarration({ masterMp4, scenes, sceneDurationsByPhoto, crossfadeOverlapSec = 0, brandKit, tempDir, jobId, onProgress }) {
   // v26.9: actual rendered clip duration per scene (keyed by photoId). When
   // present it overrides the manifest's stated duration so narration timing
   // matches the real video exactly — the single biggest narration-sync fix.
@@ -129,14 +129,22 @@ export async function applyVoiceNarration({ masterMp4, scenes, sceneDurationsByP
   onProgress?.({ phase: "Building narration track", fraction: 0.7 });
 
   const leadInSec = 0.35;
-  const sceneStarts = []; // start time of each scene in seconds
-  const sceneDurs = [];   // resolved duration of each scene (actual clip > manifest)
+  const sceneStarts = []; // start time of each scene in seconds (VISUAL timeline)
+  const sceneDurs = [];   // VISIBLE duration of each scene on the master
   let cursor = 0;
+  // v31 pipeline-audit fix: with crossfades, each join eats crossfadeOverlapSec
+  // (0.5s) of clip, so the VISIBLE window of a scene is clipDuration - overlap
+  // and scene k starts at the sum of visible windows before it — the raw
+  // clip-duration sum drifted every line (k-1)*overlap late vs picture and
+  // over-stated the narration track length by the same amount. The final photo
+  // clip's tail overlap is absorbed by the outro-card crossfade, so the
+  // uniform (d - overlap) window is exact for every scene.
   for (const sc of photoScenes) {
     const d = realDur(sc, Number(sc.duration || 3));
+    const visible = Math.max(0.8, d - crossfadeOverlapSec);
     sceneStarts.push(cursor);
-    sceneDurs.push(d);
-    cursor += d;
+    sceneDurs.push(visible);
+    cursor += visible;
   }
   const totalDurationSec = cursor;
 

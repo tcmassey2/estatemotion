@@ -79,26 +79,24 @@ export async function stitchWithCrossfades({ clips, outroClip, output, crossfade
     } else {
       await xfadeSingleBatch(batch, batchOut, crossfadeDurationSec);
     }
-    batchOutputs.push(batchOut);
+    // v31 pipeline-audit fix: the batch outputs used to be joined with a
+    // HARD concat (-c copy), so batch seams ate no crossfade time. Every
+    // clip upstream is generated 0.5s long specifically so each join can
+    // consume 0.5s — a hard seam therefore (a) dragged every later cut
+    // +0.5s off the beat grid and (b) made the master +0.5s longer per
+    // seam than the plan/narration math expects. v30 renders (5 scenes +
+    // outro = 6 clips) always took the single-pass path and never hit
+    // this; v31's 8-17 scene plans batch every time. Fix: second-level
+    // xfade across the batch OUTPUTS (one input per batch — 3-5 codec
+    // contexts, same memory envelope that batching exists to protect).
+    // Every join now eats exactly one crossfade, globally.
+    const batchDuration = batch.reduce((s, c) => s + Number(c.duration || 5), 0)
+      - (batch.length - 1) * crossfadeDurationSec;
+    batchOutputs.push({ clipPath: batchOut, duration: batchDuration, sceneIndex: bi });
   }
 
-  const concatList = path.join(tempDir, "xfade-batch-concat.txt");
-  await fs.writeFile(
-    concatList,
-    batchOutputs.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join("\n")
-  );
-  await runFFmpeg([
-    "-y",
-    "-threads", "1",
-    "-f", "concat",
-    "-safe", "0",
-    "-i", concatList,
-    "-c", "copy",
-    output
-  ], { timeoutMs: 60000, label: "stitch:xfade-batch-concat" });
-
-  await fs.unlink(concatList).catch(() => {});
-  for (const p of batchOutputs) await fs.unlink(p).catch(() => {});
+  await xfadeSingleBatch(batchOutputs, output, crossfadeDurationSec);
+  for (const p of batchOutputs) await fs.unlink(p.clipPath).catch(() => {});
 }
 
 // Single-pass xfade for a small group of clips. Used directly for short

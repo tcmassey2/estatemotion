@@ -204,6 +204,16 @@ export async function regenerateScene(body, options = {}) {
         applyVoiceNarration({
           masterMp4: finalMp4,
           scenes: manifest.scenes,
+          // v31 pipeline-audit fix: regen never passed the ACTUAL clip
+          // durations (the v26.9 narration-sync fix) — the mixer fell back
+          // to manifest durations, which post-v31 are the snapped values,
+          // not the +0.5-padded clips on disk. Pass the real durations +
+          // crossfade overlap so regen narration lands on the same visible
+          // timeline as full renders.
+          sceneDurationsByPhoto: Object.fromEntries(
+            clipResults.filter((c) => c && c.photoId).map((c) => [c.photoId, Number(c.duration) || 0])
+          ),
+          crossfadeOverlapSec: manifest?.runwayConfig?.useCrossfades !== false ? 0.5 : 0,
           brandKit: manifest.brandKit || {},
           tempDir,
           jobId,

@@ -339,6 +339,12 @@ async function enqueueRenderJob(jobId, body) {
 function persistJobStatus(jobId, job) {
   if (!QUEUE_ENABLED || !jobId) return;
   const patch = {};
+  // v31 pipeline-audit: heartbeat on every status write. Progress updates
+  // fire many times a minute during honest work, so requeue_stuck_render_jobs
+  // (migration 25) can distinguish "long render" from "dead worker" — the old
+  // claimed_at-only rule requeued healthy >20-min jobs mid-render, double-
+  // spending fal on a second worker.
+  patch.heartbeat_at = new Date().toISOString();
   if (job.status) patch.status = job.status;
   if (job.phase != null) patch.phase = job.phase;
   if (typeof job.progress === "number") patch.progress = job.progress;
@@ -347,8 +353,22 @@ function persistJobStatus(jobId, job) {
   if (job.error) patch.error = job.error;
   if (job.status === "completed") patch.result = job;
   if (Object.keys(patch).length === 0) return;
-  fetch(`${SUPABASE_URL}/rest/v1/render_jobs?job_id=eq.${encodeURIComponent(jobId)}`, {
+  const url = `${SUPABASE_URL}/rest/v1/render_jobs?job_id=eq.${encodeURIComponent(jobId)}`;
+  fetch(url, {
     method: "PATCH", headers: { ...sbHeaders, Prefer: "return=minimal" }, body: JSON.stringify(patch)
+  }).then((res) => {
+    // Deploy-order resilience: if migration 25 (heartbeat_at column) hasn't
+    // been applied yet, PostgREST rejects the whole patch — retry once
+    // without the heartbeat so status/result persistence NEVER silently
+    // stops (a completed job that fails to persist would be requeued and
+    // re-rendered by the stuck-job reaper).
+    if (!res.ok && patch.heartbeat_at) {
+      const { heartbeat_at, ...rest } = patch;
+      if (Object.keys(rest).length === 0) return;
+      return fetch(url, {
+        method: "PATCH", headers: { ...sbHeaders, Prefer: "return=minimal" }, body: JSON.stringify(rest)
+      });
+    }
   }).catch(() => {});
 }
 
@@ -386,11 +406,13 @@ if (QUEUE_ENABLED) {
 async function runRenderJob(jobId, body) {
   const engine = String(body?.manifest?.engine || "remotion").toLowerCase();
   updateJob(jobId, { status: "rendering", phase: "Rendering scenes", progress: 12, engine });
-  // Overall hard cap — if anything below this races slower than 18 minutes,
-  // we kill the job rather than let it hang forever. 18 minutes covers the
-  // legitimate worst case (24-clip Cinematic AI render with 4K upscale +
-  // narration on Render Standard) with ~50% headroom.
-  const OVERALL_TIMEOUT_MS = 18 * 60 * 1000;
+  // Overall hard cap — if anything below this races slower than this, we
+  // kill the job rather than let it hang forever. v31 audit: raised 18→25
+  // minutes — 60s plans now run up to 17 Veo scenes (5 fal waves at
+  // concurrency 4, plus fal 429-backoff retries), so a legitimate worst case
+  // brushes ~20 minutes. The heartbeat-based stuck reaper (migration 25)
+  // handles dead workers; this cap only needs to catch true hangs.
+  const OVERALL_TIMEOUT_MS = 25 * 60 * 1000;
   const startedAt = Date.now();
   try {
     const result = await Promise.race([
